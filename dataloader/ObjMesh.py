@@ -23,19 +23,9 @@ class ObjMesh:
         self.size = torch.tensor((size_x, size_y, size_z), device=self.device) * ObjMesh.scale
         self.symmetries_continuous = symmetries_continuous
         self.symmetries_discrete = symmetries_discrete
-        self.mesh = None
-        self.radius = None
-        self.center = None
-
-    def load_mesh(self, flag=True):
-        if flag:
-            if self.mesh is None:
-                self.mesh = IO().load_mesh(self.mesh_path).to(self.device).scale_verts_(ObjMesh.scale)
-                if not self.is_eval:
-                    radius, center, _ = exact_min_bound_sphere_3D(self.mesh.verts_packed().cpu().numpy())
-                    self.radius, self.center = radius, torch.tensor(center).to(self.device)
-        else:
-            self.mesh = None
+        self.mesh = IO().load_mesh(self.mesh_path).to(self.device).scale_verts_(ObjMesh.scale)
+        radius, center, _ = exact_min_bound_sphere_3D(self.mesh.verts_packed().cpu().numpy())
+        self.radius, self.center = radius, torch.tensor(center).to(self.device)
 
     def get_transformed_mesh(self, cam_R_m2c, cam_t_m2c):
         verts = self.mesh.verts_packed()

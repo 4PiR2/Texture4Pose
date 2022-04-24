@@ -23,11 +23,3 @@ class BOPObjSet:
                                                 is_eval=True,
                                                 mesh_path=os.path.join(path_models_eval, f'obj_{int(obj_id):0>6d}.ply'),
                                                 **objects_info_eval[str(obj_id)])
-
-    def load_meshes(self, flag=None, flag_eval=None):
-        if flag is not None:
-            for obj_id in self.objects:
-                self.objects[obj_id].load_mesh(flag=flag)
-        if flag_eval is not None:
-            for obj_id in self.objects_eval:
-                self.objects_eval[obj_id].load_mesh(flag=flag)
