@@ -2,6 +2,7 @@ import torch
 from pytorch3d.io import IO
 from pytorch3d.renderer import TexturesVertex
 
+from utils.io import parse_device
 from utils.mbsc.exact_min_bound_sphere_3D import exact_min_bound_sphere_3D
 from utils.const import debug_mode
 
@@ -13,7 +14,7 @@ class ObjMesh:
                  min_x=None, min_y=None, min_z=None,
                  size_x=None, size_y=None, size_z=None,
                  symmetries_continuous=None, symmetries_discrete=None):
-        self.device = device if device is not None else 'cpu'
+        self.device = parse_device(device)
         self.obj_id = obj_id
         self.name = name
         self.is_eval = is_eval
