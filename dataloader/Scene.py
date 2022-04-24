@@ -1,6 +1,4 @@
 import torch
-import torch.nn.functional as F
-import torchvision.transforms.functional as vF
 from pytorch3d.renderer import PerspectiveCameras, RasterizationSettings, MeshRasterizer, \
     MeshRenderer, SoftPhongShader, AmbientLights, BlendParams
 from pytorch3d.structures import join_meshes_as_scene, join_meshes_as_batch
@@ -15,7 +13,7 @@ class Scene:
         self.kwargs = kwargs
         self.objects = objects  # dict
         self.device = parse_device(device)
-        self.gt_cam_K = cam_K  # [3, 3]
+        self.cam_K = cam_K / cam_K[-1, -1]  # [3, 3]
         self.gt_obj_id = obj_id  # [N]
         self.gt_cam_R_m2c = cam_R_m2c  # [N, 3, 3]
         self.gt_cam_t_m2c = cam_t_m2c  # [N, 3]
@@ -24,16 +22,20 @@ class Scene:
         R = torch.eye(3)[None]
         R[0, 0, 0] = R[0, 1, 1] = -1.
         K = torch.zeros((1, 4, 4))
-        K[0, :2, :3] = self.gt_cam_K[:2]
+        K[0, :2, :3] = self.cam_K[:2]
         K[0, 2, 3] = K[0, 3, 2] = 1.
         self.cameras = PerspectiveCameras(R=R, K=K, image_size=((self.height, self.width),),
                                           device=self.device, in_ndc=False)
 
-
         self.coor2d = torch.stack(torch.meshgrid(torch.arange(float(self.width)), torch.arange(float(self.height)),
-                                                 indexing='xy'), dim=0).to(self.device)
+                                                 indexing='xy'), dim=0).to(self.device)  # [2(XY), H, W]
         if debug_mode:
             self.coor2d /= torch.tensor([self.width, self.height]).to(self.device)[..., None, None]
+        else:
+            coor2d = self.coor2d.permute(1, 2, 0)  # [H, W, 2(XY)]
+            coor2d = torch.cat([coor2d, torch.ones_like(coor2d[..., :1])], dim=-1)[..., None]  # [H, W, 3(XY1), 1]
+            coor2d = torch.linalg.solve(self.cam_K[None, None], coor2d)  # solve(A, B) == A.inv() * B
+            self.coor2d = coor2d[..., :2, 0].permute(2, 0, 1)  # [2(XY), H, W]
 
         self.transformed_meshes = [self.objects[int(self.gt_obj_id[i])]
                                        .get_transformed_mesh(self.gt_cam_R_m2c[i], self.gt_cam_t_m2c[i])
@@ -72,8 +74,6 @@ class Scene:
         self.gt_mask_obj = masks[1:].bool()[:, None]  # [N, 1, H, W]
         self.gt_bbox_obj = get_bbox(self.gt_mask_obj)[:, 0]  # [N, 4(XYWH)]
 
-        self.images = None
-
     def render_scene_mesh(self, f=None, bg=None, num_images=1):
         for i in range(len(self.transformed_meshes)):
             self.transformed_meshes[i].textures = self.objects[int(self.gt_obj_id[i])].get_texture(f)
@@ -101,35 +101,9 @@ class Scene:
             )
         )
 
-        self.images = renderer(scene_mesh, include_textures=True).permute(0, 3, 1, 2)[:, :3]  # [B, 3(RGB), H, W]
+        images = renderer(scene_mesh, include_textures=True).permute(0, 3, 1, 2)[:, :3]  # [B, 3(RGB), H, W]
 
         if bg is not None:
             # bg [B or 1, 3(RGB), H, W] \in [0, 1]
-            self.images = self.images * self.gt_mask + bg * ~self.gt_mask
-        return self.images
-
-    def get_data(self, bbox, output_size=64):
-        # bbox [N, 4(XYWH)]
-        # output_size int, output is [N, C, output_size x output_size] image
-        # imgs: list of [N, C, H, W] or [C, H, W] images
-        crop_size, _ = bbox[:, 2:].max(dim=-1)
-        pad_size = int((crop_size.max() * .5).ceil())
-        x0, y0 = (bbox[:, :2].T - crop_size * .5).round().int() + pad_size
-        crop_size = crop_size.round().int()
-
-        def crop(img):
-            # [N, C, H, W] or [C, H, W]
-            padded_img = vF.pad(img, padding=pad_size)
-            c_imgs = [vF.resized_crop((padded_img[i] if img.dim() > 3 else padded_img)[None],
-                                      y0[i], x0[i], crop_size[i], crop_size[i], output_size) for i in range(len(bbox))]
-            # [1, C, H, W]
-            return torch.cat(c_imgs, dim=0)  # [N, C, H, W]
-
-        # F.interpolate doesn't support bool
-        result = {'gt_obj_id': self.gt_obj_id, 'gt_cam_K': self.gt_cam_K,
-                  'gt_cam_R_m2c': self.gt_cam_R_m2c, 'gt_cam_t_m2c': self.gt_cam_t_m2c,
-                  'gt_coor2d': crop(self.coor2d), 'gt_coor3d': crop(self.gt_coor3d_obj),
-                  'gt_mask_vis': crop(self.gt_mask_vis.to(dtype=torch.uint8)).bool(),
-                  'gt_mask_obj': crop(self.gt_mask_obj.to(dtype=torch.uint8)).bool(),
-                  'imgs': [crop(img) for img in self.images], 'dbg_imgs': self.images, 'dbg_bbox': bbox}
-        return result
+            images = images * self.gt_mask + bg * ~self.gt_mask
+        return images
