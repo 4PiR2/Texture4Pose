@@ -4,13 +4,16 @@ import cv2
 import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as vF
+from torch.utils.data import Dataset
 
 from dataloader.ObjMesh import ObjMesh
+from dataloader.Sample import Sample
 from dataloader.Scene import Scene
+from utils.const import debug_mode
 from utils.io import read_json_file, parse_device
 
 
-class BOPDataset:
+class BOPDataset(Dataset):
     def __init__(self, obj_list, path, transform=None, read_scene_from_bop=True, device=None):
         self.obj_list = obj_list
         self.path = path
@@ -66,17 +69,29 @@ class BOPDataset:
 
         scene = Scene(objects=self.objects, cam_K=cam_K, obj_id=obj_id, cam_R_m2c=gt_cam_R_m2c,
                       cam_t_m2c=gt_cam_t_m2c, width=640, height=480, device=self.device)
-        
+
         bg_path = os.path.join(self.data_path, '{:0>6d}/rgb/{:0>6d}.png'.format(2, item))
-        bg = torch.tensor(cv2.imread(bg_path, cv2.IMREAD_COLOR)[:, :, ::-1].copy(), device=self.device)\
+        bg = torch.tensor(cv2.imread(bg_path, cv2.IMREAD_COLOR)[:, :, ::-1].copy(), device=self.device) \
                  .permute(2, 0, 1)[None] / 255.  # [1, 3(RGB), H, W] \in [0, 1]
-        images = scene.render_scene_mesh(bg=bg)
+
+        a = torch.rand(1) * .5 + .5
+        d = torch.rand(1) * (1. - a)
+        s = 1. - (a + d)
+        ambient = a.expand(3)[None]
+        diffuse = d.expand(3)[None]
+        specular = s.expand(3)[None]
+        direction = torch.randn(3)[None]
+        shininess = torch.randint(low=40, high=80, size=(1,))  # shininess: 0-1000
+        image = scene.render_scene_mesh(ambient=ambient, diffuse=diffuse, specular=specular, direction=direction,
+                                        shininess=shininess, bg=bg)
+        # [1, 3(RGB), H, W]
 
         if self.transform is not None:
-            images = self.transform(images)
+            image = self.transform(image)  # [1, 3(RGB), H, W]
 
         output_size = 64  # output is [N, C, output_size x output_size] image
-        bbox = scene.gt_bbox_vis  # [N, 4(XYWH)]
+        selected = scene.gt_vis_ratio > .5  # visibility threshold to select object
+        bbox = scene.gt_bbox_vis[selected]  # [N, 4(XYWH)]
 
         crop_size, _ = bbox[:, 2:].max(dim=-1)
         pad_size = int((crop_size.max() * .5).ceil())
@@ -93,10 +108,13 @@ class BOPDataset:
             return torch.cat(c_imgs, dim=0)  # [N, C, H, W]
 
         # F.interpolate doesn't support bool
-        result = {'obj_id': obj_id, 'cam_K': cam_K,
-                  'gt_cam_R_m2c': gt_cam_R_m2c, 'gt_cam_t_m2c': gt_cam_t_m2c,
-                  'coor2d': crop(scene.coor2d), 'gt_coor3d': crop(scene.gt_coor3d_obj),
-                  'gt_mask_vis': crop(scene.gt_mask_vis.to(dtype=torch.uint8)).bool(),
-                  'gt_mask_obj': crop(scene.gt_mask_obj.to(dtype=torch.uint8)).bool(),
-                  'imgs': [crop(img) for img in images], 'dbg_imgs': images, 'dbg_bbox': bbox}
+        result = Sample(obj_id=obj_id[selected], cam_K=cam_K,
+                        gt_cam_R_m2c=gt_cam_R_m2c[selected], gt_cam_t_m2c=gt_cam_t_m2c[selected],
+                        coor2d=crop(scene.coor2d), gt_coor3d=crop(scene.gt_coor3d_obj[selected]),
+                        gt_mask_vis=crop(scene.gt_mask_vis[selected].to(dtype=torch.uint8)).bool(),
+                        gt_mask_obj=crop(scene.gt_mask_obj[selected].to(dtype=torch.uint8)).bool(),
+                        img=crop(image[0]),
+                        dbg_img=image if debug_mode else None,
+                        dbg_bbox=bbox if debug_mode else None,
+                        )
         return result

@@ -1,6 +1,6 @@
 import torch
 from pytorch3d.renderer import PerspectiveCameras, RasterizationSettings, MeshRasterizer, \
-    MeshRenderer, SoftPhongShader, AmbientLights, BlendParams
+    MeshRenderer, SoftPhongShader, BlendParams, DirectionalLights, Materials, HardPhongShader
 from pytorch3d.structures import join_meshes_as_scene, join_meshes_as_batch
 
 from utils.SimpleShader import SimpleShader
@@ -52,10 +52,16 @@ class Scene:
 
         images = gt_renderer(join_meshes_as_batch([scene_mesh, *self.transformed_meshes], include_textures=True))\
             .permute(0, 3, 1, 2)  # [1+N, H, W, 4(IXYZ)] -> [1+N, 4(IXYZ), H, W]
-        masks = images[:, 0].round().to(dtype=torch.uint8)  # [1+N, H, W]
         coor3d = images[:, 1:4]  # [1+N, 3(XYZ), H, W]
         self.gt_coor3d_vis = coor3d[0]  # [1, 3(XYZ), H, W]
         self.gt_coor3d_obj = coor3d[1:]  # [N, 3(XYZ), H, W]
+
+        masks = images[:, 0].round().to(dtype=torch.uint8)  # [1+N, H, W]
+        self.gt_mask = masks[0].bool()[None, None]  # [1, 1, H, W]
+        self.gt_mask_vis = torch.stack([masks[0] == obj_id for obj_id in self.gt_obj_id], dim=0)[:, None]
+        # [N, 1, H, W]
+        self.gt_mask_obj = masks[1:].bool()[:, None]  # [N, 1, H, W]
+        self.gt_vis_ratio = self.gt_mask_vis.sum(dim=(1, 2, 3)) / self.gt_mask_obj.sum(dim=(1, 2, 3))  # [N]
 
         def get_bbox(m):
             # mask: [..., H, W]
@@ -67,20 +73,19 @@ class Scene:
             h = h_mask.sum(dim=-1)  # [...]
             return torch.stack([x0 + w * .5, y0 + h * .5, w, h], dim=-1)  # [..., 4(XYWH)]
 
-        self.gt_mask = masks[0].bool()[None, None]  # [1, 1, H, W]
-        self.gt_mask_vis = torch.stack([masks[0] == obj_id for obj_id in self.gt_obj_id], dim=0)[:, None]
-        # [N, 1, H, W]
         self.gt_bbox_vis = get_bbox(self.gt_mask_vis)[:, 0]  # [N, 4(XYWH)]
-        self.gt_mask_obj = masks[1:].bool()[:, None]  # [N, 1, H, W]
         self.gt_bbox_obj = get_bbox(self.gt_mask_obj)[:, 0]  # [N, 4(XYWH)]
 
-    def render_scene_mesh(self, f=None, bg=None, num_images=1):
+    def render_scene_mesh(self, f=None, ambient=((1.,) * 3,), diffuse=((0.,) * 3,), specular=((0.,) * 3,),
+                          direction=((0., 0., -1.),), shininess=64, bg=None):
         for i in range(len(self.transformed_meshes)):
             self.transformed_meshes[i].textures = self.objects[int(self.gt_obj_id[i])].get_texture(f)
         scene_mesh = join_meshes_as_scene(self.transformed_meshes, include_textures=True)
 
-        lights = AmbientLights(device=self.device)
-        blend_params = BlendParams(sigma=1e-4, gamma=1e-4, background_color=(0., 0., 0.))
+        lights = DirectionalLights(ambient_color=ambient, diffuse_color=diffuse, specular_color=specular,
+                                   direction=direction, device=self.device)
+        materials = Materials(shininess=shininess, device=self.device)
+        blend_params = BlendParams(sigma=1e-4, gamma=1e-4, background_color=(0.,) * 3)
 
         raster_settings = RasterizationSettings(
             image_size=(self.height, self.width),
@@ -93,17 +98,19 @@ class Scene:
                 cameras=self.cameras,
                 raster_settings=raster_settings,
             ),
-            shader=SoftPhongShader(
+            shader=HardPhongShader(
                 device=self.device,
                 cameras=self.cameras,
                 lights=lights,
+                materials=materials,
                 blend_params=blend_params,
             )
         )
 
-        images = renderer(scene_mesh, include_textures=True).permute(0, 3, 1, 2)[:, :3]  # [B, 3(RGB), H, W]
+        image = renderer(scene_mesh, include_textures=True).permute(0, 3, 1, 2)[:, :3]  # [1(B), 3(RGB), H, W]
+        # image = image.clamp(max=1.)
 
         if bg is not None:
-            # bg [B or 1, 3(RGB), H, W] \in [0, 1]
-            images = images * self.gt_mask + bg * ~self.gt_mask
-        return images
+            # bg [1(B), 3(RGB), H, W] \in [0, 1]
+            image = image * self.gt_mask + bg * ~self.gt_mask
+        return image
