@@ -2,14 +2,17 @@ import time
 
 import cv2
 import numpy as np
+import pytorch3d
 import torch
-from pytorch3d.transforms import so3_relative_angle
+from torch.optim import Adam, SGD
 from torch.utils.data import DataLoader
 from torchvision.transforms import transforms as T
 
 from dataloader.BOPDataset import BOPDataset
 from dataloader.Sample import Sample
-from utils.const import lmo_objects, device
+from models.ConvPnPNet import ConvPnPNet
+from models.Loss import Loss
+from utils.const import lmo_objects, device, debug_mode
 
 if __name__ == '__main__':
     composed = None  # T.Compose([T.RandomGrayscale(p=0.1)])
@@ -17,39 +20,30 @@ if __name__ == '__main__':
     dataset = BOPDataset(obj_list=lmo_objects, path='data/BOP/lmo', transform=composed, device=device)
 
     train_dataloader = DataLoader(dataset, batch_size=2, shuffle=False, collate_fn=Sample.collate)
-    # ts = time.time()
-    # for i in train_dataloader:
+    model = ConvPnPNet(nIn=5).to(device)
+    optimizer = Adam(model.parameters(), lr=1e-3)
+
+    ts = time.time()
+    # for sample in train_dataloader:
     #     te = time.time()
+    #     rot, t = model(torch.cat([sample.gt_coor3d, sample.coor2d], dim=1))
+    #     rot = pytorch3d.transforms.rotation_6d_to_matrix(rot)
+    #     loss, _, dist = sample.eval_pred(rot, t)
+    #     print(float(loss))
+    #     optimizer.zero_grad()  # clear gradients for next train
+    #     loss.backward()  # backpropagation, compute gradients
+    #     optimizer.step()  # apply gradients
     #     print(te - ts)
     #     ts = te
 
     scene_id_test = 3
     result = dataset[scene_id_test]
-    result.visualize()
-
-    for i in range(1, 2):
-        mask = result['gt_mask_vis'][i].squeeze()
-        x = result['gt_coor3d'][i].permute(1, 2, 0)[mask]
-        y = result['coor2d'][i].permute(1, 2, 0)[mask]
-
-        gt_K = result['cam_K']
-        gt_R = result['gt_cam_R_m2c'][i]
-        gt_t = result['gt_cam_t_m2c'][i]
-
-        _, pred_R_exp, pred_t, _ = cv2.solvePnPRansac(x.cpu().numpy(), y.cpu().numpy(), np.eye(3), None)
-        pred_R, _ = cv2.Rodrigues(pred_R_exp)
-        pred_R, pred_t = torch.Tensor(pred_R).to(device), torch.Tensor(pred_t).to(device).flatten()
-
-        angle = so3_relative_angle(pred_R[None], gt_R[None])
-        dist = torch.norm(pred_t - gt_t)
-
-        gt_proj = (x @ gt_R.T + gt_t) @ gt_K.T
-        gt_proj = gt_proj[:, :2] / gt_proj[:, 2:]
-
-        pred_proj = (x @ pred_R.T + pred_t) @ gt_K.T
-        pred_proj = pred_proj[:, :2] / pred_proj[:, 2:]
-
-        a = 0
+    if debug_mode:
+        result.visualize()
+    R, t = result.sanity_check()
+    loss = Loss(dataset, result)
+    angle, dist = loss.relative_angle(R), loss.relative_dist(t)
+    a = 0
 
 
 # def poses_from_random(dataset, num_obj):

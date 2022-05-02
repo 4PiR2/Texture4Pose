@@ -1,23 +1,28 @@
+import cv2
+import numpy as np
 import torch
 from matplotlib import pyplot as plt, patches
+from pytorch3d.ops import efficient_pnp
 
 from utils.const import debug_mode, plot_colors
 
 
 class Sample:
-    def __init__(self, obj_id=None, cam_K=None, gt_cam_R_m2c=None, gt_cam_t_m2c=None, coor2d=None, gt_coor3d=None,
-                 gt_mask_vis=None, gt_mask_obj=None, img=None, dbg_img=None, dbg_bbox=None):
-        self.obj_id = obj_id
-        self.cam_K = cam_K
-        self.gt_cam_R_m2c = gt_cam_R_m2c
-        self.gt_cam_t_m2c = gt_cam_t_m2c
-        self.coor2d = coor2d
-        self.gt_coor3d = gt_coor3d
-        self.gt_mask_vis = gt_mask_vis
-        self.gt_mask_obj = gt_mask_obj
-        self.img = img
-        self.dbg_img = dbg_img
-        self.dbg_bbox = dbg_bbox
+    def __init__(self, obj_id=None, cam_K=None, gt_cam_R_m2c=None, gt_cam_t_m2c=None,
+                 coor2d=None, gt_coor3d=None, gt_mask_vis=None, gt_mask_obj=None, img=None,
+                 dbg_img=None, bbox=None, gt_cam_t_m2c_site=None):
+        self.obj_id: torch.Tensor = obj_id
+        self.cam_K: torch.Tensor = cam_K
+        self.gt_cam_R_m2c: torch.Tensor = gt_cam_R_m2c
+        self.gt_cam_t_m2c: torch.Tensor = gt_cam_t_m2c
+        self.gt_cam_t_m2c_site: torch.Tensor = gt_cam_t_m2c_site
+        self.coor2d: torch.Tensor = coor2d
+        self.gt_coor3d: torch.Tensor = gt_coor3d
+        self.gt_mask_vis: torch.Tensor = gt_mask_vis
+        self.gt_mask_obj: torch.Tensor = gt_mask_obj
+        self.img: torch.Tensor = img
+        self.dbg_img: torch.Tensor = dbg_img
+        self.bbox: torch.Tensor = bbox
 
     # @staticmethod
     @classmethod
@@ -25,13 +30,31 @@ class Sample:
         keys = [key for key in dir(batch[0]) if not key.startswith('__') and not callable(getattr(batch[0], key))]
         out = cls()
         for key in keys:
-            if key in ['cam_K']:
+            if key in ['dataset', 'cam_K']:
                 setattr(out, key, getattr(batch[0], key))
             else:
                 if key.startswith('dbg_') and debug_mode == False:
                     continue
                 setattr(out, key, torch.cat([getattr(b, key) for b in batch], dim=0))
         return out
+
+
+    def sanity_check(self):
+        pred_cam_R_m2c = torch.empty_like(self.gt_cam_R_m2c)
+        pred_cam_t_m2c = torch.empty_like(self.gt_cam_t_m2c)
+        for i in range(len(self.obj_id)):
+            mask = self.gt_mask_vis[i].squeeze()
+            x = self.gt_coor3d[i].permute(1, 2, 0)[mask]
+            y = self.coor2d[i].permute(1, 2, 0)[mask]
+            # sol = efficient_pnp(x[None], y[None])
+            # pred_R2, pred_t2 = sol.R[0].T, sol.T[0]
+            _, pred_R_exp, pred_t, _ = cv2.solvePnPRansac(x.cpu().numpy(), y.cpu().numpy(), np.eye(3), None,
+                                                          reprojectionError=.01)
+            pred_R, _ = cv2.Rodrigues(pred_R_exp)
+            device = self.obj_id.device
+            pred_cam_R_m2c[i] = torch.Tensor(pred_R).to(device)
+            pred_cam_t_m2c[i] = torch.Tensor(pred_t).to(device).flatten()
+        return pred_cam_R_m2c, pred_cam_t_m2c
 
     def visualize(self):
         def draw(ax, img_1, bg_1=None, mask=None, bboxes=None):
@@ -74,9 +97,10 @@ class Sample:
             draw(axs[1, 1], self.coor2d[i])
             plt.show()
 
-        for i in range(len(self.dbg_img)):
-            fig = plt.figure()
-            ax = plt.Axes(fig, [0., 0., 1., 1.])
-            fig.add_axes(ax)
-            draw(ax, self.dbg_img[i], bboxes=self.dbg_bbox)
-            plt.show()
+        if debug_mode:
+            for i in range(len(self.dbg_img)):
+                fig = plt.figure()
+                ax = plt.Axes(fig, [0., 0., 1., 1.])
+                fig.add_axes(ax)
+                draw(ax, self.dbg_img[i], bboxes=self.bbox)
+                plt.show()
