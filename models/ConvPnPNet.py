@@ -2,11 +2,11 @@ import torch
 from pytorch3d.transforms import rotation_6d_to_matrix
 from torch import nn
 from torch.nn.modules.batchnorm import _BatchNorm
-from mmcv.cnn import normal_init, constant_init
 
 from dataloader.Sample import Sample
 from utils.const import pnp_input_size, gdr_mode
 from utils.transform import calculate_bbox_crop, t_site_to_t
+from utils.weight_init import normal_init, constant_init
 
 
 class ConvPnPNet(nn.Module):
@@ -49,6 +49,20 @@ class ConvPnPNet(nn.Module):
                 normal_init(m, std=0.001)
         normal_init(self.fc_R, std=0.01)
         normal_init(self.fc_t, std=0.01)
+
+        if gdr_mode:
+            self.gdr_layer = nn.Conv2d(in_channels=5, out_channels=5, kernel_size=1)
+            weight = torch.eye(5)
+            bias = torch.zeros(5)
+            K = torch.Tensor([[572.4114, 0.0, 325.2611], [0.0, 573.57043, 242.04899]])
+            K[0] /= 640.
+            K[1] /= 480.
+            weight[3:, 3:] = K[:, :2]
+            bias[3:] = K[:, -1]
+            self.gdr_layer.weight = nn.Parameter(weight[..., None, None])
+            self.gdr_layer.bias = nn.Parameter(bias)
+        else:
+            self.gdr_layer = None
     
     def load_pretrain(self, gdr_pth_path):
         params = torch.load(gdr_pth_path)['model']
@@ -75,16 +89,17 @@ class ConvPnPNet(nn.Module):
             self.fc_t.weight = pnp_params['pnp_net.fc_t.weight']
             self.fc_t.bias = pnp_params['pnp_net.fc_t.bias']
 
-    def forward(self, sample: Sample):
-        c2d = sample.coor2d
-        if gdr_mode:
-            c2d = c2d.permute(0, 2, 3, 1)  # [N, H, W, 2(XY)]
-            c2d = torch.cat([c2d, torch.ones_like(c2d[..., :1])], dim=-1)[..., None]  # [N, H, W, 3(XY1), 1]
-            c2d = sample.cam_K[None, None, None] @ c2d
-            c2d = c2d[..., :2, 0].permute(0, 3, 1, 2)  # [N, 2(XY), H, W]
-            c2d /= torch.tensor([640, 480]).to(c2d.device)[None, ..., None, None]
+    def forward(self, sample: Sample, pred_coor3d=None):
+        if pred_coor3d is None:
+            pred_coor3d = sample.gt_coor3d
+        elif gdr_mode:
+            pred_coor3d = (pred_coor3d - .5) * sample.obj_size[..., None, None]
 
-        x = torch.cat([sample.gt_coor3d, c2d], dim=1)
+        x = torch.cat([pred_coor3d, sample.coor2d], dim=1)
+
+        if self.gdr_layer is not None:
+            x = self.gdr_layer(x)  # coor2d \in [0, 1]
+
         x = self.conv_layers(x)
         x = self.fc_layers(x)
         pred_cam_R_m2c_6d, pred_cam_t_m2c_site = self.fc_R(x), self.fc_t(x)

@@ -1,7 +1,6 @@
 import torch
 
 debug_mode = False
-
 gdr_mode = True
 
 plot_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
@@ -16,4 +15,5 @@ lmo_objects = {1: 'ape', 5: 'can', 6: 'cat', 8: 'driller', 9: 'duck', 10: 'eggbo
 
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
+img_input_size = 256
 pnp_input_size = 64

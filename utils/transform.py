@@ -1,12 +1,8 @@
 import torch
 
-from utils.const import gdr_mode
-
 
 def calculate_bbox_crop(bbox):
     crop_size, _ = bbox[:, 2:].max(dim=-1)  # [N]
-    if gdr_mode:
-        crop_size *= 1.5
     pad_size = int((crop_size.max() * .5).ceil())
     x0, y0 = (bbox[:, :2].T - crop_size * .5).round().int() + pad_size
     crop_size = crop_size.round().int()

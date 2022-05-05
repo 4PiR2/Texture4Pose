@@ -12,8 +12,9 @@ from utils.const import debug_mode, plot_colors
 class Sample:
     def __init__(self, obj_id=None, cam_K=None, gt_cam_R_m2c=None, gt_cam_t_m2c=None,
                  coor2d=None, gt_coor3d=None, gt_mask_vis=None, gt_mask_obj=None, img=None,
-                 dbg_img=None, bbox=None, gt_cam_t_m2c_site=None):
+                 dbg_img=None, bbox=None, gt_cam_t_m2c_site=None, obj_size=None):
         self.obj_id: torch.Tensor = obj_id
+        self.obj_size: torch.Tensor = obj_size
         self.cam_K: torch.Tensor = cam_K
         self.gt_cam_R_m2c: torch.Tensor = gt_cam_R_m2c
         self.gt_cam_t_m2c: torch.Tensor = gt_cam_t_m2c

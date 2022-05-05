@@ -9,7 +9,7 @@ from torch.utils.data import Dataset
 from dataloader.ObjMesh import ObjMesh
 from dataloader.Sample import Sample
 from dataloader.Scene import Scene
-from utils.const import debug_mode, pnp_input_size
+from utils.const import debug_mode, pnp_input_size, img_input_size, gdr_mode
 from utils.io import read_json_file, parse_device
 from utils.transform import calculate_bbox_crop, t_to_t_site
 
@@ -67,6 +67,7 @@ class BOPDataset(Dataset):
         gt_cam_R_m2c = torch.stack(gt_cam_R_m2c, dim=0)
         gt_cam_t_m2c = torch.stack(gt_cam_t_m2c, dim=0)
         cam_K = torch.tensor(self.scene_camera[item]['cam_K'], device=self.device).reshape(3, 3)
+        obj_size = torch.stack([self.objects[int(i)].size for i in obj_id], dim=0)  # extents: [N, 3(XYZ)]
 
         scene = Scene(objects=self.objects, cam_K=cam_K, obj_id=obj_id, cam_R_m2c=gt_cam_R_m2c,
                       cam_t_m2c=gt_cam_t_m2c, width=640, height=480, device=self.device)
@@ -92,25 +93,27 @@ class BOPDataset(Dataset):
 
         selected = scene.gt_vis_ratio >= .5  # visibility threshold to select object
         bbox = scene.gt_bbox_vis[selected]  # [N, 4(XYWH)]
+        if gdr_mode:
+            bbox[:, 2:] *= 1.5
         crop_size, pad_size, x0, y0 = calculate_bbox_crop(bbox)
 
-        def crop(img):
+        def crop(img, out_size=pnp_input_size):
             # [N, C, H, W] or [C, H, W]
             padded_img = vF.pad(img, padding=pad_size)
             c_imgs = [vF.resized_crop((padded_img[i] if img.dim() > 3 else padded_img)[None],
-                                      y0[i], x0[i], crop_size[i], crop_size[i], pnp_input_size) for i in
+                                      y0[i], x0[i], crop_size[i], crop_size[i], out_size) for i in
                       range(len(bbox))]
             # [1, C, H, W]
             return torch.cat(c_imgs, dim=0)  # [N, C, H, W]
 
         # F.interpolate doesn't support bool
-        result = Sample(obj_id=obj_id[selected], cam_K=cam_K,
+        result = Sample(obj_id=obj_id[selected], obj_size=obj_size[selected], cam_K=cam_K,
                         gt_cam_R_m2c=gt_cam_R_m2c[selected], gt_cam_t_m2c=gt_cam_t_m2c[selected],
                         gt_cam_t_m2c_site=t_to_t_site(gt_cam_t_m2c[selected], bbox, pnp_input_size / crop_size, cam_K),
                         coor2d=crop(scene.coor2d), gt_coor3d=crop(scene.gt_coor3d_obj[selected]),
                         gt_mask_vis=crop(scene.gt_mask_vis[selected].to(dtype=torch.uint8)).bool(),
                         gt_mask_obj=crop(scene.gt_mask_obj[selected].to(dtype=torch.uint8)).bool(),
-                        img=crop(image[0]),
+                        img=crop(image[0], img_input_size),
                         dbg_img=image if debug_mode else None,
                         bbox=bbox,
                         )
