@@ -19,32 +19,16 @@ from models.rot_head import RotWithRegionHead
 from utils.const import lmo_objects, device, debug_mode
 
 if __name__ == '__main__':
-    block_type, layers, channels, name = resnet_spec[34]
+    block_type, layers, channels, _ = resnet_spec[34]
     backbone_net = ResNetBackboneNet(block_type, layers, in_channel=3)
     rot_head_net = RotWithRegionHead(channels[-1], num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1,
                                      num_regions=64)
     pnp_net = ConvPnPNet(nIn=5)
     model = GDRN(backbone_net, rot_head_net, pnp_net).to(device)
-    state_dict = torch.load('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth')['model']
-    model.load_state_dict(state_dict, strict=False)
-    model.pnp_net.load_pretrain('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth')
-
-    x, roi_coord_2d, roi_centers, roi_whs = torch.load('/home/user/Desktop/x.pth')
-    sample = Sample(img=x, coor2d=roi_coord_2d, bbox=torch.cat([roi_centers, roi_whs], dim=-1), obj_size=
-                    torch.Tensor([[75.8686, 77.5992, 91.769]]).to(device) * 1e-3)
-    model.eval()
-    #a = model(sample)
-
-    # cam_K = torch.Tensor([[572.4114, 0.0, 325.2611], [0.0, 573.57043, 242.04899], [0.0, 0.0, 1.0]]).to(device)
-    # x = torch.load('/home/user/Desktop/x.pth')[:, :5]
+    model.load_pretrain('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth')
 
     composed = None  # T.Compose([T.RandomGrayscale(p=0.1)])
     dataset = BOPDataset(obj_list=lmo_objects, path='data/BOP/lmo', transform=composed, device=device)
-
-    # sample = Sample(gt_coor3d=x[:, :3], coor2d=x[:, 3:],
-    #                 bbox=torch.Tensor([[265.8882, 178.7394, 43.6519, 57.4446]]).to(device),
-    #                 cam_K=cam_K)
-    # model(sample)
 
     # train_dataloader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=Sample.collate)
     # model = ConvPnPNet(nIn=5).to(device)
@@ -69,9 +53,7 @@ if __name__ == '__main__':
     scene_id_test = 3
     sample = dataset[scene_id_test]
 
-    # noise = torch.randn_like(sample.gt_coor3d) * 1e-5
-    # m = (~sample.gt_mask_vis).expand(sample.gt_coor3d.shape)
-    # sample.gt_coor3d[m] = noise[m]
+    model.eval()
     R, t, t_site = model(sample)
     angle, dist = sample.relative_angle(R), sample.relative_dist(t)
     angle *= 180. / torch.pi

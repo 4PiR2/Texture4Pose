@@ -11,14 +11,9 @@ from utils.weight_init import normal_init, constant_init
 
 class ConvPnPNet(nn.Module):
     def __init__(self, nIn, featdim=128, rot_dim=6, num_layers=3, num_gn_groups=32):
-        """
-        Args:
-            nIn: input feature channel
-        """
         super().__init__()
 
         assert num_layers >= 3, num_layers
-        # nIn += 64
         conv_layers = []
         for i in range(3):
             in_channels = nIn if i == 0 else featdim
@@ -50,20 +45,6 @@ class ConvPnPNet(nn.Module):
         normal_init(self.fc_R, std=0.01)
         normal_init(self.fc_t, std=0.01)
 
-        if gdr_mode:
-            self.gdr_layer = nn.Conv2d(in_channels=5, out_channels=5, kernel_size=1)
-            weight = torch.eye(5)
-            bias = torch.zeros(5)
-            K = torch.Tensor([[572.4114, 0.0, 325.2611], [0.0, 573.57043, 242.04899]])
-            K[0] /= 640.
-            K[1] /= 480.
-            weight[3:, 3:] = K[:, :2]
-            bias[3:] = K[:, -1]
-            self.gdr_layer.weight = nn.Parameter(weight[..., None, None])
-            self.gdr_layer.bias = nn.Parameter(bias)
-        else:
-            self.gdr_layer = None
-    
     def load_pretrain(self, gdr_pth_path):
         params = torch.load(gdr_pth_path)['model']
         pnp_params = {}
@@ -71,7 +52,14 @@ class ConvPnPNet(nn.Module):
             if k.startswith('pnp_net.'):
                 pnp_params[k] = nn.Parameter(params[k])
         with torch.no_grad():
-            self.conv_layers[0].weight = nn.Parameter(pnp_params['pnp_net.features.0.weight'][:, :5])
+            K = torch.Tensor([[572.4114, 0., 325.2611], [0., 573.57043, 242.04899]]) / torch.Tensor([[640.], [480.]])
+            w0 = torch.eye(5, 6)
+            w0[3:, 3:] = K
+            weight = pnp_params['pnp_net.features.0.weight'][:, :5]  # [o, 5, k, k]
+            weight = weight.permute(2, 3, 0, 1) @ w0[None, None].to(weight.device)
+            weight = weight.permute(2, 3, 0, 1)  # [o, 6, k, k]
+            self.conv_layers[0].weight = nn.Parameter(weight[:, :-1])
+            self.conv_layers[0].bias = nn.Parameter(weight[:, -1].sum(dim=(-2, -1)))
             self.conv_layers[1].weight = pnp_params['pnp_net.features.1.weight']
             self.conv_layers[1].bias = pnp_params['pnp_net.features.1.bias']
             self.conv_layers[3].weight = pnp_params['pnp_net.features.3.weight']
@@ -96,9 +84,6 @@ class ConvPnPNet(nn.Module):
             pred_coor3d = (pred_coor3d - .5) * sample.obj_size[..., None, None]
 
         x = torch.cat([pred_coor3d, sample.coor2d], dim=1)
-
-        if self.gdr_layer is not None:
-            x = self.gdr_layer(x)  # coor2d \in [0, 1]
 
         x = self.conv_layers(x)
         x = self.fc_layers(x)

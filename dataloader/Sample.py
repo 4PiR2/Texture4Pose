@@ -93,6 +93,13 @@ class Sample:
 
 
     def visualize(self):
+        def normalize(x):
+            # x: [C, H, W]
+            min_val = x.min(-1)[0].min(-1)[0]
+            max_val = x.max(-1)[0].max(-1)[0]
+            x = (x - min_val[..., None, None]) / (max_val - min_val)[..., None, None]
+            return x
+
         def draw(ax, img_1, bg_1=None, mask=None, bboxes=None):
             img_255 = img_1.permute(1, 2, 0)[..., :3] * 255
             if img_255.shape[-1] == 2:
@@ -128,15 +135,14 @@ class Sample:
         for i in range(len(self.obj_id)):
             fig, axs = plt.subplots(2, 2)
             draw(axs[0, 0], self.img[i])
-            draw(axs[0, 1], self.gt_coor3d[i])
+            draw(axs[0, 1], self.gt_coor3d[i] / self.obj_size[i, ..., None, None] + .5)
             draw(axs[1, 0], torch.cat([self.gt_mask_obj[i], self.gt_mask_vis[i]], dim=0))
-            draw(axs[1, 1], self.coor2d[i])
+            draw(axs[1, 1], normalize(self.coor2d[i]))
             plt.show()
 
         if debug_mode:
-            for i in range(len(self.dbg_img)):
-                fig = plt.figure()
-                ax = plt.Axes(fig, [0., 0., 1., 1.])
-                fig.add_axes(ax)
-                draw(ax, self.dbg_img[i], bboxes=self.bbox)
-                plt.show()
+            fig = plt.figure()
+            ax = plt.Axes(fig, [0., 0., 1., 1.])
+            fig.add_axes(ax)
+            draw(ax, self.dbg_img[0], bboxes=self.bbox)
+            plt.show()

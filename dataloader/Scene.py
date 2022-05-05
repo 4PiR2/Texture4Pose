@@ -27,15 +27,11 @@ class Scene:
         self.cameras = PerspectiveCameras(R=R, K=K, image_size=((self.height, self.width),),
                                           device=self.device, in_ndc=False)
 
-        self.coor2d = torch.stack(torch.meshgrid(torch.arange(float(self.width)), torch.arange(float(self.height)),
-                                                 indexing='xy'), dim=0).to(self.device)  # [2(XY), H, W]
-        if debug_mode:
-            self.coor2d /= torch.tensor([self.width, self.height]).to(self.device)[..., None, None]
-        else:
-            coor2d = self.coor2d.permute(1, 2, 0)  # [H, W, 2(XY)]
-            coor2d = torch.cat([coor2d, torch.ones_like(coor2d[..., :1])], dim=-1)[..., None]  # [H, W, 3(XY1), 1]
-            coor2d = torch.linalg.solve(self.cam_K[None, None], coor2d)  # solve(A, B) == A.inv() @ B
-            self.coor2d = coor2d[..., :2, 0].permute(2, 0, 1)  # [2(XY), H, W]
+        coor2d_x, coor2d_y = torch.meshgrid(torch.arange(float(self.width)), torch.arange(float(self.height)),
+                                            indexing='xy')  # [H, W]
+        coor2d = torch.stack([coor2d_x, coor2d_y, torch.ones_like(coor2d_x)], dim=-1).to(self.device)  # [H, W, 3(XY1)]
+        coor2d = torch.linalg.solve(self.cam_K[None, None], coor2d[..., None])  # solve(K, M) == K.inv() @ M
+        self.coor2d = coor2d[..., :2, 0].permute(2, 0, 1)  # [2(XY), H, W]
 
         self.transformed_meshes = [self.objects[int(self.gt_obj_id[i])]
                                        .get_transformed_mesh(self.gt_cam_R_m2c[i], self.gt_cam_t_m2c[i])
