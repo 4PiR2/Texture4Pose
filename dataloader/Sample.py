@@ -3,7 +3,9 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt, patches
 from pytorch3d.ops import efficient_pnp
+from pytorch3d.transforms import so3_relative_angle
 
+from dataloader.ObjMesh import ObjMesh
 from utils.const import debug_mode, plot_colors
 
 
@@ -38,7 +40,6 @@ class Sample:
                 setattr(out, key, torch.cat([getattr(b, key) for b in batch], dim=0))
         return out
 
-
     def sanity_check(self):
         pred_cam_R_m2c = torch.empty_like(self.gt_cam_R_m2c)
         pred_cam_t_m2c = torch.empty_like(self.gt_cam_t_m2c)
@@ -55,6 +56,40 @@ class Sample:
             pred_cam_R_m2c[i] = torch.Tensor(pred_R).to(device)
             pred_cam_t_m2c[i] = torch.Tensor(pred_t).to(device).flatten()
         return pred_cam_R_m2c, pred_cam_t_m2c
+
+    def pm_loss(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor) -> torch.Tensor:
+        """
+        :param objects_eval: dict[int, ObjMesh]
+        :param pred_cam_R_m2c: [N, 3, 3]
+        :return: [N]
+        """
+        n = len(self.obj_id)
+        loss = torch.empty(n, device=pred_cam_R_m2c.device)
+        for i in range(n):
+            obj_id = int(self.obj_id[i])
+            loss[i] = objects_eval[obj_id].point_match_error(pred_cam_R_m2c[i], self.gt_cam_R_m2c[i])
+        return loss
+
+    def t_site_center_loss(self, pred_cam_t_m2c_site: torch.Tensor) -> torch.Tensor:
+        """
+        :param pred_cam_t_m2c_site: [N, 3]
+        :return: [N]
+        """
+        return torch.norm(self.gt_cam_t_m2c_site[:, :2] - pred_cam_t_m2c_site[:, :2], p=1, dim=-1)
+
+    def t_site_depth_loss(self, pred_cam_t_m2c_site: torch.Tensor) -> torch.Tensor:
+        """
+        :param pred_cam_t_m2c_site: [N, 3]
+        :return: [N]
+        """
+        return torch.abs(self.gt_cam_t_m2c_site[:, 2] - pred_cam_t_m2c_site[:, 2])
+
+    def relative_angle(self, pred_cam_R_m2c: torch.Tensor) -> torch.Tensor:
+        return so3_relative_angle(pred_cam_R_m2c, self.gt_cam_R_m2c, eps=1.)
+
+    def relative_dist(self, pred_cam_t_m2c: torch.Tensor) -> torch.Tensor:
+        return torch.norm(pred_cam_t_m2c - self.gt_cam_t_m2c, p=2, dim=-1)
+
 
     def visualize(self):
         def draw(ax, img_1, bg_1=None, mask=None, bboxes=None):

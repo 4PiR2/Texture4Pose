@@ -19,15 +19,15 @@ class BOPDataset(Dataset):
         self.obj_list: list[int] = obj_list
         self.path: str = path
         self.transform: Any = transform
-        self.device = parse_device(device)
+        self.device: torch.device = parse_device(device)
 
         path_models = os.path.join(path, 'models')
         path_models_eval = os.path.join(path, 'models_eval')
         objects_info = read_json_file(os.path.join(path_models, 'models_info.json'))
         objects_info_eval = read_json_file(os.path.join(path_models_eval, 'models_info.json'))
 
-        self.objects = {}
-        self.objects_eval = {}
+        self.objects: dict[int, ObjMesh] = {}
+        self.objects_eval: dict[int, ObjMesh] = {}
         for obj_id in obj_list:
             self.objects[obj_id] = ObjMesh(device=self.device, obj_id=int(obj_id), name=obj_list[obj_id], is_eval=False,
                                            mesh_path=os.path.join(path_models, f'obj_{int(obj_id):0>6d}.ply'),
@@ -37,8 +37,8 @@ class BOPDataset(Dataset):
                                                 mesh_path=os.path.join(path_models_eval, f'obj_{int(obj_id):0>6d}.ply'),
                                                 **objects_info_eval[str(obj_id)])
 
-        self.scene_camera = []
-        self.scene_gt = []
+        self.scene_camera: list[dict[str, Any]] = []
+        self.scene_gt: list[dict[str, Any]] = []
 
         self.data_path = os.path.join(path, 'test_all')
         if read_scene_from_bop:

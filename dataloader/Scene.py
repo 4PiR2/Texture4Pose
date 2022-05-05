@@ -34,7 +34,7 @@ class Scene:
         else:
             coor2d = self.coor2d.permute(1, 2, 0)  # [H, W, 2(XY)]
             coor2d = torch.cat([coor2d, torch.ones_like(coor2d[..., :1])], dim=-1)[..., None]  # [H, W, 3(XY1), 1]
-            coor2d = torch.linalg.solve(self.cam_K[None, None], coor2d)  # solve(A, B) == A.inv() * B
+            coor2d = torch.linalg.solve(self.cam_K[None, None], coor2d)  # solve(A, B) == A.inv() @ B
             self.coor2d = coor2d[..., :2, 0].permute(2, 0, 1)  # [2(XY), H, W]
 
         self.transformed_meshes = [self.objects[int(self.gt_obj_id[i])]
