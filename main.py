@@ -1,3 +1,4 @@
+import gc
 import time
 
 import cv2
@@ -19,12 +20,6 @@ from models.rot_head import RotWithRegionHead
 from utils.const import lmo_objects, device, debug_mode, lm_objects, lm13_objects
 
 if __name__ == '__main__':
-    dataset = BOPDataset(obj_list=lmo_objects, path='data/BOP/lmo', device=device)
-    scene_id_test = 3
-    sample = dataset[scene_id_test]
-    sample.visualize()
-
-
     block_type, layers, channels, _ = resnet_spec[34]
     backbone_net = ResNetBackboneNet(block_type, layers, in_channel=3)
     rot_head_net = RotWithRegionHead(channels[-1], num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1,
@@ -34,7 +29,8 @@ if __name__ == '__main__':
     model.load_pretrain('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth')
 
     composed = None  # T.Compose([T.RandomGrayscale(p=0.1)])
-    dataset = BOPDataset(obj_list=lmo_objects, path='data/BOP/lmo', transform=composed, device=device)
+    test_objects = {5: 'can'}
+    dataset = BOPDataset(obj_list=test_objects, path='data/BOP/lm', render_mode=False, lmo_mode=False, device=device)
 
     # train_dataloader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=Sample.collate)
     # model = ConvPnPNet(nIn=5).to(device)
@@ -56,17 +52,21 @@ if __name__ == '__main__':
     #         ts = te
     #     a = 0
 
-    scene_id_test = 3
-    sample = dataset[scene_id_test]
-
     model.eval()
-    R, t, t_site = model(sample)
-    angle, dist = sample.relative_angle(R), sample.relative_dist(t)
-    angle *= 180. / torch.pi
-    dist *= 100.
+    N = len(dataset)
+    results = torch.zeros(N, 2)
+    with torch.no_grad():
+        for i in range(N):
+            sample = dataset[i]
+            R, t, t_site = model(sample)
+            angle, dist = sample.relative_angle(R), sample.relative_dist(t)
+            angle *= 180. / torch.pi
+            dist *= 100.
+            results[i, 0], results[i, 1] = angle, dist
+            # gc.collect()
+            # torch.cuda.empty_cache()
+            a = 0
 
-    if debug_mode:
-        sample.visualize()
     R, t = sample.sanity_check()
     angle, dist = sample.relative_angle(R), sample.relative_dist(t)
     a = 0

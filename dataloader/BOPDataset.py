@@ -15,13 +15,14 @@ from utils.transform import calculate_bbox_crop, t_to_t_site, get_coor2d
 
 
 class BOPDataset(Dataset):
-    def __init__(self, obj_list, path, transform=None, read_scene_from_bop=True, device=None):
+    def __init__(self, obj_list, path, transform=None, read_scene_from_bop=True,
+                 render_mode=True, lmo_mode=True, device=None):
         self.obj_list: list[int] = obj_list
         self.path: str = path
         self.transform: Any = transform
         self.device: torch.device = parse_device(device)
-        self.render_mode = True
-        self.lmo_mode = True
+        self.render_mode: bool = render_mode
+        self.lmo_mode: bool = lmo_mode
 
         path_models = os.path.join(path, 'models')
         path_models_eval = os.path.join(path, 'models_eval')
@@ -44,7 +45,7 @@ class BOPDataset(Dataset):
         self.scene_gt_info: list[dict[str, Any]] = []
         self.scene_id: list[int] = []
 
-        self.data_path = os.path.join(path, 'test_all')
+        self.data_path: str = os.path.join(path, 'test_all')
         if read_scene_from_bop:
             for dir in os.listdir(self.data_path):
                 if not dir.startswith('0'):
@@ -145,9 +146,8 @@ class BOPDataset(Dataset):
         depth_mask = depth_img != 0.
         depth_img *= self.scene_camera[item]['depth_scale'] * ObjMesh.scale
         depth_img = torch.cat([coor2d * depth_img, depth_img], dim=1)  # [1, 3(XYZ), H, W]
-        gt_cam_R_c2m = gt_cam_R_m2c.transpose(-2, -1)  # [N, 3, 3]
-        gt_cam_t_c2m = - gt_cam_R_c2m @ gt_cam_t_m2c[..., None]  # [N, 3, 1]
-        gt_coor3d_vis = (gt_cam_R_c2m @ depth_img.reshape(1, 3, -1) + gt_cam_t_c2m).reshape(-1, 3, H, W) * depth_mask
+        gt_coor3d_vis = (gt_cam_R_m2c.transpose(-2, -1) @ (depth_img.reshape(1, 3, -1) - gt_cam_t_m2c[..., None]))\
+            .reshape(-1, 3, H, W) * depth_mask
 
         gt_mask_obj = torch.empty(len(obj_id), 1, H, W).to(self.device, dtype=torch.bool)
         gt_mask_vis = torch.empty_like(gt_mask_obj)
@@ -157,7 +157,7 @@ class BOPDataset(Dataset):
             mask_vis_path = os.path.join(self.data_path,
                                          '{:0>6d}/mask_visib/{:0>6d}_{:0>6d}.png'.format(o_id, scene_id, i))
             gt_mask_vis[i] = read_depth_img_file(mask_vis_path)
-        gt_mask = gt_mask_obj.any(dim=0)[None]
+        # gt_mask = gt_mask_obj.any(dim=0)[None]
 
         def cvt_bbox(tensor_list_4):
             bbox = torch.stack(tensor_list_4, dim=-1).to(self.device, dtype=torch.float)

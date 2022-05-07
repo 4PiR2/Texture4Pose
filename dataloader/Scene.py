@@ -21,7 +21,7 @@ class Scene:
 
         R = torch.eye(3)[None]
         R[0, 0, 0] = R[0, 1, 1] = -1.
-        K = torch.zeros((1, 4, 4))
+        K = torch.zeros(1, 4, 4)
         K[0, :2, :3] = self.cam_K[:2]
         K[0, 2, 3] = K[0, 3, 2] = 1.
         self.cameras = PerspectiveCameras(R=R, K=K, image_size=((self.height, self.width),),
@@ -36,7 +36,9 @@ class Scene:
 
         gt_renderer = MeshRenderer(
             rasterizer=MeshRasterizer(cameras=self.cameras,
-                                      raster_settings=RasterizationSettings(image_size=(self.height, self.width))),
+                                      raster_settings=RasterizationSettings(
+                                          image_size=(self.height, self.width),
+                                          max_faces_per_bin=scene_mesh.num_faces_per_mesh().sum()),),
             shader=SimpleShader(background=0.),
         )
 
@@ -81,7 +83,7 @@ class Scene:
             image_size=(self.height, self.width),
             blur_radius=0.,
             faces_per_pixel=1,
-            max_faces_per_bin=scene_mesh.num_faces_per_mesh()[0],
+            max_faces_per_bin=scene_mesh.num_faces_per_mesh().sum(),
             # bin_size=0,  # Noisy Renderings on LM: https://github.com/facebookresearch/pytorch3d/issues/867
         )
 
