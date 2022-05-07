@@ -16,9 +16,15 @@ from models.Loss import Loss
 from models.gdrn import GDRN
 from models.resnet_backbone import ResNetBackboneNet, resnet_spec
 from models.rot_head import RotWithRegionHead
-from utils.const import lmo_objects, device, debug_mode
+from utils.const import lmo_objects, device, debug_mode, lm_objects, lm13_objects
 
 if __name__ == '__main__':
+    dataset = BOPDataset(obj_list=lmo_objects, path='data/BOP/lmo', device=device)
+    scene_id_test = 3
+    sample = dataset[scene_id_test]
+    sample.visualize()
+
+
     block_type, layers, channels, _ = resnet_spec[34]
     backbone_net = ResNetBackboneNet(block_type, layers, in_channel=3)
     rot_head_net = RotWithRegionHead(channels[-1], num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1,

@@ -1,5 +1,18 @@
 import torch
 
+from utils.io import parse_device
+
+
+def get_coor2d(width, height, cam_K=None, device=None):
+    device = cam_K.device if cam_K is not None else parse_device(device)
+    coor2d_x, coor2d_y = torch.meshgrid(torch.arange(float(width)), torch.arange(float(height)),
+                                        indexing='xy')  # [H, W]
+    coor2d = torch.stack([coor2d_x, coor2d_y, torch.ones_like(coor2d_x)], dim=0).to(device)  # [3(XY1), H, W]
+    if cam_K is not None:
+        coor2d = torch.linalg.solve(cam_K, coor2d.reshape(3, -1)).reshape(3, height, width)
+        # solve(K, M) == K.inv() @ M
+    return coor2d[:2]  # [2(XY), H, W]
+
 
 def calculate_bbox_crop(bbox):
     crop_size, _ = bbox[:, 2:].max(dim=-1)  # [N]

@@ -9,14 +9,14 @@ from utils.io import parse_device
 
 
 class Scene:
-    def __init__(self, objects, cam_K, obj_id, cam_R_m2c, cam_t_m2c, width=640, height=480, device=None, **kwargs):
+    def __init__(self, objects, cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, width=512, height=512, device=None, **kwargs):
         self.kwargs = kwargs
         self.objects = objects  # dict
         self.device = parse_device(device)
         self.cam_K = cam_K / cam_K[-1, -1]  # [3, 3]
         self.gt_obj_id = obj_id  # [N]
-        self.gt_cam_R_m2c = cam_R_m2c  # [N, 3, 3]
-        self.gt_cam_t_m2c = cam_t_m2c  # [N, 3]
+        self.gt_cam_R_m2c = gt_cam_R_m2c  # [N, 3, 3]
+        self.gt_cam_t_m2c = gt_cam_t_m2c  # [N, 3]
         self.width, self.height = width, height
 
         R = torch.eye(3)[None]
@@ -26,12 +26,6 @@ class Scene:
         K[0, 2, 3] = K[0, 3, 2] = 1.
         self.cameras = PerspectiveCameras(R=R, K=K, image_size=((self.height, self.width),),
                                           device=self.device, in_ndc=False)
-
-        coor2d_x, coor2d_y = torch.meshgrid(torch.arange(float(self.width)), torch.arange(float(self.height)),
-                                            indexing='xy')  # [H, W]
-        coor2d = torch.stack([coor2d_x, coor2d_y, torch.ones_like(coor2d_x)], dim=-1).to(self.device)  # [H, W, 3(XY1)]
-        coor2d = torch.linalg.solve(self.cam_K[None, None], coor2d[..., None])  # solve(K, M) == K.inv() @ M
-        self.coor2d = coor2d[..., :2, 0].permute(2, 0, 1)  # [2(XY), H, W]
 
         self.transformed_meshes = [self.objects[int(self.gt_obj_id[i])]
                                        .get_transformed_mesh(self.gt_cam_R_m2c[i], self.gt_cam_t_m2c[i])
@@ -73,7 +67,7 @@ class Scene:
         self.gt_bbox_obj = get_bbox(self.gt_mask_obj)[:, 0]  # [N, 4(XYWH)]
 
     def render_scene_mesh(self, f=None, ambient=((1.,) * 3,), diffuse=((0.,) * 3,), specular=((0.,) * 3,),
-                          direction=((0., 0., -1.),), shininess=64, bg=None):
+                          direction=((0., 0., -1.),), shininess=64):
         for i in range(len(self.transformed_meshes)):
             self.transformed_meshes[i].textures = self.objects[int(self.gt_obj_id[i])].get_texture(f)
         scene_mesh = join_meshes_as_scene(self.transformed_meshes, include_textures=True)
@@ -87,6 +81,8 @@ class Scene:
             image_size=(self.height, self.width),
             blur_radius=0.,
             faces_per_pixel=1,
+            max_faces_per_bin=scene_mesh.num_faces_per_mesh()[0],
+            # bin_size=0,  # Noisy Renderings on LM: https://github.com/facebookresearch/pytorch3d/issues/867
         )
 
         renderer = MeshRenderer(
@@ -103,10 +99,6 @@ class Scene:
             )
         )
 
-        image = renderer(scene_mesh, include_textures=True).permute(0, 3, 1, 2)[:, :3]  # [1(B), 3(RGB), H, W]
-        # image = image.clamp(max=1.)
-
-        if bg is not None:
-            # bg [1(B), 3(RGB), H, W] \in [0, 1]
-            image = image * self.gt_mask + bg * ~self.gt_mask
-        return image
+        img = renderer(scene_mesh, include_textures=True).permute(0, 3, 1, 2)[:, :3]  # [1(B), 3(RGB), H, W]
+        # img = img.clamp(max=1.)
+        return img
