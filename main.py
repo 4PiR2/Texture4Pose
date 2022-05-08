@@ -1,4 +1,5 @@
 import gc
+import pickle
 import time
 
 import cv2
@@ -17,7 +18,7 @@ from models.Loss import Loss
 from models.gdrn import GDRN
 from models.resnet_backbone import ResNetBackboneNet, resnet_spec
 from models.rot_head import RotWithRegionHead
-from utils.const import lmo_objects, device, debug_mode, lm_objects, lm13_objects
+from utils.const import lmo_objects, device, debug_mode, lm_objects, lm13_objects, gdr_mode
 
 if __name__ == '__main__':
     block_type, layers, channels, _ = resnet_spec[34]
@@ -29,7 +30,7 @@ if __name__ == '__main__':
     model.load_pretrain('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth')
 
     composed = None  # T.Compose([T.RandomGrayscale(p=0.1)])
-    test_objects = {5: 'can'}
+    test_objects = {1: 'ape'}
     dataset = BOPDataset(obj_list=test_objects, path='data/BOP/lm', render_mode=False, lmo_mode=False, device=device)
 
     # train_dataloader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=Sample.collate)
@@ -52,20 +53,27 @@ if __name__ == '__main__':
     #         ts = te
     #     a = 0
 
+    with open('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/inference_/lm_13_test/a6-cPnP-lm13_lm_13_test_preds.pkl', 'rb') as f:
+        gdr_results = pickle.load(f)['ape']
     model.eval()
-    N = len(dataset)
-    results = torch.zeros(N, 2)
+    N = len(gdr_results)
+    results = []
     with torch.no_grad():
-        for i in range(N):
-            sample = dataset[i]
+        for pic_path in gdr_results:
+            id = int(pic_path.split('/')[-1].split('.')[0])
+            gdr_result = gdr_results[pic_path]
+            sample = dataset[id]
+            # sample.img = torch.load('/home/user/Desktop/x.pth').flip(dims=[1])
             R, t, t_site = model(sample)
             angle, dist = sample.relative_angle(R), sample.relative_dist(t)
-            angle *= 180. / torch.pi
-            dist *= 100.
-            results[i, 0], results[i, 1] = angle, dist
+            gdr_angle = sample.relative_angle(torch.Tensor(gdr_result['R']).to(device))
+            gdr_dist = sample.relative_dist(torch.Tensor(gdr_result['t']).to(device))
+            result = [float(angle[0]), float(dist[0]), float(gdr_angle[0]), float(gdr_dist[0])]
+            results.append(result)
             # gc.collect()
             # torch.cuda.empty_cache()
             a = 0
+    results = np.array(results)
 
     R, t = sample.sanity_check()
     angle, dist = sample.relative_angle(R), sample.relative_dist(t)

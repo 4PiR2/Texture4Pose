@@ -86,10 +86,13 @@ class Sample:
         return torch.abs(self.gt_cam_t_m2c_site[:, 2] - pred_cam_t_m2c_site[:, 2])
 
     def relative_angle(self, pred_cam_R_m2c: torch.Tensor) -> torch.Tensor:
-        return so3_relative_angle(pred_cam_R_m2c, self.gt_cam_R_m2c, eps=1.)
+        R_diff = pred_cam_R_m2c @ self.gt_cam_R_m2c.transpose(-2, -1)  # [..., 3, 3]
+        trace = R_diff[..., 0, 0] + R_diff[..., 1, 1] + R_diff[..., 2, 2]  # [...]
+        radians_angle = ((trace.clamp(-1., 3.) - 1.) * .5).acos()  # [...]
+        return radians_angle * (180. / torch.pi)  # [N], 360 degrees
 
     def relative_dist(self, pred_cam_t_m2c: torch.Tensor) -> torch.Tensor:
-        return torch.norm(pred_cam_t_m2c - self.gt_cam_t_m2c, p=2, dim=-1)
+        return torch.norm(pred_cam_t_m2c - self.gt_cam_t_m2c, p=2, dim=-1) * 100.  # [N], cm
 
 
     def visualize(self):

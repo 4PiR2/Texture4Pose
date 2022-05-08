@@ -11,7 +11,7 @@ from dataloader.Sample import Sample
 from dataloader.Scene import Scene
 from utils.const import debug_mode, pnp_input_size, img_input_size, gdr_mode
 from utils.io import read_json_file, parse_device, read_img_file, read_depth_img_file
-from utils.transform import calculate_bbox_crop, t_to_t_site, get_coor2d
+from utils.transform import calc_bbox_crop, t_to_t_site, get_coor2d_map
 
 
 class BOPDataset(Dataset):
@@ -78,7 +78,7 @@ class BOPDataset(Dataset):
             2 if self.lmo_mode else obj_id[0], self.scene_id[item]))
         img = read_img_file(img_path, device=self.device)
         _, _, height, width = img.shape
-        coor2d = get_coor2d(width, height, cam_K)
+        coor2d = get_coor2d_map(width, height, cam_K)
 
         if self.render_mode:
             rendered_img, gt_coor3d, gt_mask, gt_vis_ratio, gt_mask_vis, gt_mask_obj, gt_bbox_vis, gt_bbox_obj = \
@@ -95,7 +95,7 @@ class BOPDataset(Dataset):
         bbox = gt_bbox_vis[selected]  # [N, 4(XYWH)]
         if gdr_mode:
             bbox[:, 2:] *= 1.5
-        crop_size, pad_size, x0, y0 = calculate_bbox_crop(bbox)
+        crop_size, pad_size, x0, y0 = calc_bbox_crop(bbox)
 
         def crop(img, out_size=pnp_input_size):
             # [N, C, H, W] or [C, H, W]

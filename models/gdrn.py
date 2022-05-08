@@ -22,4 +22,5 @@ class GDRN(nn.Module):
     def load_pretrain(self, gdr_pth_path):
         state_dict = torch.load(gdr_pth_path)['model']
         self.load_state_dict(state_dict, strict=False)
+        self.backbone.conv1.weight = nn.Parameter(self.backbone.conv1.weight.flip(dims=[1]))
         self.pnp_net.load_pretrain(gdr_pth_path)

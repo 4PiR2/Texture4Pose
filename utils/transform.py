@@ -1,9 +1,11 @@
 import torch
+import torch.nn.functional as F
+from pytorch3d.transforms import quaternion_to_matrix
 
 from utils.io import parse_device
 
 
-def get_coor2d(width, height, cam_K=None, device=None):
+def get_coor2d_map(width, height, cam_K=None, device=None):
     device = cam_K.device if cam_K is not None else parse_device(device)
     coor2d_x, coor2d_y = torch.meshgrid(torch.arange(float(width)), torch.arange(float(height)),
                                         indexing='xy')  # [H, W]
@@ -14,7 +16,7 @@ def get_coor2d(width, height, cam_K=None, device=None):
     return coor2d[:2]  # [2(XY), H, W]
 
 
-def calculate_bbox_crop(bbox):
+def calc_bbox_crop(bbox):
     crop_size, _ = bbox[:, 2:].max(dim=-1)  # [N]
     pad_size = int((crop_size.max() * .5).ceil())
     x0, y0 = (bbox[:, :2].T - crop_size * .5).round().int() + pad_size
@@ -24,7 +26,8 @@ def calculate_bbox_crop(bbox):
 
 def t_to_t_site(t, bbox, r=None, K=None):
     if K is not None:
-        t_site = t @ K.T  # [N, 3], (ox*tz, oy*tz, tz) = t.T @ K.T
+        # if bbox is in image space
+        t_site = t @ K.T  # [N, 3], (ox * tz, oy * tz, tz) = t.T @ K.T
     else:
         t_site = t.clone()
     t_site[:, :2] = (t_site[:, :2] / t_site[:, 2:] - bbox[:, :2]) / bbox[:, 2:]
@@ -39,5 +42,29 @@ def t_site_to_t(t_site, bbox, r=None, K=None):
     t[:, :2] = t[:, :2] * bbox[:, 2:] + bbox[:, :2]  # (ox, oy, .) = (dx * w + cx, dy * h + cy, .)
     t[:, :2] *= t[:, 2:]  # (ox * tz, oy * tz, .)
     if K is not None:
+        # if bbox is in image space
         t = torch.linalg.solve(K, t.T).T  # [N, 3], (inv(K) @ t).T
     return t
+
+
+def rot_allo2ego(translation):
+    """
+    Compute rotation between ray to object centroid and optical center ray
+
+    rot_ego = rot_allo2ego @ rot_allo
+
+    :param translation: [..., 3]
+    :return: [..., 3, 3]
+    """
+    cam_ray = torch.tensor([0., 0., 1.], device=translation.device)  # [3]
+    obj_ray = F.normalize(translation, dim=-1)  # [..., 3]
+
+    half_cos_theta = obj_ray[..., -1:] * .5  # [..., 1] \in [-.5, .5], cam_ray.dot(obj_ray), assume cam_ray (0., 0., 1.)
+    cos_half_theta = (.5 + half_cos_theta).sqrt()  # [..., 1] \in [0., 1.]
+    sin_half_theta = (.5 - half_cos_theta).sqrt()  # [..., 1] \in [0., 1.]
+
+    # Compute rotation between ray to object centroid and optical center ray
+    axis = F.normalize(torch.cross(cam_ray.expand_as(obj_ray), obj_ray), dim=-1)  # [..., 3]
+    # Build quaternion representing the rotation around the computed axis
+    quat_allo_to_ego = torch.cat([cos_half_theta, axis * sin_half_theta], dim=-1)  # [..., 4]
+    return quaternion_to_matrix(quat_allo_to_ego)  # [..., 3, 3]
