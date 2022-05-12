@@ -15,9 +15,8 @@ class GDRN(nn.Module):
         # x.shape [bs, 3, 256, 256]
         features = self.backbone(sample.img)
         mask, coor_3d, region = self.rot_head_net(features)
-
-        pred_cam_R_m2c, pred_cam_t_m2c, pred_cam_t_m2c_site = self.pnp_net(sample, coor_3d)
-        return pred_cam_R_m2c, pred_cam_t_m2c, pred_cam_t_m2c_site
+        pred_cam_R_m2c, pred_cam_t_m2c, *other_outputs = self.pnp_net(sample, coor_3d)
+        return pred_cam_R_m2c, pred_cam_t_m2c, *other_outputs
 
     def load_pretrain(self, gdr_pth_path):
         state_dict = torch.load(gdr_pth_path)['model']

@@ -5,7 +5,6 @@ from pytorch3d.structures import Meshes
 
 from utils.io import parse_device
 from utils.mbsc.exact_min_bound_sphere_3D import exact_min_bound_sphere_3D
-from utils.const import debug_mode
 
 
 class ObjMesh:
@@ -45,16 +44,22 @@ class ObjMesh:
         else:
             return f(self)
 
-    def point_match_error(self, R1: torch.Tensor, R2: torch.Tensor, p: int = 1) -> torch.Tensor:
+    def average_distance(self, R1: torch.Tensor, R2: torch.Tensor, t1: torch.Tensor = None, t2: torch.Tensor = None,
+                         p: int = 2) -> torch.Tensor:
         """
-        :param R1: [B, 3, 3]
-        :param R2: [B, 3, 3]
+        average distance
+        http://www.stefan-hinterstoisser.com/papers/hinterstoisser2012accv.pdf
+
+        :param R1: [..., 3, 3]
+        :param t1: [..., 3]
+        :param R2: [..., 3, 3]
+        :param t2: [..., 3]
         :param p: int
-        :return: [B]
+        :return: [...]
         """
-        if R1.dim() < 3:
-            R1 = R1[None]
-        if R2.dim() < 3:
-            R2 = R2[None]
-        errors = torch.norm(self.mesh.verts_packed()[None] @ (R1 - R2).transpose(-2, -1), p=p, dim=-1)
-        return errors.mean(dim=-1)
+        verts = self.mesh.verts_packed().expand(*R1.shape[:-2], -1, -1)  # [..., V, 3]
+        errors = verts @ (R1 - R2).transpose(-2, -1)  # [..., V, 3]
+        if t1 is not None and t2 is not None:
+            errors += (t1 - t2)[..., None, :]  # dt: [..., 1, 3]
+        distances = torch.norm(errors, p=p, dim=-1)  # [..., V]
+        return distances.mean(dim=-1)  # [...]

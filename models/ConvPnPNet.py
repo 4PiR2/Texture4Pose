@@ -104,4 +104,4 @@ class ConvPnPNet(nn.Module):
         pred_cam_t_m2c = t_site_to_t(pred_cam_t_m2c_site, sample.bbox,
                                      pnp_input_size / crop_size, sample.cam_K)
         pred_cam_R_m2c = rot_allo2ego(pred_cam_t_m2c) @ pred_cam_R_m2c_allo
-        return pred_cam_R_m2c, pred_cam_t_m2c, pred_cam_t_m2c_site
+        return pred_cam_R_m2c, pred_cam_t_m2c, pred_cam_R_m2c_6d, pred_cam_R_m2c_allo, pred_cam_t_m2c_site

@@ -67,9 +67,26 @@ class Sample:
         n = len(self.obj_id)
         loss = torch.empty(n, device=pred_cam_R_m2c.device)
         for i in range(n):
-            obj_id = int(self.obj_id[i])
-            loss[i] = objects_eval[obj_id].point_match_error(pred_cam_R_m2c[i], self.gt_cam_R_m2c[i])
+            obj = objects_eval[int(self.obj_id[i])]
+            loss[i] = obj.average_distance(pred_cam_R_m2c[i], self.gt_cam_R_m2c[i], p=1)
         return loss
+
+    def add_score(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor)\
+            -> torch.Tensor:
+        """
+        :param objects_eval: dict[int, ObjMesh]
+        :param pred_cam_R_m2c: [N, 3, 3]
+        :param pred_cam_t_m2c: [N, 3]
+        :return: [N]
+        """
+        n = len(self.obj_id)
+        add = torch.empty(n, device=pred_cam_R_m2c.device)
+        for i in range(n):
+            obj = objects_eval[int(self.obj_id[i])]
+            add[i] = obj.average_distance(pred_cam_R_m2c[i], self.gt_cam_R_m2c[i], pred_cam_t_m2c[i],
+                                          self.gt_cam_t_m2c[i])
+            add[i] /= obj.diameter
+        return add
 
     def t_site_center_loss(self, pred_cam_t_m2c_site: torch.Tensor) -> torch.Tensor:
         """
@@ -89,7 +106,7 @@ class Sample:
         R_diff = pred_cam_R_m2c @ self.gt_cam_R_m2c.transpose(-2, -1)  # [..., 3, 3]
         trace = R_diff[..., 0, 0] + R_diff[..., 1, 1] + R_diff[..., 2, 2]  # [...]
         radians_angle = ((trace.clamp(-1., 3.) - 1.) * .5).acos()  # [...]
-        return radians_angle * (180. / torch.pi)  # [N], 360 degrees
+        return radians_angle * (180. / torch.pi)  # [...], 360 degrees
 
     def relative_dist(self, pred_cam_t_m2c: torch.Tensor) -> torch.Tensor:
         return torch.norm(pred_cam_t_m2c - self.gt_cam_t_m2c, p=2, dim=-1) * 100.  # [N], cm

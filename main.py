@@ -6,10 +6,14 @@ import cv2
 import numpy as np
 import pytorch3d
 import torch
+import torch.nn.functional as F
+from pytorch3d.transforms import euler_angles_to_matrix, matrix_to_quaternion, so3_rotation_angle, \
+    matrix_to_euler_angles, random_rotations
 from torch import nn
 from torch.optim import Adam, SGD
 from torch.utils.data import DataLoader
 from torchvision.transforms import transforms as T
+from matplotlib import pyplot as plt
 
 from dataloader.BOPDataset import BOPDataset
 from dataloader.Sample import Sample
@@ -59,20 +63,26 @@ if __name__ == '__main__':
     N = len(gdr_results)
     results = []
     with torch.no_grad():
+        i = 0
         for pic_path in gdr_results:
             id = int(pic_path.split('/')[-1].split('.')[0])
             gdr_result = gdr_results[pic_path]
             sample = dataset[id]
-            # sample.img = torch.load('/home/user/Desktop/x.pth').flip(dims=[1])
-            R, t, t_site = model(sample)
+            # sample.img = torch.load(f'/home/user/Desktop/x/data/{i}.pth').flip(dims=[1])
+            R, t, *_ = model(sample)
             angle, dist = sample.relative_angle(R), sample.relative_dist(t)
-            gdr_angle = sample.relative_angle(torch.Tensor(gdr_result['R']).to(device))
-            gdr_dist = sample.relative_dist(torch.Tensor(gdr_result['t']).to(device))
-            result = [float(angle[0]), float(dist[0]), float(gdr_angle[0]), float(gdr_dist[0])]
+            add = sample.add_score(dataset.objects_eval, R, t)
+            gdr_R = torch.tensor(gdr_result['R'], device=device)[None]
+            gdr_t = torch.tensor(gdr_result['t'], device=device)[None]
+            gdr_angle = sample.relative_angle(gdr_R)
+            gdr_dist = sample.relative_dist(gdr_t)
+            gdr_add = sample.add_score(dataset.objects_eval, gdr_R, gdr_t)
+
+            result = [float(angle), float(gdr_angle), float(dist), float(gdr_dist), float(add), float(gdr_add)]
             results.append(result)
             # gc.collect()
             # torch.cuda.empty_cache()
-            a = 0
+            i += 1
     results = np.array(results)
 
     R, t = sample.sanity_check()

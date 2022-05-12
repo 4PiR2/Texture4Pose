@@ -93,8 +93,6 @@ class BOPDataset(Dataset):
 
         selected = gt_vis_ratio >= .5  # visibility threshold to select object
         bbox = gt_bbox_vis[selected]  # [N, 4(XYWH)]
-        if gdr_mode:
-            bbox[:, 2:] *= 1.5
         crop_size, pad_size, x0, y0 = calc_bbox_crop(bbox)
 
         def crop(img, out_size=pnp_input_size):
