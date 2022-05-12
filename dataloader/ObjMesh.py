@@ -33,11 +33,6 @@ class ObjMesh:
         verts = self.mesh.verts_packed()
         return self.mesh.offset_verts(verts @ (cam_R_m2c.T - torch.eye(3, device=self.device)) + cam_t_m2c)
 
-    def get_gt_texture(self):
-        verts = self.mesh.verts_packed()  # [V, 3(XYZ)]
-        gt_texture = torch.cat([torch.full((len(verts), 1), self.obj_id, device=self.device), verts], dim=1)
-        return TexturesVertex(gt_texture[None])  # [1, V, 4(IXYZ)]
-
     def get_texture(self, f=None):
         if f is None:
             return self.mesh.textures

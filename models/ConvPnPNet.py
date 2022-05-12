@@ -5,7 +5,7 @@ from torch.nn.modules.batchnorm import _BatchNorm
 
 from dataloader.Sample import Sample
 from utils.const import pnp_input_size, gdr_mode
-from utils.transform import calc_bbox_crop, t_site_to_t, rot_allo2ego
+from utils.transform import calc_bbox2d_crop, t_site_to_t, rot_allo2ego
 from utils.weight_init import normal_init, constant_init
 
 
@@ -52,7 +52,7 @@ class ConvPnPNet(nn.Module):
             if k.startswith('pnp_net.'):
                 pnp_params[k] = nn.Parameter(params[k])
         with torch.no_grad():
-            K = torch.Tensor([[572.4114, 0., 325.2611], [0., 573.57043, 242.04899]]) / torch.Tensor([[640.], [480.]])
+            K = torch.tensor([[572.4114, 0., 325.2611], [0., 573.57043, 242.04899]]) / torch.tensor([[640.], [480.]])
             w0 = torch.eye(5, 6)
             w0[3:, 3:] = K
             weight = pnp_params['pnp_net.features.0.weight'][:, :5]  # [o, 5, k, k]
@@ -86,11 +86,11 @@ class ConvPnPNet(nn.Module):
 
     def forward(self, sample: Sample, pred_coor3d=None):
         if pred_coor3d is None:
-            pred_coor3d = sample.gt_coor3d
+            pred_coor3d = sample.gt_coord3d
         else:
             pred_coor3d = (pred_coor3d - .5) * sample.obj_size[..., None, None]  # denormalize from [0., 1.]
 
-        x = torch.cat([pred_coor3d, sample.coor2d], dim=1)
+        x = torch.cat([pred_coor3d, sample.coord2d], dim=1)
 
         if gdr_mode and False:
             x = self.gdr_conv(x)
@@ -100,7 +100,7 @@ class ConvPnPNet(nn.Module):
         pred_cam_R_m2c_allo = rotation_6d_to_matrix(pred_cam_R_m2c_6d)
         if gdr_mode:
             pred_cam_R_m2c_allo = pred_cam_R_m2c_allo.transpose(-2, -1)
-        crop_size, *_ = calc_bbox_crop(sample.bbox)
+        crop_size, *_ = calc_bbox2d_crop(sample.bbox)
         pred_cam_t_m2c = t_site_to_t(pred_cam_t_m2c_site, sample.bbox,
                                      pnp_input_size / crop_size, sample.cam_K)
         pred_cam_R_m2c = rot_allo2ego(pred_cam_t_m2c) @ pred_cam_R_m2c_allo

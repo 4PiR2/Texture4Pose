@@ -4,7 +4,7 @@ from pytorch3d.renderer.blending import hard_rgb_blend, BlendParams
 
 
 class SimpleShader(nn.Module):
-    def __init__(self, background: float):
+    def __init__(self, background: float = 0.):
         super().__init__()
         self.background = background
 

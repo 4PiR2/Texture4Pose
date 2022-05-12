@@ -6,7 +6,7 @@ from utils.const import gdr_mode
 from utils.io import parse_device
 
 
-def get_coor2d_map(width, height, cam_K=None, device=None):
+def get_coord2d_map(width, height, cam_K=None, device=None):
     device = cam_K.device if cam_K is not None else parse_device(device)
     coor2d_x, coor2d_y = torch.meshgrid(torch.arange(float(width)), torch.arange(float(height)),
                                         indexing='xy')  # [H, W]
@@ -17,7 +17,18 @@ def get_coor2d_map(width, height, cam_K=None, device=None):
     return coor2d[:2]  # [2(XY), H, W]
 
 
-def calc_bbox_crop(bbox):
+def get_bbox2d_from_mask(mask):
+    # mask: [..., H, W]
+    w_mask = mask.any(dim=-2)  # [..., W]
+    h_mask = mask.any(dim=-1)  # [..., H]
+    x0 = w_mask.to(dtype=torch.uint8).argmax(dim=-1)  # [...]
+    y0 = h_mask.to(dtype=torch.uint8).argmax(dim=-1)  # [...]
+    w = w_mask.sum(dim=-1)  # [...]
+    h = h_mask.sum(dim=-1)  # [...]
+    return torch.stack([x0 + w * .5, y0 + h * .5, w, h], dim=-1)  # [..., 4(XYWH)]
+
+
+def calc_bbox2d_crop(bbox):
     crop_size, _ = bbox[:, 2:].max(dim=-1)  # [N]
     if gdr_mode:
         crop_size *= 1.5

@@ -25,6 +25,10 @@ from models.rot_head import RotWithRegionHead
 from utils.const import lmo_objects, device, debug_mode, lm_objects, lm13_objects, gdr_mode
 
 if __name__ == '__main__':
+    dataset = BOPDataset(obj_list=lmo_objects, path='data/BOP/lmo', render_mode=True, lmo_mode=True, device=device)
+    sample = dataset[3]
+    sample.visualize()
+
     block_type, layers, channels, _ = resnet_spec[34]
     backbone_net = ResNetBackboneNet(block_type, layers, in_channel=3)
     rot_head_net = RotWithRegionHead(channels[-1], num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1,

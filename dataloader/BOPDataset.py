@@ -8,10 +8,10 @@ from torch.utils.data.dataloader import default_collate
 
 from dataloader.ObjMesh import ObjMesh
 from dataloader.Sample import Sample
-from dataloader.Scene import Scene
+from dataloader.Scene import Scene, SceneBatch
 from utils.const import debug_mode, pnp_input_size, img_input_size, gdr_mode
 from utils.io import read_json_file, parse_device, read_img_file, read_depth_img_file
-from utils.transform import calc_bbox_crop, t_to_t_site, get_coor2d_map
+from utils.transform import calc_bbox2d_crop, t_to_t_site, get_coord2d_map
 
 
 class BOPDataset(Dataset):
@@ -78,22 +78,22 @@ class BOPDataset(Dataset):
             2 if self.lmo_mode else obj_id[0], self.scene_id[item]))
         img = read_img_file(img_path, device=self.device)
         _, _, height, width = img.shape
-        coor2d = get_coor2d_map(width, height, cam_K)
+        coord2d = get_coord2d_map(width, height, cam_K)
 
         if self.render_mode:
-            rendered_img, gt_coor3d, gt_mask, gt_vis_ratio, gt_mask_vis, gt_mask_obj, gt_bbox_vis, gt_bbox_obj = \
+            rendered_img, gt_coord3d, gt_mask, gt_vis_ratio, gt_mask_vis, gt_mask_obj, gt_bbox_vis, gt_bbox_obj = \
                 self.get_item_by_rendering(cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, width, height)
             img = rendered_img * gt_mask + img * ~gt_mask
         else:
-            gt_coor3d, gt_vis_ratio, gt_mask_vis, gt_mask_obj, gt_bbox_vis, gt_bbox_obj = \
-                self.get_item_by_loading(item, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, coor2d)
+            gt_coord3d, gt_vis_ratio, gt_mask_vis, gt_mask_obj, gt_bbox_vis, gt_bbox_obj = \
+                self.get_item_by_loading(item, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, coord2d)
 
         if self.transform is not None:
-            img = self.transform(img)  # [1, 3(RGB), H, W]
+            img = self.transform(img)  # [B, 3(RGB), H, W]
 
         selected = gt_vis_ratio >= .5  # visibility threshold to select object
         bbox = gt_bbox_vis[selected]  # [N, 4(XYWH)]
-        crop_size, pad_size, x0, y0 = calc_bbox_crop(bbox)
+        crop_size, pad_size, x0, y0 = calc_bbox2d_crop(bbox)
 
         def crop(img, out_size=pnp_input_size):
             # [N, C, H, W] or [C, H, W]
@@ -108,10 +108,10 @@ class BOPDataset(Dataset):
         result = Sample(obj_id=obj_id[selected], obj_size=obj_size[selected], cam_K=cam_K,
                         gt_cam_R_m2c=gt_cam_R_m2c[selected], gt_cam_t_m2c=gt_cam_t_m2c[selected],
                         gt_cam_t_m2c_site=t_to_t_site(gt_cam_t_m2c[selected], bbox, pnp_input_size / crop_size, cam_K),
-                        coor2d=crop(coor2d), gt_coor3d=crop(gt_coor3d[selected]),
+                        coord2d=crop(coord2d), gt_coord3d=crop(gt_coord3d[selected]),
                         gt_mask_vis=crop(gt_mask_vis[selected].to(dtype=torch.uint8)).bool(),
                         gt_mask_obj=crop(gt_mask_obj[selected].to(dtype=torch.uint8)).bool(),
-                        img=crop(img[0], img_input_size),
+                        img=crop(img.squeeze(), img_input_size),
                         dbg_img=img if debug_mode else None,
                         bbox=bbox,
                         )
@@ -119,7 +119,7 @@ class BOPDataset(Dataset):
 
     def get_item_by_rendering(self, cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, width=512, height=512):
         scene = Scene(objects=self.objects, cam_K=cam_K, obj_id=obj_id, gt_cam_R_m2c=gt_cam_R_m2c,
-                      gt_cam_t_m2c=gt_cam_t_m2c, width=width, height=height, device=self.device)
+                           gt_cam_t_m2c=gt_cam_t_m2c, width=width, height=height, device=self.device)
 
         a = torch.rand(1) * .5 + .5
         d = torch.rand(1) * (1. - a)
@@ -129,13 +129,13 @@ class BOPDataset(Dataset):
         specular = s.expand(3)[None]
         direction = torch.randn(3)[None]
         shininess = torch.randint(low=40, high=80, size=(1,))  # shininess: 0-1000
-        img = scene.render_scene_mesh(ambient=ambient, diffuse=diffuse, specular=specular, direction=direction,
-                                      shininess=shininess)
-        # [1, 3(RGB), H, W]
-        return img, scene.gt_coor3d_obj, scene.gt_mask, scene.gt_vis_ratio, \
+        images = scene.render_scene(ambient=ambient, diffuse=diffuse, specular=specular, direction=direction,
+                                 shininess=shininess)
+        # [B, 3(RGB), H, W]
+        return images, scene.gt_coord3d_obj, scene.gt_mask, scene.gt_vis_ratio, \
                scene.gt_mask_vis, scene.gt_mask_obj, scene.gt_bbox_vis, scene.gt_bbox_obj
 
-    def get_item_by_loading(self, item, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, coor2d):
+    def get_item_by_loading(self, item, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, coord2d):
         scene_id = self.scene_id[item]
         o_id = 2 if self.lmo_mode else obj_id[0]
         depth_path = os.path.join(self.data_path, '{:0>6d}/depth/{:0>6d}.png'.format(o_id, scene_id))
@@ -143,8 +143,8 @@ class BOPDataset(Dataset):
         H, W = depth_img.shape[-2:]
         depth_mask = depth_img != 0.
         depth_img *= self.scene_camera[item]['depth_scale'] * ObjMesh.scale
-        depth_img = torch.cat([coor2d * depth_img, depth_img], dim=1)  # [1, 3(XYZ), H, W]
-        gt_coor3d_vis = (gt_cam_R_m2c.transpose(-2, -1) @ (depth_img.reshape(1, 3, -1) - gt_cam_t_m2c[..., None]))\
+        depth_img = torch.cat([coord2d * depth_img, depth_img], dim=1)  # [1, 3(XYZ), H, W]
+        gt_coord3d_vis = (gt_cam_R_m2c.transpose(-2, -1) @ (depth_img.reshape(1, 3, -1) - gt_cam_t_m2c[..., None]))\
             .reshape(-1, 3, H, W) * depth_mask
 
         gt_mask_obj = torch.empty(len(obj_id), 1, H, W).to(self.device, dtype=torch.bool)
@@ -166,4 +166,4 @@ class BOPDataset(Dataset):
         gt_bbox_vis = cvt_bbox(scene_gt_info['bbox_visib'])
         gt_bbox_obj = cvt_bbox(scene_gt_info['bbox_obj'])
         gt_vis_ratio = scene_gt_info['visib_fract'].to(self.device, dtype=torch.float)
-        return gt_coor3d_vis, gt_vis_ratio, gt_mask_vis, gt_mask_obj, gt_bbox_vis, gt_bbox_obj
+        return gt_coord3d_vis, gt_vis_ratio, gt_mask_vis, gt_mask_obj, gt_bbox_vis, gt_bbox_obj

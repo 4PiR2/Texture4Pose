@@ -11,7 +11,7 @@ from utils.const import debug_mode, plot_colors
 
 class Sample:
     def __init__(self, obj_id=None, cam_K=None, gt_cam_R_m2c=None, gt_cam_t_m2c=None,
-                 coor2d=None, gt_coor3d=None, gt_mask_vis=None, gt_mask_obj=None, img=None,
+                 coord2d=None, gt_coord3d=None, gt_mask_vis=None, gt_mask_obj=None, img=None,
                  dbg_img=None, bbox=None, gt_cam_t_m2c_site=None, obj_size=None):
         self.obj_id: torch.Tensor = obj_id
         self.obj_size: torch.Tensor = obj_size
@@ -19,8 +19,8 @@ class Sample:
         self.gt_cam_R_m2c: torch.Tensor = gt_cam_R_m2c
         self.gt_cam_t_m2c: torch.Tensor = gt_cam_t_m2c
         self.gt_cam_t_m2c_site: torch.Tensor = gt_cam_t_m2c_site
-        self.coor2d: torch.Tensor = coor2d
-        self.gt_coor3d: torch.Tensor = gt_coor3d
+        self.coord2d: torch.Tensor = coord2d
+        self.gt_coord3d: torch.Tensor = gt_coord3d
         self.gt_mask_vis: torch.Tensor = gt_mask_vis
         self.gt_mask_obj: torch.Tensor = gt_mask_obj
         self.img: torch.Tensor = img
@@ -46,8 +46,8 @@ class Sample:
         pred_cam_t_m2c = torch.empty_like(self.gt_cam_t_m2c)
         for i in range(len(self.obj_id)):
             mask = self.gt_mask_vis[i].squeeze()
-            x = self.gt_coor3d[i].permute(1, 2, 0)[mask]
-            y = self.coor2d[i].permute(1, 2, 0)[mask]
+            x = self.gt_coord3d[i].permute(1, 2, 0)[mask]
+            y = self.coord2d[i].permute(1, 2, 0)[mask]
             # sol = efficient_pnp(x[None], y[None])
             # pred_R2, pred_t2 = sol.R[0].T, sol.T[0]
             _, pred_R_exp, pred_t, _ = cv2.solvePnPRansac(x.cpu().numpy(), y.cpu().numpy(), np.eye(3), None,
@@ -155,9 +155,9 @@ class Sample:
         for i in range(len(self.obj_id)):
             fig, axs = plt.subplots(2, 2)
             draw(axs[0, 0], self.img[i])
-            draw(axs[0, 1], self.gt_coor3d[i] / self.obj_size[i, ..., None, None] + .5)
+            draw(axs[0, 1], self.gt_coord3d[i] / self.obj_size[i, ..., None, None] + .5)
             draw(axs[1, 0], torch.cat([self.gt_mask_obj[i], self.gt_mask_vis[i]], dim=0))
-            draw(axs[1, 1], normalize(self.coor2d[i]))
+            draw(axs[1, 1], normalize(self.coord2d[i]))
             plt.show()
 
         if debug_mode:
