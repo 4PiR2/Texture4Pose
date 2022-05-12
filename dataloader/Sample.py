@@ -2,8 +2,6 @@ import cv2
 import numpy as np
 import torch
 from matplotlib import pyplot as plt, patches
-from pytorch3d.ops import efficient_pnp
-from pytorch3d.transforms import so3_relative_angle
 
 from dataloader.ObjMesh import ObjMesh
 from utils.const import debug_mode, plot_colors
@@ -27,9 +25,8 @@ class Sample:
         self.dbg_img: torch.Tensor = dbg_img
         self.bbox: torch.Tensor = bbox
 
-    # @staticmethod
     @classmethod
-    def collate(cls, batch):
+    def collate(cls, batch: list):
         keys = [key for key in dir(batch[0]) if not key.startswith('__') and not callable(getattr(batch[0], key))]
         out = cls()
         for key in keys:
@@ -41,7 +38,7 @@ class Sample:
                 setattr(out, key, torch.cat([getattr(b, key) for b in batch], dim=0))
         return out
 
-    def sanity_check(self):
+    def sanity_check(self) -> tuple[torch.Tensor, torch.Tensor]:
         pred_cam_R_m2c = torch.empty_like(self.gt_cam_R_m2c)
         pred_cam_t_m2c = torch.empty_like(self.gt_cam_t_m2c)
         for i in range(len(self.obj_id)):
@@ -112,7 +109,7 @@ class Sample:
         return torch.norm(pred_cam_t_m2c - self.gt_cam_t_m2c, p=2, dim=-1) * 100.  # [N], cm
 
 
-    def visualize(self):
+    def visualize(self) -> None:
         def normalize(x):
             # x: [C, H, W]
             min_val = x.min(-1)[0].min(-1)[0]

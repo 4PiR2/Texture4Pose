@@ -1,6 +1,6 @@
 import torch
 from pytorch3d.io import IO
-from pytorch3d.renderer import TexturesVertex
+from pytorch3d.renderer.mesh import TexturesBase
 from pytorch3d.structures import Meshes
 
 from utils.io import parse_device
@@ -33,7 +33,7 @@ class ObjMesh:
         verts = self.mesh.verts_packed()
         return self.mesh.offset_verts(verts @ (cam_R_m2c.T - torch.eye(3, device=self.device)) + cam_t_m2c)
 
-    def get_texture(self, f=None):
+    def get_texture(self, f=None) -> TexturesBase:
         if f is None:
             return self.mesh.textures
         else:
