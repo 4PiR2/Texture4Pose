@@ -4,12 +4,12 @@ import torch
 import torch.nn.functional as F
 from pytorch3d.transforms import quaternion_to_matrix
 
-from utils.const import gdr_mode
+from utils.const import gdr_mode, dtype
 from utils.io import parse_device
 
 
 def get_coord2d_map(width: int, height: int, cam_K: torch.Tensor = None, device: Union[torch.device, str]=None,
-                    dtype: torch.dtype = torch.float) -> torch.Tensor:
+                    dtype: torch.dtype = dtype) -> torch.Tensor:
     """
     :param width: int
     :param height: int

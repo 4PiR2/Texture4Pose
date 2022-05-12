@@ -9,17 +9,18 @@ from torch.utils.data.dataloader import default_collate
 from dataloader.ObjMesh import ObjMesh
 from dataloader.Sample import Sample
 from dataloader.Scene import Scene, SceneBatch, SceneBatchOne
-from utils.const import debug_mode, pnp_input_size, img_input_size, gdr_mode
+from utils.const import debug_mode, pnp_input_size, img_input_size, gdr_mode, dtype
 from utils.io import read_json_file, parse_device, read_img_file, read_depth_img_file
 from utils.transform import calc_bbox2d_crop, t_to_t_site, get_coord2d_map
 
 
 class BOPDataset(Dataset):
     def __init__(self, obj_list, path, transform=None, read_scene_from_bop=True,
-                 render_mode=True, lmo_mode=True, device=None):
+                 render_mode=True, lmo_mode=True, dtype=dtype, device=None):
         self.obj_list: list[int] = obj_list
         self.path: str = path
         self.transform: Any = transform
+        self.dtype: torch.dtype = dtype
         self.device: torch.device = parse_device(device)
         self.render_mode: bool = render_mode
         self.lmo_mode: bool = lmo_mode
@@ -67,8 +68,8 @@ class BOPDataset(Dataset):
     def __getitem__(self, item) -> Sample:
         scene_gt = default_collate(self.scene_gt[item])
         obj_id = scene_gt['obj_id'].to(self.device, dtype=torch.uint8)
-        gt_cam_R_m2c = torch.stack(scene_gt['cam_R_m2c'], dim=-1).to(self.device, dtype=torch.float).reshape(-1, 3, 3)
-        gt_cam_t_m2c = torch.stack(scene_gt['cam_t_m2c'], dim=-1).to(self.device, dtype=torch.float) * ObjMesh.scale
+        gt_cam_R_m2c = torch.stack(scene_gt['cam_R_m2c'], dim=-1).to(self.device, dtype=self.dtype).reshape(-1, 3, 3)
+        gt_cam_t_m2c = torch.stack(scene_gt['cam_t_m2c'], dim=-1).to(self.device, dtype=self.dtype) * ObjMesh.scale
 
         cam_K = torch.tensor(self.scene_camera[item]['cam_K'], device=self.device).reshape(3, 3)
         cam_K /= float(cam_K[-1, -1])
@@ -76,7 +77,7 @@ class BOPDataset(Dataset):
 
         img_path = os.path.join(self.data_path, '{:0>6d}/rgb/{:0>6d}.png'.format(
             2 if self.lmo_mode else obj_id[0], self.scene_id[item]))
-        img = read_img_file(img_path, device=self.device)
+        img = read_img_file(img_path, dtype=self.dtype, device=self.device)
         _, _, height, width = img.shape
         coord2d = get_coord2d_map(width, height, cam_K)
 
@@ -139,7 +140,7 @@ class BOPDataset(Dataset):
         scene_id = self.scene_id[item]
         o_id = 2 if self.lmo_mode else obj_id[0]
         depth_path = os.path.join(self.data_path, '{:0>6d}/depth/{:0>6d}.png'.format(o_id, scene_id))
-        depth_img = read_depth_img_file(depth_path, self.device)  # [1, 1, H, W]
+        depth_img = read_depth_img_file(depth_path, dtype=self.dtype, device=self.device)  # [1, 1, H, W]
         H, W = depth_img.shape[-2:]
         depth_mask = depth_img != 0.
         depth_img *= self.scene_camera[item]['depth_scale'] * ObjMesh.scale
@@ -151,19 +152,19 @@ class BOPDataset(Dataset):
         gt_mask_vis = torch.empty_like(gt_mask_obj)
         for i in range(len(obj_id)):
             mask_obj_path = os.path.join(self.data_path, '{:0>6d}/mask/{:0>6d}_{:0>6d}.png'.format(o_id, scene_id, i))
-            gt_mask_obj[i] = read_depth_img_file(mask_obj_path)
+            gt_mask_obj[i] = read_depth_img_file(mask_obj_path, dtype=self.dtype, device=self.device)
             mask_vis_path = os.path.join(self.data_path,
                                          '{:0>6d}/mask_visib/{:0>6d}_{:0>6d}.png'.format(o_id, scene_id, i))
-            gt_mask_vis[i] = read_depth_img_file(mask_vis_path)
+            gt_mask_vis[i] = read_depth_img_file(mask_vis_path, dtype=self.dtype, device=self.device)
         # gt_mask = gt_mask_obj.any(dim=0)[None]
 
         def cvt_bbox(tensor_list_4):
-            bbox = torch.stack(tensor_list_4, dim=-1).to(self.device, dtype=torch.float)
+            bbox = torch.stack(tensor_list_4, dim=-1).to(self.device, dtype=self.dtype)
             bbox[:, :2] += bbox[:, 2:] * .5
             return bbox
 
         scene_gt_info = default_collate(self.scene_gt_info[item])
         gt_bbox_vis = cvt_bbox(scene_gt_info['bbox_visib'])
         gt_bbox_obj = cvt_bbox(scene_gt_info['bbox_obj'])
-        gt_vis_ratio = scene_gt_info['visib_fract'].to(self.device, dtype=torch.float)
+        gt_vis_ratio = scene_gt_info['visib_fract'].to(self.device, dtype=self.dtype)
         return gt_coord3d_vis, gt_vis_ratio, gt_mask_vis, gt_mask_obj, gt_bbox_vis, gt_bbox_obj
