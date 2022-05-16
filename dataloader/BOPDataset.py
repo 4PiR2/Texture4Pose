@@ -1,10 +1,13 @@
 import os.path
-from typing import Any
+from typing import Any, Iterator, Union
 
 import torch
+import torch.nn.functional as F
 import torchvision.transforms.functional as vF
-from torch.utils.data import Dataset
+from pytorch3d.transforms import random_rotations
+from torch.utils.data import IterableDataset
 from torch.utils.data.dataloader import default_collate
+from torch.utils.data.dataset import T_co
 
 from dataloader.ObjMesh import ObjMesh
 from dataloader.Sample import Sample
@@ -14,16 +17,18 @@ from utils.io import read_json_file, parse_device, read_img_file, read_depth_img
 from utils.transform import calc_bbox2d_crop, t_to_t_site, get_coord2d_map
 
 
-class BOPDataset(Dataset):
+class BOPDataset(IterableDataset):
     def __init__(self, obj_list, path, transform=None, read_scene_from_bop=True,
-                 render_mode=True, lmo_mode=True, dtype=dtype, device=None):
-        self.obj_list: list[int] = obj_list
+                 render_mode=True, lmo_mode=True, scene_mode=True, dtype=dtype, device=None):
+        self.obj_list: Union[dict[int, str], list[int]] = obj_list
         self.path: str = path
         self.transform: Any = transform
         self.dtype: torch.dtype = dtype
         self.device: torch.device = parse_device(device)
-        self.render_mode: bool = render_mode
-        self.lmo_mode: bool = lmo_mode
+        self.read_scene_from_bop: bool = read_scene_from_bop
+        self.render_mode: bool = render_mode or not read_scene_from_bop
+        self.lmo_mode: bool = lmo_mode and read_scene_from_bop
+        self.scene_mode: bool = scene_mode and not read_scene_from_bop
 
         path_models = os.path.join(path, 'models')
         path_models_eval = os.path.join(path, 'models_eval')
@@ -45,9 +50,9 @@ class BOPDataset(Dataset):
         self.scene_gt: list[dict[str, Any]] = []
         self.scene_gt_info: list[dict[str, Any]] = []
         self.scene_id: list[int] = []
-
         self.data_path: str = os.path.join(path, 'test_all')
-        if read_scene_from_bop:
+
+        if self.read_scene_from_bop:
             for dir in os.listdir(self.data_path):
                 if not dir.startswith('0'):
                     continue
@@ -62,24 +67,73 @@ class BOPDataset(Dataset):
                 dir_scene_gt_info = read_json_file(os.path.join(dir_path, 'scene_gt_info.json'))
                 self.scene_gt_info += [dir_scene_gt_info[key] for key in dir_scene_gt_info]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.scene_gt)
 
-    def __getitem__(self, item) -> Sample:
-        scene_gt = default_collate(self.scene_gt[item])
-        obj_id = scene_gt['obj_id'].to(self.device, dtype=torch.uint8)
-        gt_cam_R_m2c = torch.stack(scene_gt['cam_R_m2c'], dim=-1).to(self.device, dtype=self.dtype).reshape(-1, 3, 3)
-        gt_cam_t_m2c = torch.stack(scene_gt['cam_t_m2c'], dim=-1).to(self.device, dtype=self.dtype) * ObjMesh.scale
+    def __iter__(self) -> Iterator[T_co]:
+        if self.read_scene_from_bop:
+            for i in range(self.__len__()):
+                yield self.__getitem__(i)
+        else:
+            while True:
+                yield self.__getitem__()
 
-        cam_K = torch.tensor(self.scene_camera[item]['cam_K'], device=self.device).reshape(3, 3)
-        cam_K /= float(cam_K[-1, -1])
-        obj_size = torch.stack([self.objects[int(i)].size for i in obj_id], dim=0)  # extents: [N, 3(XYZ)]
+    def __getitem__(self, item: int = 0) -> Sample:
+        if self.read_scene_from_bop:
+            scene_gt = default_collate(self.scene_gt[item])
+            obj_id = scene_gt['obj_id'].to(self.device, dtype=torch.uint8)
+            gt_cam_R_m2c = torch.stack(scene_gt['cam_R_m2c'], dim=-1).to(self.device, dtype=self.dtype).reshape(-1, 3,
+                                                                                                                3)
+            gt_cam_t_m2c = torch.stack(scene_gt['cam_t_m2c'], dim=-1).to(self.device, dtype=self.dtype) * ObjMesh.scale
 
-        img_path = os.path.join(self.data_path, '{:0>6d}/rgb/{:0>6d}.png'.format(
-            2 if self.lmo_mode else obj_id[0], self.scene_id[item]))
+            cam_K = torch.tensor(self.scene_camera[item]['cam_K'], device=self.device).reshape(3, 3)
+            cam_K /= float(cam_K[-1, -1])
+
+            img_path = os.path.join(self.data_path, '{:0>6d}/rgb/{:0>6d}.png'.format(
+                2 if self.lmo_mode else obj_id[0], self.scene_id[item]))
+        else:
+            cam_K = torch.tensor([[572.4114, 0., 325.2611], [0., 573.57043, 242.04899], [0., 0., 1.]],
+                                 device=self.device)
+            img_path = os.path.join(self.data_path, '{:0>6d}/rgb/{:0>6d}.png'.format(2, 3))
+            obj_id, gt_cam_R_m2c, gt_cam_t_m2c = self._get_random_poses(cam_K)
+
+        return self._get_sample(item, cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, img_path)
+
+    def _get_random_poses(self, cam_K, num_obj=None):
+        obj_id = torch.tensor([oid for oid in self.obj_list], dtype=torch.uint8, device=self.device)
+        if num_obj is not None:
+            selected = torch.multinomial(torch.ones_like(obj_id), num_obj, replacement=False).sort()
+            obj_id = obj_id[selected]
+        else:
+            num_obj = len(obj_id)
+
+        radii = torch.tensor([self.objects[int(oid)].radius for oid in obj_id], dtype=self.dtype, device=self.device)
+        centers = torch.stack([self.objects[int(oid)].center for oid in obj_id], dim=0)
+
+        box2d_min = torch.linalg.inv(cam_K)[:, -1:].T * 1.  # [1, 3(XY1)], inv(K) @ [0., 0., 1.].T
+        box2d_max = torch.linalg.solve(cam_K, torch.tensor([[500.], [480.], [1.]], dtype=self.dtype,
+                                                         device=self.device)).T  # [1, 3(XY1)], inv(K) @ [W, H, 1.].T
+        depth_min, depth_max = .5, 1.2
+        box3d_size = (box2d_max - box2d_min) * depth_min - radii[:, None] * 2.
+        box3d_size[:, -1] += depth_max - depth_min
+        box3d_min = box2d_min * depth_min - centers + radii[:, None]
+
+        if self.scene_mode:
+            triu_indices = torch.triu_indices(num_obj, num_obj, 1)
+            mdist = (radii + radii[..., None])[triu_indices[0], triu_indices[1]]
+
+        while True:
+            gt_cam_t_m2c = torch.rand((num_obj, 3), dtype=self.dtype, device=self.device) * box3d_size + box3d_min
+            if not self.scene_mode or (F.pdist(gt_cam_t_m2c) >= mdist).all():
+                break
+        gt_cam_R_m2c = random_rotations(num_obj, dtype=self.dtype, device=self.device)  # [N, 3, 3]
+        return obj_id, gt_cam_R_m2c, gt_cam_t_m2c
+
+    def _get_sample(self, item, cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, img_path) -> Sample:
         img = read_img_file(img_path, dtype=self.dtype, device=self.device)
         _, _, height, width = img.shape
         coord2d = get_coord2d_map(width, height, cam_K)
+        obj_size = torch.stack([self.objects[int(i)].size for i in obj_id], dim=0)  # extents: [N, 3(XYZ)]
 
         if self.render_mode:
             rendered_img, gt_coord3d, gt_mask, gt_vis_ratio, gt_mask_vis, gt_mask_obj, gt_bbox_vis, gt_bbox_obj = \
@@ -119,8 +173,9 @@ class BOPDataset(Dataset):
         return result
 
     def _get_item_by_rendering(self, cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, width=512, height=512):
-        scene = SceneBatchOne(objects=self.objects, cam_K=cam_K, obj_id=obj_id, gt_cam_R_m2c=gt_cam_R_m2c,
-                      gt_cam_t_m2c=gt_cam_t_m2c, width=width, height=height)
+        scene_cls = Scene if self.scene_mode else SceneBatch
+        scene = scene_cls(objects=self.objects, cam_K=cam_K, obj_id=obj_id, gt_cam_R_m2c=gt_cam_R_m2c,
+                          gt_cam_t_m2c=gt_cam_t_m2c, width=width, height=height)
 
         a = torch.rand(1) * .5 + .5
         d = torch.rand(1) * (1. - a)
@@ -145,8 +200,8 @@ class BOPDataset(Dataset):
         depth_mask = depth_img != 0.
         depth_img *= self.scene_camera[item]['depth_scale'] * ObjMesh.scale
         depth_img = torch.cat([coord2d * depth_img, depth_img], dim=1)  # [1, 3(XYZ), H, W]
-        gt_coord3d_vis = (gt_cam_R_m2c.transpose(-2, -1) @ (depth_img.reshape(1, 3, -1) - gt_cam_t_m2c[..., None]))\
-            .reshape(-1, 3, H, W) * depth_mask
+        gt_coord3d_vis = (gt_cam_R_m2c.transpose(-2, -1) @ (depth_img.reshape(1, 3, -1) - gt_cam_t_m2c[..., None])) \
+                             .reshape(-1, 3, H, W) * depth_mask
 
         gt_mask_obj = torch.empty(len(obj_id), 1, H, W).to(self.device, dtype=torch.bool)
         gt_mask_vis = torch.empty_like(gt_mask_obj)
@@ -156,6 +211,7 @@ class BOPDataset(Dataset):
             mask_vis_path = os.path.join(self.data_path,
                                          '{:0>6d}/mask_visib/{:0>6d}_{:0>6d}.png'.format(o_id, scene_id, i))
             gt_mask_vis[i] = read_depth_img_file(mask_vis_path, dtype=self.dtype, device=self.device)
+
         # gt_mask = gt_mask_obj.any(dim=0)[None]
 
         def cvt_bbox(tensor_list_4):

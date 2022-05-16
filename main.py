@@ -25,6 +25,13 @@ from models.rot_head import RotWithRegionHead
 from utils.const import lmo_objects, device, debug_mode, lm_objects, lm13_objects, gdr_mode
 
 if __name__ == '__main__':
+    dataset = BOPDataset(obj_list=lmo_objects, path='data/BOP/lmo', render_mode=True, lmo_mode=True, device=device, read_scene_from_bop=False)
+    dataloader = DataLoader(dataset, batch_size=1, collate_fn=Sample.collate)
+    for x in dataloader:
+        x.visualize()
+        a = 0
+
+
     dataset = BOPDataset(obj_list=lmo_objects, path='data/BOP/lmo', render_mode=True, lmo_mode=True, device=device)
     for sample in dataset:
         sample.visualize()
@@ -92,31 +99,3 @@ if __name__ == '__main__':
     R, t = sample.sanity_check()
     angle, dist = sample.relative_angle(R), sample.relative_dist(t)
     a = 0
-
-
-# def poses_from_random(dataset, num_obj):
-#     device = dataset.device
-#     euler_angles = (2. * torch.pi) * torch.rand((num_obj, 3), device=device)
-#     Rs = euler_angles_to_matrix(euler_angles, 'ZYX')
-#
-#     objects = dataset.objects
-#     selected_obj = [obj_id for obj_id in objects]
-#     random.shuffle(selected_obj)
-#     selected_obj = selected_obj[:num_obj]
-#     selected_obj.sort()
-#     radii = torch.tensor([objects[obj_id].radius for obj_id in selected_obj], device=device)
-#     centers = torch.stack([objects[obj_id].center for obj_id in selected_obj], dim=0)
-#     triu_indices = torch.triu_indices(num_obj, num_obj, 1)
-#     mdist = (radii + radii[..., None])[triu_indices[0], triu_indices[1]]
-#
-#     flag = False
-#     while not flag:
-#         positions = torch.rand((num_obj, 3), device=device)\
-#                     * torch.tensor((.5, .5, .5), device=device) + torch.tensor((-.25, -.25, 1.), device=device)
-#         flag = (F.pdist(positions) >= mdist).all()
-#     positions -= centers
-#
-#     poses = []
-#     for i in range(num_obj):
-#         poses.append({'obj_id': selected_obj[i], 'cam_R_m2c': Rs[i], 'cam_t_m2c': positions[i]})
-#     return poses
