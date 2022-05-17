@@ -6,16 +6,11 @@ import cv2
 import numpy as np
 import pytorch3d
 import torch
-import torch.nn.functional as F
-from pytorch3d.transforms import euler_angles_to_matrix, matrix_to_quaternion, so3_rotation_angle, \
-    matrix_to_euler_angles, random_rotations
-from torch import nn
 from torch.optim import Adam, SGD
 from torch.utils.data import DataLoader
 from torchvision.transforms import transforms as T
-from matplotlib import pyplot as plt
 
-from dataloader.BOPDataset import BOPDataset, RenderedBOPDataset, RandomPoseBOPDataset, RandomPoseRegularDataset
+from dataloader.PoseDataset import BOPObjDataset, RenderedPoseBOPObjDataset, RandomPoseBOPObjDataset, RandomPoseRegularObjDataset
 from dataloader.Sample import Sample
 from models.ConvPnPNet import ConvPnPNet
 from models.Loss import Loss
@@ -25,16 +20,18 @@ from models.rot_head import RotWithRegionHead
 from utils.const import lmo_objects, device, debug_mode, lm_objects, lm13_objects, gdr_mode, regular_objects
 
 if __name__ == '__main__':
-    dataset = RandomPoseBOPDataset(obj_list=lmo_objects, path='data/BOP/lmo', scene_mode=True, device=device)
-    # dataset = RenderedBOPDataset(obj_list=lmo_objects, path='data/BOP/lmo', scene_mode=True, device=device)
-    # dataset = RandomPoseRegularDataset(obj_list=regular_objects, scene_mode=True, device=device)
-    dataloader = DataLoader(dataset, batch_size=1, collate_fn=Sample.collate)
+    # dataset = RandomPoseBOPObjDataset(obj_list=lmo_objects, path='data/BOP/lmo', scene_mode=True, device=device)
+    # dataset = RenderedPoseBOPObjDataset(obj_list=lmo_objects, path='data/BOP/lmo', scene_mode=True, device=device)
+    # dataset = BOPObjDataset(obj_list=lmo_objects, path='data/BOP/lmo', device=device)
+    dataset = RandomPoseRegularObjDataset(obj_list=regular_objects, scene_mode=True, device=device,
+                                          bg_img_path='/data/coco/train2017')
+    dataloader = DataLoader(dataset, batch_size=2, collate_fn=Sample.collate)
     for x in dataloader:
         x.visualize()
         a = 0
 
 
-    dataset = BOPDataset(obj_list=lmo_objects, path='data/BOP/lmo', render_mode=True, lmo_mode=True, device=device)
+    dataset = BOPObjDataset(obj_list=lmo_objects, path='data/BOP/lmo', render_mode=True, lmo_mode=True, device=device)
     for sample in dataset:
         sample.visualize()
 
@@ -48,7 +45,7 @@ if __name__ == '__main__':
 
     composed = None  # T.Compose([T.RandomGrayscale(p=0.1)])
     test_objects = {1: 'ape'}
-    dataset = BOPDataset(obj_list=test_objects, path='data/BOP/lm', render_mode=False, lmo_mode=False, device=device)
+    dataset = BOPObjDataset(obj_list=test_objects, path='data/BOP/lm', render_mode=False, lmo_mode=False, device=device)
 
     # train_dataloader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=Sample.collate)
     # model = ConvPnPNet(nIn=5).to(device)

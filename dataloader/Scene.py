@@ -6,17 +6,17 @@ from pytorch3d.renderer import PerspectiveCameras, RasterizationSettings, MeshRa
 from pytorch3d.renderer.mesh import TexturesBase
 from pytorch3d.structures import join_meshes_as_scene, join_meshes_as_batch, Meshes
 
-from dataloader.ObjMesh import BOPMesh
+from dataloader.ObjMesh import ObjMesh
 from utils.SimpleShader import SimpleShader
 from utils.const import debug_mode
 from utils.transform import get_bbox2d_from_mask
 
 
 class Scene:
-    def __init__(self, objects: dict[int, BOPMesh], cam_K: torch.Tensor, obj_id: torch.Tensor,
+    def __init__(self, objects: dict[int, ObjMesh], cam_K: torch.Tensor, obj_id: torch.Tensor,
                  gt_cam_R_m2c: torch.Tensor, gt_cam_t_m2c: torch.Tensor, width: int = 512, height: int = 512, **kwargs):
         self.kwargs: dict[str, Any] = kwargs
-        self.objects: dict[int, BOPMesh] = objects  # dict
+        self.objects: dict[int, ObjMesh] = objects  # dict
         self.device: torch.device = gt_cam_R_m2c.device
         self.dtype: torch.dtype = gt_cam_R_m2c.dtype
         self.cam_K: torch.Tensor = cam_K / cam_K[-1, -1]  # [3, 3]
@@ -56,8 +56,8 @@ class Scene:
                 for i in range(len(self.obj_id))]
 
     @staticmethod
-    def _get_func_get_texture_gt() -> Callable[[BOPMesh], TexturesBase]:
-        def f(obj: BOPMesh):
+    def _get_func_get_texture_gt() -> Callable[[ObjMesh], TexturesBase]:
+        def f(obj: ObjMesh):
             verts = obj.mesh.verts_packed()  # [V, 3(XYZ)]
             gt_texture = torch.cat([torch.full((len(verts), 1), obj.obj_id, dtype=verts.dtype, device=verts.device),
                                     verts], dim=1)
@@ -65,7 +65,7 @@ class Scene:
 
         return f
 
-    def _set_obj_textures(self, func_get_texture: Callable[[BOPMesh], TexturesBase]) -> None:
+    def _set_obj_textures(self, func_get_texture: Callable[[ObjMesh], TexturesBase]) -> None:
         unique_ids, inverse_indices = self.obj_id.unique(return_inverse=True)
         textures = []
         for uid in unique_ids:
@@ -112,7 +112,7 @@ class Scene:
         gt_bbox_obj = get_bbox2d_from_mask(self.gt_mask_obj)[:, 0]  # [N, 4(XYWH)]
         return gt_bbox_vis, gt_bbox_obj
 
-    def render_scene(self, f: Callable[[BOPMesh], TexturesBase] = None,
+    def render_scene(self, f: Callable[[ObjMesh], TexturesBase] = None,
                      ambient: Union[torch.Tensor, tuple[tuple[float, float, float]]] = ((1.,) * 3,),
                      diffuse: Union[torch.Tensor, tuple[tuple[float, float, float]]] = ((0.,) * 3,),
                      specular: Union[torch.Tensor, tuple[tuple[float, float, float]]] = ((0.,) * 3,),
@@ -188,7 +188,7 @@ class SceneBatchOne(SceneBatch):
     def _get_obj_meshes(self) -> list[Meshes]:
         return [self.objects[int(self.obj_id[0])].mesh.clone()]
 
-    def _set_obj_textures(self, func_get_texture: Callable[[BOPMesh], TexturesBase]) -> None:
+    def _set_obj_textures(self, func_get_texture: Callable[[ObjMesh], TexturesBase]) -> None:
         self.obj_meshes[0].textures = self.objects[int(self.obj_id[0])].get_texture(func_get_texture)
 
     def _get_gt_scene_meshes(self) -> Meshes:

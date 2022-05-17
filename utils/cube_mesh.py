@@ -3,8 +3,8 @@ from pytorch3d.ops.subdivide_meshes import SubdivideMeshes
 from pytorch3d.structures.meshes import Meshes
 
 
-# Vertex coordinates for a level 0 ico-sphere.
-_ico_verts0 = [
+# Vertex coordinates for a level 0 cube
+_cube_verts0 = [
     [-1., -1., 1],
     [-1., 1., 1.],
     [-1., 1., -1.],
@@ -16,8 +16,8 @@ _ico_verts0 = [
 ]
 
 
-# Faces for level 0 ico-sphere
-_ico_faces0 = [
+# Faces for level 0 cube
+_cube_faces0 = [
     [0, 1, 2],
     [1, 3, 4],
     [3, 5, 6],
@@ -35,7 +35,7 @@ _ico_faces0 = [
 
 def cube(level: int = 0, device=None):
     """
-    Create verts and faces for a unit ico-sphere, with all faces oriented
+    Create verts and faces for a unit cube, with all faces oriented
     consistently.
 
     Args:
@@ -52,8 +52,8 @@ def cube(level: int = 0, device=None):
     if level < 0:
         raise ValueError("level must be >= 0.")
     if level == 0:
-        verts = torch.tensor(_ico_verts0, dtype=torch.float32, device=device)
-        faces = torch.tensor(_ico_faces0, dtype=torch.int64, device=device)
+        verts = torch.tensor(_cube_verts0, dtype=torch.float32, device=device)
+        faces = torch.tensor(_cube_faces0, dtype=torch.int64, device=device)
         mesh = Meshes(verts=[verts], faces=[faces])
     else:
         mesh = cube(level - 1, device)

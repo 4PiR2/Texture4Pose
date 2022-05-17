@@ -14,7 +14,7 @@ from utils.io import parse_device
 from utils.mbsc.exact_min_bound_sphere_3D import exact_min_bound_sphere_3D
 
 
-class ObjMeshBase:
+class ObjMesh:
     def __init__(self, mesh=None, dtype=dtype, device=None, obj_id=None, name=None, is_eval=None, diameter=None,
                  min=None, size=None, radius=None, center=None, **kwargs):
         if not hasattr(self, 'dtype'):
@@ -102,7 +102,7 @@ class ObjMeshBase:
                                    t1: torch.Tensor = None, t2: torch.Tensor = None, p: int = 2) -> torch.Tensor:
         """
         average projected distance (in pixel)
-        http://www.stefan-hinterstoisser.com/papers/hinterstoisser2012accv.pdf
+        https://github.com/ybkscht/EfficientPose/blob/main/eval/common.py
 
         :param cam_K: [3, 3]
         :param R1: [..., 3, 3]
@@ -130,7 +130,7 @@ class ObjMeshBase:
         return distances.mean(dim=-1)  # [...]
 
 
-class BOPMesh(ObjMeshBase):
+class BOPMesh(ObjMesh):
     scale: float = 1e-3  # prevent overflow in PyTorch3D, 1e-3 means using meter as unit length
 
     def __init__(self, mesh_path=None, diameter=None, min_x=None, min_y=None, min_z=None, size_x=None, size_y=None,
@@ -145,17 +145,17 @@ class BOPMesh(ObjMeshBase):
         super().__init__(mesh=mesh, diameter=diameter, min=min, size=size, **kwargs)
 
 
-class RegularMesh(ObjMeshBase):
+class RegularMesh(ObjMesh):
     def __init__(self, name=None, scale=5e-2, **kwargs):
         min = torch.full([3], -scale)
         size = torch.full([3], scale * 2.)
         center = torch.zeros(3)
         if name == 'sphere':
             radius = scale
-            mesh = ico_sphere(level=3).scale_verts_(scale)
+            mesh = ico_sphere(level=5).scale_verts_(scale)
         elif name == 'cube':
             radius = scale * math.sqrt(2.)
-            mesh = cube(level=0).scale_verts_(scale)
+            mesh = cube(level=5).scale_verts_(scale)
         else:
             raise NotImplementedError
         diameter = radius * 2.

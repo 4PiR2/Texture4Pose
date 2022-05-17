@@ -1,11 +1,11 @@
 from torch import nn
 
-from dataloader.BOPDataset import BOPDataset
+from dataloader.PoseDataset import BOPObjDataset
 from dataloader.Sample import Sample
 
 
 class Loss(nn.Module):
-    def __init__(self, dataset: BOPDataset):
+    def __init__(self, dataset: BOPObjDataset):
         super().__init__()
         self.dataset = dataset
         self.device = self.dataset.device
