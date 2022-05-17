@@ -25,8 +25,9 @@ from models.rot_head import RotWithRegionHead
 from utils.const import lmo_objects, device, debug_mode, lm_objects, lm13_objects, gdr_mode, regular_objects
 
 if __name__ == '__main__':
+    dataset = RandomPoseBOPDataset(obj_list=lmo_objects, path='data/BOP/lmo', scene_mode=True, device=device)
     # dataset = RenderedBOPDataset(obj_list=lmo_objects, path='data/BOP/lmo', scene_mode=True, device=device)
-    dataset = RandomPoseRegularDataset(obj_list=regular_objects, scene_mode=True, device=device)
+    # dataset = RandomPoseRegularDataset(obj_list=regular_objects, scene_mode=True, device=device)
     dataloader = DataLoader(dataset, batch_size=1, collate_fn=Sample.collate)
     for x in dataloader:
         x.visualize()

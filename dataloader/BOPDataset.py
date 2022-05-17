@@ -246,7 +246,6 @@ class RandomPoseBOPDataset(RenderedBOPDataset):
 
 class RandomPoseRegularDataset(RandomPoseBOPDataset):
     def _read_model_info(self):
-        BOPMesh.scale = .1
         for obj_id in self.obj_list:
             self.objects[obj_id] = \
                 RegularMesh(dtype=dtype, device=self.device, obj_id=int(obj_id), name=self.obj_list[obj_id])
