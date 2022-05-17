@@ -13,6 +13,8 @@ lm13_objects = {1: 'ape', 2: 'benchvise', 4: 'camera', 5: 'can', 6: 'cat', 8: 'd
 
 lmo_objects = {1: 'ape', 5: 'can', 6: 'cat', 8: 'driller', 9: 'duck', 10: 'eggbox', 11: 'glue', 12: 'holepuncher'}
 
+regular_objects = {1: 'sphere', 2: 'cube'}
+
 dtype = torch.float
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 

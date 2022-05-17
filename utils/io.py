@@ -23,7 +23,8 @@ def read_depth_img_file(path: str, dtype: torch.dtype = torch.float, device: Uni
     """
     :return: [1, 1, H, W]
     """
-    return torch.tensor(cv2.imread(path, cv2.IMREAD_ANYDEPTH), dtype=dtype, device=parse_device(device))[None, None]
+    return torch.tensor(cv2.imread(path, cv2.IMREAD_ANYDEPTH).astype('float32'), dtype=dtype,
+                        device=parse_device(device))[None, None]
 
 
 def parse_device(device: Union[torch.device, str] = None) -> Union[torch.device, str]:

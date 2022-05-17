@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt, patches
 
-from dataloader.ObjMesh import ObjMesh
+from dataloader.ObjMesh import BOPMesh
 from utils.const import debug_mode, plot_colors
 
 
@@ -55,7 +55,7 @@ class Sample:
             pred_cam_t_m2c[i] = torch.Tensor(pred_t).to(device).flatten()
         return pred_cam_R_m2c, pred_cam_t_m2c
 
-    def pm_loss(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor) -> torch.Tensor:
+    def pm_loss(self, objects_eval: dict[int, BOPMesh], pred_cam_R_m2c: torch.Tensor) -> torch.Tensor:
         """
         :param objects_eval: dict[int, ObjMesh]
         :param pred_cam_R_m2c: [N, 3, 3]
@@ -68,7 +68,7 @@ class Sample:
             loss[i] = obj.average_distance(pred_cam_R_m2c[i], self.gt_cam_R_m2c[i], p=1)
         return loss
 
-    def add_score(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor)\
+    def add_score(self, objects_eval: dict[int, BOPMesh], pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor)\
             -> torch.Tensor:
         """
         :param objects_eval: dict[int, ObjMesh]
