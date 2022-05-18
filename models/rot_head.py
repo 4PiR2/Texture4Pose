@@ -68,5 +68,5 @@ class RotWithRegionHead(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
-        mask, coor_3d, region = x.split([1, 3, x.shape[1] - 4], dim=1)
-        return mask, coor_3d, region
+        mask, coord_3d, region = x.split([1, 3, x.shape[1] - 4], dim=1)
+        return mask, coord_3d, region

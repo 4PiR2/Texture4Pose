@@ -8,11 +8,12 @@ from pytorch3d.structures import join_meshes_as_scene, join_meshes_as_batch, Mes
 
 from dataloader.ObjMesh import ObjMesh
 from utils.SimpleShader import SimpleShader
-from utils.const import debug_mode
 from utils.transform import get_bbox2d_from_mask
 
 
 class Scene:
+    texture_net: Callable[[ObjMesh], TexturesBase] = None
+
     def __init__(self, objects: dict[int, ObjMesh], cam_K: torch.Tensor, obj_id: torch.Tensor,
                  gt_cam_R_m2c: torch.Tensor, gt_cam_t_m2c: torch.Tensor, width: int = 512, height: int = 512, **kwargs):
         self.kwargs: dict[str, Any] = kwargs
@@ -34,7 +35,7 @@ class Scene:
         gt_images = gt_renderer(self._get_gt_scene_meshes()).permute(0, 3, 1, 2)
         # [1+N, H, W, 4(IXYZ)] -> [1+N, 4(IXYZ), H, W]
 
-        self.gt_coord3d_vis, self.gt_coord3d_obj = self._get_coord3d(gt_images)
+        self.gt_coord_3d_vis, self.gt_coord_3d_obj = self._get_coord_3d(gt_images)
         self.gt_mask, self.gt_mask_vis, self.gt_mask_obj = self._get_mask(gt_images)
         self.gt_vis_ratio = self._get_vis_ratio()
         self.gt_bbox_vis, self.gt_bbox_obj = self._get_bboxes()
@@ -91,11 +92,11 @@ class Scene:
         return join_meshes_as_batch([scene_mesh, *self.obj_meshes], include_textures=True)
 
     @staticmethod
-    def _get_coord3d(images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        coord3d = images[:, 1:4]  # [1+N, 3(XYZ), H, W]
-        gt_coord3d_vis = coord3d[:1]  # [1, 3(XYZ), H, W]
-        gt_coord3d_obj = coord3d[1:]  # [N, 3(XYZ), H, W]
-        return gt_coord3d_vis, gt_coord3d_obj
+    def _get_coord_3d(images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        coord_3d = images[:, 1:4]  # [1+N, 3(XYZ), H, W]
+        gt_coord_3d_vis = coord_3d[:1]  # [1, 3(XYZ), H, W]
+        gt_coord_3d_obj = coord_3d[1:]  # [N, 3(XYZ), H, W]
+        return gt_coord_3d_vis, gt_coord_3d_obj
 
     def _get_mask(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         masks = images[:, :1].round().to(dtype=torch.uint8)  # [1+N, 1, H, W]
@@ -134,12 +135,12 @@ class Scene:
             )
         )
 
-        self._set_obj_textures(f)
+        self._set_obj_textures(Scene.texture_net if f is None else f)
 
         scene_mesh = self._get_scene_meshes()
 
         images = renderer(scene_mesh, include_textures=True).permute(0, 3, 1, 2)[:, :3]  # [B, 3(RGB), H, W]
-        # images = images.clamp(max=1.)
+        images = images.clamp(min=0., max=1.)
         return images
 
     def _get_scene_meshes(self) -> Meshes:
@@ -165,9 +166,9 @@ class SceneBatch(Scene):
         return join_meshes_as_batch(self.obj_meshes, include_textures=True)
 
     @staticmethod
-    def _get_coord3d(images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        coord3d = images[:, 1:4]  # [N, 3(XYZ), H, W]
-        return coord3d, coord3d
+    def _get_coord_3d(images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        coord_3d = images[:, 1:4]  # [N, 3(XYZ), H, W]
+        return coord_3d, coord_3d
 
     def _get_mask(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         mask = images[:, :1].bool()  # [N, 1, H, W]

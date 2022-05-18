@@ -4,12 +4,12 @@ import torch
 import torch.nn.functional as F
 from pytorch3d.transforms import quaternion_to_matrix
 
-from utils.const import gdr_mode, dtype
+from utils.const import dtype
 from utils.io import parse_device
 
 
-def get_coord2d_map(width: int, height: int, cam_K: torch.Tensor = None, device: Union[torch.device, str]=None,
-                    dtype: torch.dtype = dtype) -> torch.Tensor:
+def get_coord_2d_map(width: int, height: int, cam_K: torch.Tensor = None, device: Union[torch.device, str]=None,
+                     dtype: torch.dtype = dtype) -> torch.Tensor:
     """
     :param width: int
     :param height: int
@@ -18,14 +18,14 @@ def get_coord2d_map(width: int, height: int, cam_K: torch.Tensor = None, device:
     """
     device = cam_K.device if cam_K is not None else parse_device(device)
     dtype = cam_K.dtype if cam_K is not None else dtype
-    coor2d_x, coor2d_y = torch.meshgrid(
+    coord_2d_x, coord_2d_y = torch.meshgrid(
         torch.arange(float(width), dtype=dtype), torch.arange(float(height), dtype=dtype), indexing='xy')  # [H, W]
-    coor2d = torch.stack([coor2d_x, coor2d_y, torch.ones_like(coor2d_x)], dim=0).to(device)  # [3(XY1), H, W]
+    coord_2d = torch.stack([coord_2d_x, coord_2d_y, torch.ones_like(coord_2d_x)], dim=0).to(device)  # [3(XY1), H, W]
     if cam_K is not None:
         cam_K /= float(cam_K[-1, -1])
-        coor2d = torch.linalg.solve(cam_K, coor2d.reshape(3, -1)).reshape(3, height, width)
+        coord_2d = torch.linalg.solve(cam_K, coord_2d.reshape(3, -1)).reshape(3, height, width)
         # solve(K, M) == K.inv() @ M
-    return coor2d[:2]  # [2(XY), H, W]
+    return coord_2d[:2]  # [2(XY), H, W]
 
 
 def get_bbox2d_from_mask(mask: torch.Tensor) -> torch.Tensor:
@@ -42,13 +42,14 @@ def get_bbox2d_from_mask(mask: torch.Tensor) -> torch.Tensor:
     return torch.stack([x0 + w * .5, y0 + h * .5, w, h], dim=-1)  # [..., 4(XYWH)]
 
 
-def calc_bbox2d_crop(bbox: torch.Tensor) -> tuple[torch.Tensor, int, torch.Tensor, torch.Tensor]:
+def calc_bbox2d_crop(bbox: torch.Tensor, bbox_zoom_out: float = 1.) \
+        -> tuple[torch.Tensor, int, torch.Tensor, torch.Tensor]:
     """
     :param bbox: [N, 4(XYWH)]
+    :param bbox_zoom_out: float
     """
     crop_size, _ = bbox[:, 2:].max(dim=-1)  # [N]
-    if gdr_mode:
-        crop_size *= 1.5
+    crop_size *= bbox_zoom_out
     pad_size = int((crop_size.max() * .5).ceil())
     x0, y0 = (bbox[:, :2].T - crop_size * .5).round().int() + pad_size
     crop_size = crop_size.round().int()

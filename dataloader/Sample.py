@@ -9,7 +9,7 @@ from utils.const import debug_mode, plot_colors
 
 class Sample:
     def __init__(self, obj_id=None, cam_K=None, gt_cam_R_m2c=None, gt_cam_t_m2c=None,
-                 coord2d=None, gt_coord3d=None, gt_mask_vis=None, gt_mask_obj=None, img=None,
+                 coord_2d=None, gt_coord_3d=None, gt_mask_vis=None, gt_mask_obj=None, img=None,
                  dbg_img=None, bbox=None, gt_cam_t_m2c_site=None, obj_size=None):
         self.obj_id: torch.Tensor = obj_id
         self.obj_size: torch.Tensor = obj_size
@@ -17,8 +17,8 @@ class Sample:
         self.gt_cam_R_m2c: torch.Tensor = gt_cam_R_m2c
         self.gt_cam_t_m2c: torch.Tensor = gt_cam_t_m2c
         self.gt_cam_t_m2c_site: torch.Tensor = gt_cam_t_m2c_site
-        self.coord2d: torch.Tensor = coord2d
-        self.gt_coord3d: torch.Tensor = gt_coord3d
+        self.coord_2d: torch.Tensor = coord_2d
+        self.gt_coord_3d: torch.Tensor = gt_coord_3d
         self.gt_mask_vis: torch.Tensor = gt_mask_vis
         self.gt_mask_obj: torch.Tensor = gt_mask_obj
         self.img: torch.Tensor = img
@@ -43,11 +43,11 @@ class Sample:
         pred_cam_t_m2c = torch.empty_like(self.gt_cam_t_m2c)
         for i in range(len(self.obj_id)):
             mask = self.gt_mask_vis[i].squeeze()
-            x = self.gt_coord3d[i].permute(1, 2, 0)[mask]
-            y = self.coord2d[i].permute(1, 2, 0)[mask]
+            x = self.gt_coord_3d[i].permute(1, 2, 0)[mask]
+            y = self.coord_2d[i].permute(1, 2, 0)[mask]
             # sol = efficient_pnp(x[None], y[None])
             # pred_R2, pred_t2 = sol.R[0].T, sol.T[0]
-            _, pred_R_exp, pred_t, _ = cv2.solvePnPRansac(x.cpu().numpy(), y.cpu().numpy(), np.eye(3), None,
+            _, pred_R_exp, pred_t, _ = cv2.solvePnPRansac(x.detach().cpu().numpy(), y.detach().cpu().numpy(), np.eye(3), None,
                                                           reprojectionError=.01)
             pred_R, _ = cv2.Rodrigues(pred_R_exp)
             device = self.obj_id.device
@@ -133,7 +133,7 @@ class Sample:
                 fig = plt.figure()
                 ax = plt.Axes(fig, [0., 0., 1., 1.])
                 fig.add_axes(ax)
-            ax.imshow(img_255.cpu().numpy().astype('uint8'))
+            ax.imshow(img_255.detach().cpu().numpy().astype('uint8'))
 
             if bboxes is not None:
                 def add_bbox(ax, x, y, w, h, text=None, color='red'):
@@ -144,7 +144,7 @@ class Sample:
 
                 if bboxes.dim() < 2:
                     bboxes = bboxes[None]
-                bboxes = bboxes.cpu().numpy()
+                bboxes = bboxes.detach().cpu().numpy()
                 for i in range(len(bboxes)):
                     add_bbox(ax, *bboxes[i], text=str(i), color=plot_colors[i % len(plot_colors)])
             return ax
@@ -152,9 +152,9 @@ class Sample:
         for i in range(len(self.obj_id)):
             fig, axs = plt.subplots(2, 2)
             draw(axs[0, 0], self.img[i])
-            draw(axs[0, 1], self.gt_coord3d[i] / self.obj_size[i, ..., None, None] + .5)
+            draw(axs[0, 1], self.gt_coord_3d[i] / self.obj_size[i, ..., None, None] + .5)
             draw(axs[1, 0], torch.cat([self.gt_mask_obj[i], self.gt_mask_vis[i]], dim=0))
-            draw(axs[1, 1], normalize(self.coord2d[i]))
+            draw(axs[1, 1], normalize(self.coord_2d[i]))
             plt.show()
 
         if debug_mode:

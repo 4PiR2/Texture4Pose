@@ -59,7 +59,7 @@ class ObjMesh:
     def _compute_min_sphere(self):
         while True:
             try:
-                radius, center, _ = exact_min_bound_sphere_3D(self.mesh.verts_packed().cpu().numpy())
+                radius, center, _ = exact_min_bound_sphere_3D(self.mesh.verts_packed().detach().cpu().numpy())
             except:
                 pass
             else:
