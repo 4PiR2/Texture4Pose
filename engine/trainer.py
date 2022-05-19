@@ -26,7 +26,7 @@ class LitModel(pl.LightningModule):
 
     def forward(self, sample: Sample):
         # in lightning, forward defines the prediction/inference actions
-        features = self.backbone(sample.img)
+        features = self.backbone(sample.img_roi)
         mask, coor_3d, _region = self.rot_head_net(features)
         pred_cam_R_m2c, pred_cam_t_m2c, *other_outputs = self.pnp_net(sample, coor_3d)
         return pred_cam_R_m2c, pred_cam_t_m2c, *other_outputs
@@ -34,12 +34,12 @@ class LitModel(pl.LightningModule):
     def training_step(self, sample: Sample, batch_idx):
         # training_step defined the train loop.
         # It is independent of forward
-        features = self.backbone(sample.img)
+        features = self.backbone(sample.img_roi)
         features = features.view(-1, 512, 8, 8)
         mask, coord_3d, _region = self.rot_head_net(features)
         # gt = sample.gt_coord3d / sample.obj_size[..., None, None] + .5
-        loss_3d = F.l1_loss(coord_3d * sample.gt_mask_vis, sample.gt_coord_3d * sample.gt_mask_vis)
-        loss_m = F.l1_loss(mask, sample.gt_mask_vis.float())
+        loss_3d = F.l1_loss(coord_3d * sample.gt_mask_vis_roi, sample.gt_coord_3d_roi * sample.gt_mask_vis_roi)
+        loss_m = F.l1_loss(mask, sample.gt_mask_vis_roi.float())
         loss = loss_3d + loss_m
         # Logging to TensorBoard by default
         self.log('train_loss', loss)

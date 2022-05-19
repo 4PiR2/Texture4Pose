@@ -12,10 +12,10 @@ from dataloader.ObjMesh import ObjMesh, BOPMesh, RegularMesh
 from dataloader.Sample import Sample
 from dataloader.Scene import Scene, SceneBatch, SceneBatchOne
 from utils.const import debug_mode, pnp_input_size, img_input_size, dtype, img_render_size, \
-    vis_ratio_threshold, t_depth_min, t_depth_max, lm_cam_K, bbox_zoom_out
+    vis_ratio_threshold, t_depth_min, t_depth_max, lm_cam_K, dzi_bbox_zoom_out, max_dzi_ratio
 from utils.io import read_json_file, parse_device, read_img_file, read_depth_img_file
 from utils.transform3d import t_to_t_site
-from utils.image2d import get_coord_2d_map, crop_roi, get_dzi_shifted_bbox, get_dzi_crop_size
+from utils.image2d import get_coord_2d_map, crop_roi, get_dzi_bbox, get_dzi_crop_size
 
 
 class RandomPoseRegularObjDataset(IterableDataset):
@@ -97,23 +97,24 @@ class RandomPoseRegularObjDataset(IterableDataset):
             img = self.transform(img)  # [B, 3(RGB), H, W]
 
         selected = gt_vis_ratio >= vis_ratio_threshold  # visibility threshold to select object
-        # TODO bbox dynamic zoom in
-        shift_ratio_wh = torch.zeros(2)
-        bbox = get_dzi_shifted_bbox(gt_bbox_vis[selected], shift_ratio_wh)  # [N, 4(XYWH)]
-        crop_size = get_dzi_crop_size(bbox, bbox_zoom_out)
+        dzi_ratio = (torch.rand(selected.sum(), 4, dtype=self.dtype, device=self.device) * 2. - 1.) * max_dzi_ratio
+        dzi_ratio[:, 3] = dzi_ratio[:, 2]
+        bbox = get_dzi_bbox(gt_bbox_vis[selected], dzi_ratio)  # [N, 4(XYWH)]
+        crop_size = get_dzi_crop_size(bbox, dzi_bbox_zoom_out)
 
         crop = lambda img, out_size=pnp_input_size: crop_roi(img, bbox, crop_size, out_size)
+
+        coord_2d_roi, gt_coord_3d_roi, gt_mask_vis_roi, gt_mask_obj_roi = crop([coord_2d, gt_coord_3d[selected],
+            gt_mask_vis[selected].to(dtype=self.dtype), gt_mask_obj[selected].to(dtype=self.dtype)])
 
         # F.interpolate doesn't support bool
         result = Sample(obj_id=obj_id[selected], obj_size=obj_size[selected], cam_K=cam_K,
                         gt_cam_R_m2c=gt_cam_R_m2c[selected], gt_cam_t_m2c=gt_cam_t_m2c[selected],
                         gt_cam_t_m2c_site=t_to_t_site(gt_cam_t_m2c[selected], bbox, pnp_input_size / crop_size, cam_K),
-                        coord_2d=crop(coord_2d), gt_coord_3d=crop(gt_coord_3d[selected]),
-                        gt_mask_vis=crop(gt_mask_vis[selected].to(dtype=torch.uint8)).bool(),
-                        gt_mask_obj=crop(gt_mask_obj[selected].to(dtype=torch.uint8)).bool(),
-                        img=crop(img.squeeze(), img_input_size),
-                        dbg_img=img if debug_mode else None,
-                        bbox=bbox,
+                        coord_2d_roi=coord_2d_roi, gt_coord_3d_roi=gt_coord_3d_roi,
+                        gt_mask_vis_roi=gt_mask_vis_roi.round().bool(), gt_mask_obj_roi=gt_mask_obj_roi.round().bool(),
+                        img_roi=crop(img.squeeze(), img_input_size), dbg_img=img if debug_mode else None,
+                        bbox=bbox, gt_bbox_vis=gt_bbox_vis[selected], gt_bbox_obj=gt_bbox_obj[selected],
                         )
         return result
 

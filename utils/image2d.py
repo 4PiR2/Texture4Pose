@@ -2,7 +2,6 @@ from typing import Union
 
 import torch
 from torch.nn import functional as F
-from torchvision.transforms import functional as vF
 
 from utils.const import dtype
 from utils.io import parse_device
@@ -42,68 +41,78 @@ def get_bbox2d_from_mask(mask: torch.Tensor) -> torch.Tensor:
     return torch.stack([x0 + w * .5, y0 + h * .5, w, h], dim=-1)  # [..., 4(XYWH)]
 
 
-def crop_roi(img: torch.Tensor, bbox: torch.Tensor,
-             in_size: Union[torch.Tensor, int] = None, out_size: Union[torch.Tensor, int] = None) -> torch.Tensor:
+def crop_roi(img: Union[list[torch.Tensor], torch.Tensor], bbox: torch.Tensor,
+             in_size: Union[torch.Tensor, float] = None, out_size: Union[list[int], int] = None) \
+        -> Union[list[torch.Tensor], torch.Tensor]:
     """
 
-    :param img: [N, C, H, W] or [C, H, W]
+    :param img: list of ([N, C, H, W] or [C, H, W])
     :param bbox: [N, 4(XYWH)]
-    :param in_size: [N, 2] or [N]
-    :param out_size: [N, 2] or [N]
-    :return: [N, C, H, W]
+    :param in_size: [N, 2] or [N, 1] or [N] or float
+    :param out_size: [int, int] or [int] or int
+    :return: list of [N, C, H, W]
     """
     N = len(bbox)
-    C, H, W = img.shape[-3:]
+    device = bbox.device
+    dtype = bbox.dtype
+
     if in_size is None:
-        in_size = bbox[:, 2:].int()
-    elif isinstance(in_size, int):
-        in_size = torch.full([N, 1], in_size, dtype=torch.int)
+        in_size = bbox[:, 2:]
+    elif isinstance(in_size, float):
+        in_size = torch.full([N, 1], in_size, dtype=dtype, device=device)
     else:
         in_size = in_size.reshape(N, -1)
-    if out_size is None:
-        out_size = bbox[:, 2:].int()
-    elif isinstance(out_size, int):
-        out_size = torch.full([N, 1], out_size, dtype=torch.int)
+
+    if isinstance(out_size, int):
+        out_size = [out_size]
+
+    if isinstance(img, torch.Tensor):
+        img = [img]
+        flag = True
     else:
-        out_size = out_size.reshape(N, -1)
+        flag = False
 
-    x0, y0 = (bbox[:, :2] - in_size * .5).round().int().T
-    x1, y1 = (bbox[:, :2] + in_size * .5).round().int().T
-    pad_left = F.relu(-x0).max()
-    pad_right = F.relu(x1 - W + 1).max()
-    pad_top = F.relu(-y0).max()
-    pad_bottom = F.relu(y1 - H + 1).max()
+    C = [i.shape[-3] for i in img]
+    cat_img = torch.cat([i.expand(N, -1, -1, -1) for i in img], dim=1)
+    H, W = cat_img.shape[-2:]
+    wh = torch.tensor([W, H], dtype=dtype, device=device)
 
-    padded_img = vF.pad(img, padding=[pad_left, pad_top, pad_right, pad_bottom])
-    x0 += pad_left
-    y0 += pad_top
-    c_imgs = [vF.resized_crop((padded_img[i] if img.dim() > 3 else padded_img)[None], y0[i], x0[i],
-              in_size[i, -1], in_size[i, 0], [int(out_size[i, -1]), int(out_size[i, 0])]) for i in range(len(bbox))]
-    # list of [1, C, H, W]
-    return torch.cat(c_imgs, dim=0)  # [N, C, H, W]
+    theta = torch.zeros(N, 2, 3, dtype=dtype, device=device)
+    theta[:, :, -1] = bbox[:, :2] * 2. / wh - 1.
+    theta[:, 0, 0], theta[:, 1, 1] = (in_size / wh).T
+
+    grid = F.affine_grid(theta, [N, sum(C), out_size[-1], out_size[0]], align_corners=False)
+
+    crop_img = F.grid_sample(cat_img, grid, align_corners=False).split(C, dim=1)
+
+    if flag:
+        crop_img = crop_img[0]
+
+    return crop_img  # [N, C, H, W]
 
 
-def get_dzi_shifted_bbox(bbox, shift_ratio_wh: torch.Tensor = torch.zeros(2)):
+def get_dzi_bbox(bbox: torch.Tensor, dzi_ratio: torch.Tensor) -> torch.Tensor:
     """
     dynamic zoom in
 
     :param bbox: [N, 4(XYWH)]
-    :param shift_ratio_wh: [2(RxRy)]
+    :param dzi_ratio: [N, 4(XYWH)]
     :return: [N, 4(XYWH)]
     """
     bbox = bbox.clone()
-    bbox[:, :2] += bbox[:, 2:] * shift_ratio_wh.to(bbox.device, dtype=bbox.dtype)  # [N, 2]
+    bbox[:, :2] += bbox[:, 2:] * dzi_ratio[:, :2]  # [N, 2]
+    bbox[:, 2:] *= 1. + dzi_ratio[:, 2:]  # [N, 2]
     return bbox
 
 
-def get_dzi_crop_size(bbox, bbox_zoom_out: float = 1.):
+def get_dzi_crop_size(bbox: torch.Tensor, dzi_bbox_zoom_out: Union[torch.Tensor, float] = 1.) -> torch.Tensor:
     """
     dynamic zoom in
 
     :param bbox: [N, 4(XYWH)]
-    :param bbox_zoom_out: float
+    :param dzi_bbox_zoom_out: [N] or float
     :return: [N]
     """
     crop_size, _ = bbox[:, 2:].max(dim=-1)
-    crop_size *= bbox_zoom_out
-    return crop_size.round().int()
+    crop_size *= dzi_bbox_zoom_out
+    return crop_size

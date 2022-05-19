@@ -8,22 +8,24 @@ from utils.const import debug_mode, plot_colors
 
 
 class Sample:
-    def __init__(self, obj_id=None, cam_K=None, gt_cam_R_m2c=None, gt_cam_t_m2c=None,
-                 coord_2d=None, gt_coord_3d=None, gt_mask_vis=None, gt_mask_obj=None, img=None,
-                 dbg_img=None, bbox=None, gt_cam_t_m2c_site=None, obj_size=None):
+    def __init__(self, obj_id=None, obj_size=None, cam_K=None, gt_cam_R_m2c=None, gt_cam_t_m2c=None,
+                 gt_cam_t_m2c_site=None, coord_2d_roi=None, gt_coord_3d_roi=None, gt_mask_vis_roi=None, gt_mask_obj_roi=None,
+                 img_roi=None, dbg_img=None, bbox=None, gt_bbox_vis=None, gt_bbox_obj=None):
         self.obj_id: torch.Tensor = obj_id
         self.obj_size: torch.Tensor = obj_size
         self.cam_K: torch.Tensor = cam_K
         self.gt_cam_R_m2c: torch.Tensor = gt_cam_R_m2c
         self.gt_cam_t_m2c: torch.Tensor = gt_cam_t_m2c
         self.gt_cam_t_m2c_site: torch.Tensor = gt_cam_t_m2c_site
-        self.coord_2d: torch.Tensor = coord_2d
-        self.gt_coord_3d: torch.Tensor = gt_coord_3d
-        self.gt_mask_vis: torch.Tensor = gt_mask_vis
-        self.gt_mask_obj: torch.Tensor = gt_mask_obj
-        self.img: torch.Tensor = img
+        self.coord_2d_roi: torch.Tensor = coord_2d_roi
+        self.gt_coord_3d_roi: torch.Tensor = gt_coord_3d_roi
+        self.gt_mask_vis_roi: torch.Tensor = gt_mask_vis_roi
+        self.gt_mask_obj_roi: torch.Tensor = gt_mask_obj_roi
+        self.img_roi: torch.Tensor = img_roi
         self.dbg_img: torch.Tensor = dbg_img
         self.bbox: torch.Tensor = bbox
+        self.gt_bbox_vis: torch.Tensor = gt_bbox_vis
+        self.gt_bbox_obj: torch.Tensor = gt_bbox_obj
 
     @classmethod
     def collate(cls, batch: list):
@@ -42,9 +44,9 @@ class Sample:
         pred_cam_R_m2c = torch.empty_like(self.gt_cam_R_m2c)
         pred_cam_t_m2c = torch.empty_like(self.gt_cam_t_m2c)
         for i in range(len(self.obj_id)):
-            mask = self.gt_mask_vis[i].squeeze()
-            x = self.gt_coord_3d[i].permute(1, 2, 0)[mask]
-            y = self.coord_2d[i].permute(1, 2, 0)[mask]
+            mask = self.gt_mask_vis_roi[i].squeeze()
+            x = self.gt_coord_3d_roi[i].permute(1, 2, 0)[mask]
+            y = self.coord_2d_roi[i].permute(1, 2, 0)[mask]
             # sol = efficient_pnp(x[None], y[None])
             # pred_R2, pred_t2 = sol.R[0].T, sol.T[0]
             _, pred_R_exp, pred_t, _ = cv2.solvePnPRansac(x.detach().cpu().numpy(), y.detach().cpu().numpy(), np.eye(3), None,
@@ -151,10 +153,10 @@ class Sample:
 
         for i in range(len(self.obj_id)):
             fig, axs = plt.subplots(2, 2)
-            draw(axs[0, 0], self.img[i])
-            draw(axs[0, 1], self.gt_coord_3d[i] / self.obj_size[i, ..., None, None] + .5)
-            draw(axs[1, 0], torch.cat([self.gt_mask_obj[i], self.gt_mask_vis[i]], dim=0))
-            draw(axs[1, 1], normalize(self.coord_2d[i]))
+            draw(axs[0, 0], self.img_roi[i])
+            draw(axs[0, 1], self.gt_coord_3d_roi[i] / self.obj_size[i, ..., None, None] + .5)
+            draw(axs[1, 0], torch.cat([self.gt_mask_obj_roi[i], self.gt_mask_vis_roi[i]], dim=0))
+            draw(axs[1, 1], normalize(self.coord_2d_roi[i]))
             plt.show()
 
         if debug_mode:
