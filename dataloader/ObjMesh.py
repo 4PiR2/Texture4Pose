@@ -152,10 +152,10 @@ class RegularMesh(ObjMesh):
         center = torch.zeros(3)
         if name == 'sphere':
             radius = scale
-            mesh = ico_sphere(level=5).scale_verts_(scale)
+            mesh = ico_sphere(level=1).scale_verts_(scale)
         elif name == 'cube':
             radius = scale * math.sqrt(2.)
-            mesh = cube(level=5).scale_verts_(scale)
+            mesh = cube(level=1).scale_verts_(scale)
         else:
             raise NotImplementedError
         diameter = radius * 2.

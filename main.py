@@ -23,7 +23,10 @@ from utils.const import lmo_objects, device, debug_mode, lm_objects, lm13_object
 
 if __name__ == '__main__':
     # dataset = RandomPoseBOPObjDataset(obj_list=lmo_objects, path='data/BOP/lmo', scene_mode=True, device=device)
-    # dataset = RenderedPoseBOPObjDataset(obj_list=lmo_objects, path='data/BOP/lmo', scene_mode=True, device=device)
+    dataset = RenderedPoseBOPObjDataset(obj_list=lmo_objects, path='data/BOP/lmo', scene_mode=True, device=device)
+    for s in dataset:
+        s.visualize()
+        a = 0
     # dataset = BOPObjDataset(obj_list=lmo_objects, path='data/BOP/lmo', device=device)
 
     test_objects = {101: 'sphere'}

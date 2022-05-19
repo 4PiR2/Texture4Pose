@@ -8,7 +8,7 @@ from pytorch3d.structures import join_meshes_as_scene, join_meshes_as_batch, Mes
 
 from dataloader.ObjMesh import ObjMesh
 from utils.SimpleShader import SimpleShader
-from utils.transform import get_bbox2d_from_mask
+from utils.image2d import get_bbox2d_from_mask
 
 
 class Scene:

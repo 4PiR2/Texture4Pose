@@ -14,7 +14,8 @@ from dataloader.Scene import Scene, SceneBatch, SceneBatchOne
 from utils.const import debug_mode, pnp_input_size, img_input_size, dtype, img_render_size, \
     vis_ratio_threshold, t_depth_min, t_depth_max, lm_cam_K, bbox_zoom_out
 from utils.io import read_json_file, parse_device, read_img_file, read_depth_img_file
-from utils.transform import calc_bbox2d_crop, t_to_t_site, get_coord_2d_map
+from utils.transform3d import t_to_t_site
+from utils.image2d import get_coord_2d_map, crop_roi, get_dzi_shifted_bbox, get_dzi_crop_size
 
 
 class RandomPoseRegularObjDataset(IterableDataset):
@@ -97,17 +98,11 @@ class RandomPoseRegularObjDataset(IterableDataset):
 
         selected = gt_vis_ratio >= vis_ratio_threshold  # visibility threshold to select object
         # TODO bbox dynamic zoom in
-        bbox = gt_bbox_vis[selected]  # [N, 4(XYWH)]
-        crop_size, pad_size, x0, y0 = calc_bbox2d_crop(bbox, bbox_zoom_out)
+        shift_ratio_wh = torch.zeros(2)
+        bbox = get_dzi_shifted_bbox(gt_bbox_vis[selected], shift_ratio_wh)  # [N, 4(XYWH)]
+        crop_size = get_dzi_crop_size(bbox, bbox_zoom_out)
 
-        def crop(img, out_size=pnp_input_size):
-            # [N, C, H, W] or [C, H, W]
-            padded_img = vF.pad(img, padding=[pad_size])
-            c_imgs = [vF.resized_crop((padded_img[i] if img.dim() > 3 else padded_img)[None],
-                                      y0[i], x0[i], crop_size[i], crop_size[i], [out_size, out_size]) for i in
-                      range(len(bbox))]
-            # [1, C, H, W]
-            return torch.cat(c_imgs, dim=0)  # [N, C, H, W]
+        crop = lambda img, out_size=pnp_input_size: crop_roi(img, bbox, crop_size, out_size)
 
         # F.interpolate doesn't support bool
         result = Sample(obj_id=obj_id[selected], obj_size=obj_size[selected], cam_K=cam_K,
