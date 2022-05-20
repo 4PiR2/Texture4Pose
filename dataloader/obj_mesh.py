@@ -95,7 +95,7 @@ class ObjMesh:
         errors = verts @ (R1 - R2).transpose(-2, -1)  # [..., V, 3]
         if t1 is not None and t2 is not None:
             errors += (t1 - t2)[..., None, :]  # dt: [..., 1, 3]
-        distances = torch.norm(errors, p=p, dim=-1)  # [..., V]
+        distances = torch.linalg.vector_norm(errors, ord=p, dim=-1)  # [..., V]
         return distances.mean(dim=-1)  # [...]
 
     def average_projected_distance(self, cam_K: torch.Tensor, R1: torch.Tensor, R2: torch.Tensor,
@@ -104,7 +104,7 @@ class ObjMesh:
         average projected distance (in pixel)
         https://github.com/ybkscht/EfficientPose/blob/main/eval/common.py
 
-        :param cam_K: [3, 3]
+        :param cam_K: [..., 3, 3]
         :param R1: [..., 3, 3]
         :param t1: [..., 3]
         :param R2: [..., 3, 3]
@@ -126,7 +126,7 @@ class ObjMesh:
         pv2 = verts @ P2.transpose(-2, -1)  # [..., V, 3]
         pv1 = pv1[..., :2] / pv1[..., 2:]  # [..., V, 2]
         pv2 = pv2[..., :2] / pv2[..., 2:]  # [..., V, 2]
-        distances = torch.norm(pv1 - pv2, p=p, dim=-1)  # [..., V]
+        distances = torch.linalg.vector_norm(pv1 - pv2, ord=p, dim=-1)  # [..., V]
         return distances.mean(dim=-1)  # [...]
 
 

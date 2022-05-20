@@ -8,14 +8,14 @@ from pytorch3d.transforms import random_rotations
 from torch.utils.data import IterableDataset
 from torch.utils.data.dataloader import default_collate
 
-from dataloader.ObjMesh import ObjMesh, BOPMesh, RegularMesh
-from dataloader.Sample import Sample
-from dataloader.Scene import Scene, SceneBatch, SceneBatchOne
+from dataloader.obj_mesh import ObjMesh, BOPMesh, RegularMesh
+from dataloader.sample import Sample
+from dataloader.scene import Scene, SceneBatch, SceneBatchOne
 from utils.const import debug_mode, pnp_input_size, img_input_size, dtype, img_render_size, \
-    vis_ratio_threshold, t_depth_min, t_depth_max, lm_cam_K, dzi_bbox_zoom_out, max_dzi_ratio
+    vis_ratio_threshold, t_depth_min, t_depth_max, lm_cam_K, bbox_zoom_out, max_dzi_ratio
 from utils.io import read_json_file, parse_device, read_img_file, read_depth_img_file
-from utils.transform3d import t_to_t_site
-from utils.image2d import get_coord_2d_map, crop_roi, get_dzi_bbox, get_dzi_crop_size
+from utils.transform_3d import t_to_t_site, normalize_cam_K
+from utils.image_2d import get_coord_2d_map, crop_roi, get_dzi_bbox, get_dzi_crop_size
 
 
 class RandomPoseRegularObjDataset(IterableDataset):
@@ -26,7 +26,9 @@ class RandomPoseRegularObjDataset(IterableDataset):
         self.dtype: torch.dtype = dtype
         self.device: torch.device = parse_device(device)
         self.scene_mode: bool = scene_mode
-        self.bg_img_path: str = bg_img_path
+        self.bg_img_path: list[str] = [os.path.join(bg_img_path, name) for name in os.listdir(bg_img_path)] \
+            if bg_img_path is not None else None
+        self.use_dzi = True
 
         self.objects: dict[int, ObjMesh] = {}
         self.objects_eval: dict[int, ObjMesh] = {}
@@ -37,7 +39,7 @@ class RandomPoseRegularObjDataset(IterableDataset):
         item = None
         while True:
             cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c = self._get_pose_gt(item)
-            img = self._get_bg_img(item)
+            img = self._get_bg_img(1 if self.scene_mode else len(obj_id))
             yield self._get_sample(item, cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, img)
 
     def _set_model_meshes(self):
@@ -53,16 +55,16 @@ class RandomPoseRegularObjDataset(IterableDataset):
         obj_id = obj_id[selected]
 
         radii = torch.tensor([self.objects[int(oid)].radius for oid in obj_id], dtype=self.dtype, device=self.device)
-        centers = torch.stack([self.objects[int(oid)].center for oid in obj_id], dim=0)
+        # [N]
+        centers = torch.stack([self.objects[int(oid)].center for oid in obj_id], dim=0)  # [N, 3(XYZ)]
 
-        cam_K = lm_cam_K.to(self.device)
-        box2d_min = torch.linalg.inv(cam_K)[:, -1:].T  # [1, 3(XY1)], inv(K) @ [0., 0., 1.].T
+        cam_K = lm_cam_K.to(self.device).expand(len(obj_id), -1, -1)  # [N, 3, 3]
+        box2d_min = torch.linalg.inv(cam_K)[..., -1]  # [N, 3(XY1)], inv(K) @ [0., 0., 1.].T
         box2d_max = torch.linalg.solve(cam_K, torch.tensor([[img_render_size], [img_render_size], [1.]],
-                                                           dtype=self.dtype,
-                                                           device=self.device)).T  # [1, 3(XY1)], inv(K) @ [W, H, 1.].T
-        box3d_size = (box2d_max - box2d_min) * t_depth_min - radii[:, None] * 2.
-        box3d_size[:, -1] += t_depth_max - t_depth_min
-        box3d_min = box2d_min * t_depth_min - centers + radii[:, None]
+            dtype=self.dtype, device=self.device))[..., 0]  # [N, 3(XY1)], inv(K) @ [W, H, 1.].T
+        box3d_size = (box2d_max - box2d_min) * t_depth_min - radii[:, None] * 2.  # [N, 3(XYZ)]
+        box3d_size[..., -1] += t_depth_max - t_depth_min
+        box3d_min = box2d_min * t_depth_min - centers + radii[:, None]  # [N, 3(XYZ)]
 
         if self.scene_mode:
             triu_indices = torch.triu_indices(num_obj, num_obj, 1)
@@ -75,12 +77,16 @@ class RandomPoseRegularObjDataset(IterableDataset):
         gt_cam_R_m2c = random_rotations(num_obj, dtype=self.dtype, device=self.device)  # [N, 3, 3]
         return cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c
 
-    def _get_bg_img(self, item):
+    def _get_bg_img(self, num):
         if self.bg_img_path is not None:
-            file_names = os.listdir(self.bg_img_path)
-            img_path = os.path.join(self.bg_img_path, file_names[int(torch.randint(len(file_names), [1]))])
-            img = read_img_file(img_path, dtype=self.dtype, device=self.device)
-            img = vF.resize(img, [img_render_size, img_render_size])
+            idx = torch.randint(len(self.bg_img_path), [num])
+            img = []
+            for i in idx:
+                im = read_img_file(self.bg_img_path[i], dtype=self.dtype, device=self.device)
+                # todo random crop
+                im = vF.resize(im, [img_render_size, img_render_size])
+                img.append(im)
+            img = torch.cat(img, dim=0)
         else:
             img = torch.zeros(1, 3, img_render_size, img_render_size, dtype=self.dtype, device=self.device)
         return img
@@ -97,24 +103,28 @@ class RandomPoseRegularObjDataset(IterableDataset):
             img = self.transform(img)  # [B, 3(RGB), H, W]
 
         selected = gt_vis_ratio >= vis_ratio_threshold  # visibility threshold to select object
-        dzi_ratio = (torch.rand(selected.sum(), 4, dtype=self.dtype, device=self.device) * 2. - 1.) * max_dzi_ratio
-        dzi_ratio[:, 3] = dzi_ratio[:, 2]
-        bbox = get_dzi_bbox(gt_bbox_vis[selected], dzi_ratio)  # [N, 4(XYWH)]
-        crop_size = get_dzi_crop_size(bbox, dzi_bbox_zoom_out)
+        bbox = gt_bbox_vis[selected]
+        if self.use_dzi:
+            dzi_ratio = (torch.rand(selected.sum(), 4, dtype=self.dtype, device=self.device) * 2. - 1.) * max_dzi_ratio
+            dzi_ratio[:, 3] = dzi_ratio[:, 2]
+            bbox = get_dzi_bbox(bbox, dzi_ratio)  # [N, 4(XYWH)]
+        crop_size = get_dzi_crop_size(bbox, bbox_zoom_out)
 
         crop = lambda img, out_size=pnp_input_size: crop_roi(img, bbox, crop_size, out_size)
 
-        coord_2d_roi, gt_coord_3d_roi, gt_mask_vis_roi, gt_mask_obj_roi = crop([coord_2d, gt_coord_3d[selected],
+        coord_2d_roi, gt_coord_3d_roi, gt_mask_vis_roi, gt_mask_obj_roi = crop([
+            coord_2d[selected], gt_coord_3d[selected],
             gt_mask_vis[selected].to(dtype=self.dtype), gt_mask_obj[selected].to(dtype=self.dtype)])
 
         # F.interpolate doesn't support bool
-        result = Sample(obj_id=obj_id[selected], obj_size=obj_size[selected], cam_K=cam_K,
-                        gt_cam_R_m2c=gt_cam_R_m2c[selected], gt_cam_t_m2c=gt_cam_t_m2c[selected],
-                        gt_cam_t_m2c_site=t_to_t_site(gt_cam_t_m2c[selected], bbox, pnp_input_size / crop_size, cam_K),
-                        coord_2d_roi=coord_2d_roi, gt_coord_3d_roi=gt_coord_3d_roi,
-                        gt_mask_vis_roi=gt_mask_vis_roi.round().bool(), gt_mask_obj_roi=gt_mask_obj_roi.round().bool(),
-                        img_roi=crop(img.squeeze(), img_input_size), dbg_img=img if debug_mode else None,
-                        bbox=bbox, gt_bbox_vis=gt_bbox_vis[selected], gt_bbox_obj=gt_bbox_obj[selected],
+        result = Sample(
+            obj_id=obj_id[selected], obj_size=obj_size[selected], cam_K=cam_K[selected],
+            gt_cam_R_m2c=gt_cam_R_m2c[selected], gt_cam_t_m2c=gt_cam_t_m2c[selected],
+            gt_cam_t_m2c_site=t_to_t_site(gt_cam_t_m2c[selected], bbox, pnp_input_size / crop_size, cam_K[selected]),
+            coord_2d_roi=coord_2d_roi, gt_coord_3d_roi=gt_coord_3d_roi,
+            gt_mask_vis_roi=gt_mask_vis_roi.round().bool(), gt_mask_obj_roi=gt_mask_obj_roi.round().bool(),
+            img_roi=crop(img.squeeze(), img_input_size), dbg_img=img if debug_mode else None,
+            bbox=bbox, gt_bbox_vis=gt_bbox_vis[selected], gt_bbox_obj=gt_bbox_obj[selected],
                         )
         return result
 
@@ -165,6 +175,7 @@ class RandomPoseBOPObjDataset(RandomPoseRegularObjDataset):
 
 class RenderedPoseBOPObjDataset(RandomPoseBOPObjDataset):
     def __init__(self, **kwargs):
+        kwargs['bg_img_path'] = None
         super().__init__(**kwargs)
         self._scene_camera: list[dict[str, Any]] = []
         self._scene_gt: list[dict[str, Any]] = []
@@ -202,8 +213,8 @@ class RenderedPoseBOPObjDataset(RandomPoseBOPObjDataset):
         obj_id = scene_gt['obj_id'].to(self.device, dtype=torch.uint8)
         gt_cam_R_m2c = torch.stack(scene_gt['cam_R_m2c'], dim=-1).to(self.device, dtype=self.dtype).reshape(-1, 3, 3)
         gt_cam_t_m2c = torch.stack(scene_gt['cam_t_m2c'], dim=-1).to(self.device, dtype=self.dtype) * BOPMesh.scale
-        cam_K = torch.tensor(self._scene_camera[item]['cam_K'], device=self.device).reshape(3, 3)
-        cam_K /= float(cam_K[-1, -1])
+        cam_K = torch.tensor(self._scene_camera[item]['cam_K'], device=self.device)
+        cam_K = normalize_cam_K(cam_K.reshape(3, 3)).expand(len(obj_id), -1, -1)
         return cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c
 
     def _get_bg_img(self, item):
@@ -213,16 +224,21 @@ class RenderedPoseBOPObjDataset(RandomPoseBOPObjDataset):
 
 
 class BOPObjDataset(RenderedPoseBOPObjDataset):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.scene_mode = None
+        self.use_dzi = False
+
     def _get_features(self, item, cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, coord_2d, img):
         data_path = self._data_path[item]
         scene_id = self._scene_id[item]
         depth_path = os.path.join(data_path, 'depth/{:0>6d}.png'.format(scene_id))
         depth_img = read_depth_img_file(depth_path, dtype=self.dtype, device=self.device)  # [1, 1, H, W]
-        H, W = depth_img.shape[-2:]
-        depth_mask = depth_img != 0.
+        N, _, H, W = coord_2d.shape
+        depth_mask = depth_img.bool()
         depth_img *= self._scene_camera[item]['depth_scale'] * BOPMesh.scale
-        depth_img = torch.cat([coord_2d * depth_img, depth_img], dim=1)  # [1, 3(XYZ), H, W]
-        gt_coord_3d_vis = (gt_cam_R_m2c.transpose(-2, -1) @ (depth_img.reshape(1, 3, -1) - gt_cam_t_m2c[..., None])) \
+        depth_img = torch.cat([coord_2d * depth_img, depth_img.expand(N, -1, -1, -1)], dim=1)  # [N, 3(XYZ), H, W]
+        gt_coord_3d_vis = (gt_cam_R_m2c.transpose(-2, -1) @ (depth_img.reshape(N, 3, -1) - gt_cam_t_m2c[..., None])) \
                              .reshape(-1, 3, H, W) * depth_mask
 
         gt_mask_obj = torch.empty(len(obj_id), 1, H, W).to(self.device, dtype=torch.bool)

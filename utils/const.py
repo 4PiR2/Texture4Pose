@@ -21,10 +21,10 @@ pnp_input_size = 64
 
 # dynamic zoom in
 max_dzi_ratio = .25
-dzi_bbox_zoom_out = 1.5
+bbox_zoom_out = 1.5
 
 vis_ratio_threshold = .5
 t_depth_min = .5
 t_depth_max = 1.2
 
-lm_cam_K = torch.tensor([[572.4114, 0., 325.2611], [0., 573.57043, 242.04899], [0., 0., 1.]])
+lm_cam_K = torch.tensor([[[572.4114, 0., 325.2611], [0., 573.57043, 242.04899], [0., 0., 1.]]])

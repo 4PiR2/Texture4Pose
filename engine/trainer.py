@@ -5,16 +5,17 @@ import torchvision.transforms.functional as vF
 import pytorch_lightning as pl
 from torchvision.models import resnet34
 
-from dataloader.ObjMesh import ObjMesh
-from dataloader.Sample import Sample
-from dataloader.Scene import Scene
-from models.ConvPnPNet import ConvPnPNet
-from models.TextureNet import TextureNet
+from dataloader.obj_mesh import ObjMesh
+from dataloader.sample import Sample
+from dataloader.scene import Scene
+from models.conv_pnp_net import ConvPnPNet
+from models.texture_net import TextureNet
 from models.rot_head import RotWithRegionHead
+from utils.transform_3d import denormalize_coord_3d
 
 
 class LitModel(pl.LightningModule):
-    def __init__(self, objects: dict[int, ObjMesh]):
+    def __init__(self, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
         self.texture_net = TextureNet(objects)
         self.backbone = resnet34()
@@ -23,24 +24,36 @@ class LitModel(pl.LightningModule):
         self.rot_head_net = RotWithRegionHead(512, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1,
                                      num_regions=64)
         self.pnp_net = ConvPnPNet(nIn=5)
+        self.objects_eval = objects_eval if objects_eval is not None else objects
 
     def forward(self, sample: Sample):
         # in lightning, forward defines the prediction/inference actions
         features = self.backbone(sample.img_roi)
-        mask, coor_3d, _region = self.rot_head_net(features)
-        pred_cam_R_m2c, pred_cam_t_m2c, *other_outputs = self.pnp_net(sample, coor_3d)
-        return pred_cam_R_m2c, pred_cam_t_m2c, *other_outputs
+        features = features.view(-1, 512, 8, 8)
+        mask, coord_3d_normalized, _region = self.rot_head_net(features)
+        coord_3d = denormalize_coord_3d(coord_3d_normalized, sample.obj_size)
+        pred_cam_R_m2c, pred_cam_t_m2c, *other_outputs = self.pnp_net(sample, coord_3d)
+        angle = sample.relative_angle(pred_cam_R_m2c, degree=True)
+        dist = sample.relative_dist(pred_cam_t_m2c, cm=True)
+        add = sample.add_score(self.objects_eval, pred_cam_R_m2c, pred_cam_t_m2c)
+        proj_dist = sample.proj_dist(self.objects_eval, pred_cam_R_m2c, pred_cam_t_m2c)
+        return pred_cam_R_m2c, pred_cam_t_m2c, [angle, dist, add, proj_dist], *other_outputs
 
     def training_step(self, sample: Sample, batch_idx):
         # training_step defined the train loop.
         # It is independent of forward
         features = self.backbone(sample.img_roi)
         features = features.view(-1, 512, 8, 8)
-        mask, coord_3d, _region = self.rot_head_net(features)
-        # gt = sample.gt_coord3d / sample.obj_size[..., None, None] + .5
-        loss_3d = F.l1_loss(coord_3d * sample.gt_mask_vis_roi, sample.gt_coord_3d_roi * sample.gt_mask_vis_roi)
-        loss_m = F.l1_loss(mask, sample.gt_mask_vis_roi.float())
-        loss = loss_3d + loss_m
+        mask, coord_3d_normalized, _region = self.rot_head_net(features)
+        coord_3d = denormalize_coord_3d(coord_3d_normalized, sample.obj_size)
+        pred_cam_R_m2c, pred_cam_t_m2c, *_, pred_cam_t_m2c_site = self.pnp_net(sample, coord_3d)
+        loss_coord_3d = sample.coord_3d_loss(coord_3d_normalized)
+        loss_mask = sample.mask_loss(mask)
+        loss_pm = sample.pm_loss(self.objects_eval, pred_cam_R_m2c)
+        loss_t_site_center = sample.t_site_center_loss(pred_cam_t_m2c_site)
+        loss_t_site_depth = sample.t_site_depth_loss(pred_cam_t_m2c_site)
+        total_loss = loss_coord_3d + loss_mask + loss_pm + loss_t_site_center + loss_t_site_depth
+        loss = total_loss.mean()
         # Logging to TensorBoard by default
         self.log('train_loss', loss)
         return loss

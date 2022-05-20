@@ -1,10 +1,12 @@
 from typing import Union
 
 import torch
+from matplotlib import pyplot as plt, patches
 from torch.nn import functional as F
 
-from utils.const import dtype
+from utils.const import dtype, plot_colors
 from utils.io import parse_device
+from utils.transform_3d import normalize_cam_K
 
 
 def get_coord_2d_map(width: int, height: int, cam_K: torch.Tensor = None, device: Union[torch.device, str]=None,
@@ -12,7 +14,7 @@ def get_coord_2d_map(width: int, height: int, cam_K: torch.Tensor = None, device
     """
     :param width: int
     :param height: int
-    :param cam_K: [3, 3]
+    :param cam_K: [..., 3, 3]
     :return: [2(XY), H, W]
     """
     device = cam_K.device if cam_K is not None else parse_device(device)
@@ -21,10 +23,10 @@ def get_coord_2d_map(width: int, height: int, cam_K: torch.Tensor = None, device
         torch.arange(float(width), dtype=dtype), torch.arange(float(height), dtype=dtype), indexing='xy')  # [H, W]
     coord_2d = torch.stack([coord_2d_x, coord_2d_y, torch.ones_like(coord_2d_x)], dim=0).to(device)  # [3(XY1), H, W]
     if cam_K is not None:
-        cam_K /= float(cam_K[-1, -1])
-        coord_2d = torch.linalg.solve(cam_K, coord_2d.reshape(3, -1)).reshape(3, height, width)
+        cam_K = normalize_cam_K(cam_K)
+        coord_2d = torch.linalg.solve(cam_K, coord_2d.reshape(3, -1)).reshape(*cam_K.shape[:-2], 3, height, width)
         # solve(K, M) == K.inv() @ M
-    return coord_2d[:2]  # [2(XY), H, W]
+    return coord_2d[..., :2, :, :]  # [..., 2(XY), H, W]
 
 
 def get_bbox2d_from_mask(mask: torch.Tensor) -> torch.Tensor:
@@ -116,3 +118,70 @@ def get_dzi_crop_size(bbox: torch.Tensor, dzi_bbox_zoom_out: Union[torch.Tensor,
     crop_size, _ = bbox[:, 2:].max(dim=-1)
     crop_size *= dzi_bbox_zoom_out
     return crop_size
+
+
+def normalize_channel(x: torch.Tensor) -> torch.Tensor:
+    """
+
+    :param x: [..., H, W]
+    :return: [..., H, W] \in [0, 1]
+    """
+    min_val = x.min(-1)[0].min(-1)[0]  # [...]
+    max_val = x.max(-1)[0].max(-1)[0]  # [...]
+    return (x - min_val[..., None, None]) / (max_val - min_val)[..., None, None]
+
+
+def draw_ax(ax: plt.Axes, img_1: torch.Tensor, bg_1: torch.Tensor = None, mask: torch.Tensor = None,
+            bboxes: torch.Tensor = None) -> plt.Axes:
+    """
+
+    :param ax:
+    :param img_1: [C, H, W]
+    :param bg_1: [C, H, W]
+    :param mask: [*, H, W, *]
+    :param bboxes: [N, 4(XYWH)]
+    :return: ax
+    """
+    img_255 = img_1.permute(1, 2, 0)[..., :3] * 255
+    if img_255.shape[-1] == 2:
+        img_255 = torch.cat([img_255, torch.zeros_like(img_255[..., :1])], dim=-1)
+    if bg_1 is not None:
+        bg_255 = bg_1.permute(1, 2, 0)[..., :3] * 255
+        if mask is not None:
+            mask = mask.squeeze()[..., None].bool()
+            img_255 = img_255 * mask + bg_255 * ~mask
+        else:
+            img_255 = img_255 * 0.5 + bg_255 * 0.5
+
+    ax.imshow(img_255.detach().cpu().numpy().astype('uint8'))
+
+    if bboxes is not None:
+        def add_bbox(ax, x, y, w, h, text=None, color='red'):
+            rect = patches.Rectangle((x - w * .5, y - h * .5), w, h, linewidth=2, edgecolor=color, facecolor='none')
+            ax.add_patch(rect)
+            ax.text(x, y, text, color=color, size=12, ha='center', va='center')
+
+        if bboxes.dim() < 2:
+            bboxes = bboxes[None]
+        bboxes = bboxes.detach().cpu().numpy()
+        for i in range(len(bboxes)):
+            add_bbox(ax, *bboxes[i], text=str(i), color=plot_colors[i % len(plot_colors)])
+    return ax
+
+
+def visualize(x: torch.Tensor) -> None:
+    """
+
+    :param x: [N, C, H, W] or [C, H, W] or [H, W]
+    """
+    if x.dim() == 3:
+        x = x[None]
+    elif x.dim() == 2:
+        x = x[None, None]
+
+    for i in x:
+        fig = plt.figure()
+        ax = plt.Axes(fig, [0., 0., 1., 1.])
+        fig.add_axes(ax)
+        draw_ax(ax, i)
+        plt.show()

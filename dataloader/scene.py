@@ -6,9 +6,10 @@ from pytorch3d.renderer import PerspectiveCameras, RasterizationSettings, MeshRa
 from pytorch3d.renderer.mesh import TexturesBase
 from pytorch3d.structures import join_meshes_as_scene, join_meshes_as_batch, Meshes
 
-from dataloader.ObjMesh import ObjMesh
-from utils.SimpleShader import SimpleShader
-from utils.image2d import get_bbox2d_from_mask
+from dataloader.obj_mesh import ObjMesh
+from utils.simple_shader import SimpleShader
+from utils.image_2d import get_bbox2d_from_mask
+from utils.transform_3d import normalize_cam_K
 
 
 class Scene:
@@ -20,7 +21,7 @@ class Scene:
         self.objects: dict[int, ObjMesh] = objects  # dict
         self.device: torch.device = gt_cam_R_m2c.device
         self.dtype: torch.dtype = gt_cam_R_m2c.dtype
-        self.cam_K: torch.Tensor = cam_K / cam_K[-1, -1]  # [3, 3]
+        self.cam_K: torch.Tensor = normalize_cam_K(cam_K)  # [N, 3, 3]
         self.obj_id: torch.Tensor = obj_id  # [N]
         self.gt_cam_R_m2c: torch.Tensor = gt_cam_R_m2c  # [N, 3, 3]
         self.gt_cam_t_m2c: torch.Tensor = gt_cam_t_m2c  # [N, 3]
@@ -43,13 +44,13 @@ class Scene:
     def _get_cameras(self) -> PerspectiveCameras:
         R = torch.eye(3, dtype=self.dtype, device=self.device)[None]
         R[0, 0, 0] = R[0, 1, 1] = -1.
-        return PerspectiveCameras(R=R, K=self._get_cam_K(), image_size=((self.height, self.width),), device=self.device,
+        return PerspectiveCameras(R=R, K=self._get_cam_K()[:1], image_size=((self.height, self.width),), device=self.device,
                                   in_ndc=False)
 
     def _get_cam_K(self) -> torch.Tensor:
-        K = torch.zeros(1, 4, 4, dtype=self.dtype, device=self.device)
-        K[0, :2, :3] = self.cam_K[:2]
-        K[0, 2, 3] = K[0, 3, 2] = 1.
+        K = torch.zeros(len(self.cam_K), 4, 4, dtype=self.dtype, device=self.device)
+        K[:, :2, :3] = self.cam_K[:, :2]
+        K[:, 2, 3] = K[:, 3, 2] = 1.
         return K
 
     def _get_obj_meshes(self) -> list[Meshes]:

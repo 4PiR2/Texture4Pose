@@ -1,10 +1,13 @@
 import cv2
 import numpy as np
 import torch
+import torch.nn.functional as F
 from matplotlib import pyplot as plt, patches
 
-from dataloader.ObjMesh import ObjMesh
+from dataloader.obj_mesh import ObjMesh
 from utils.const import debug_mode, plot_colors
+from utils.image_2d import normalize_channel, draw_ax
+from utils.transform_3d import normalize_coord_3d
 
 
 class Sample:
@@ -32,7 +35,7 @@ class Sample:
         keys = [key for key in dir(batch[0]) if not key.startswith('__') and not callable(getattr(batch[0], key))]
         out = cls()
         for key in keys:
-            if key in ['dataset', 'cam_K']:
+            if key in ['dataset']:
                 setattr(out, key, getattr(batch[0], key))
             else:
                 if key.startswith('dbg_') and debug_mode == False:
@@ -87,12 +90,28 @@ class Sample:
             add[i] /= obj.diameter
         return add
 
+    def proj_dist(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor)\
+            -> torch.Tensor:
+        """
+        :param objects_eval: dict[int, ObjMesh]
+        :param pred_cam_R_m2c: [N, 3, 3]
+        :param pred_cam_t_m2c: [N, 3]
+        :return: [N]
+        """
+        n = len(self.obj_id)
+        dist = torch.empty(n, device=pred_cam_R_m2c.device)
+        for i in range(n):
+            obj = objects_eval[int(self.obj_id[i])]
+            dist[i] = obj.average_projected_distance(self.cam_K, pred_cam_R_m2c[i], self.gt_cam_R_m2c[i],
+                                                     pred_cam_t_m2c[i], self.gt_cam_t_m2c[i])
+        return dist
+
     def t_site_center_loss(self, pred_cam_t_m2c_site: torch.Tensor) -> torch.Tensor:
         """
         :param pred_cam_t_m2c_site: [N, 3]
         :return: [N]
         """
-        return torch.norm(self.gt_cam_t_m2c_site[:, :2] - pred_cam_t_m2c_site[:, :2], p=1, dim=-1)
+        return torch.linalg.vector_norm(self.gt_cam_t_m2c_site[:, :2] - pred_cam_t_m2c_site[:, :2], ord=1, dim=-1)
 
     def t_site_depth_loss(self, pred_cam_t_m2c_site: torch.Tensor) -> torch.Tensor:
         """
@@ -101,67 +120,48 @@ class Sample:
         """
         return torch.abs(self.gt_cam_t_m2c_site[:, 2] - pred_cam_t_m2c_site[:, 2])
 
-    def relative_angle(self, pred_cam_R_m2c: torch.Tensor) -> torch.Tensor:
+    def coord_3d_loss(self, pred_coord_3d_roi_normalized: torch.Tensor) -> torch.Tensor:
+        """
+        :param pred_coord_3d_roi_normalized: [N, 3, H, W]
+        :return: [N]
+        """
+        gt_coord_3d_roi_normalized = normalize_coord_3d(self.gt_coord_3d_roi, self.obj_size)
+        return torch.linalg.vector_norm(
+            (pred_coord_3d_roi_normalized - gt_coord_3d_roi_normalized) * self.gt_mask_vis_roi, ord=1, dim=[-3, -2, -1])
+
+    def mask_loss(self, pred_mask_vis_roi: torch.Tensor) -> torch.Tensor:
+        """
+        :param pred_coord_3d_roi: [N, 3, H, W]
+        :return: [N]
+        """
+        return torch.linalg.vector_norm(pred_mask_vis_roi - self.gt_mask_vis_roi.float(), ord=1, dim=[-3, -2, -1])
+
+    def relative_angle(self, pred_cam_R_m2c: torch.Tensor, degree=False) -> torch.Tensor:
         R_diff = pred_cam_R_m2c @ self.gt_cam_R_m2c.transpose(-2, -1)  # [..., 3, 3]
         trace = R_diff[..., 0, 0] + R_diff[..., 1, 1] + R_diff[..., 2, 2]  # [...]
-        radians_angle = ((trace.clamp(-1., 3.) - 1.) * .5).acos()  # [...]
-        return radians_angle * (180. / torch.pi)  # [...], 360 degrees
+        angle = ((trace.clamp(-1., 3.) - 1.) * .5).acos()  # [...]
+        if degree:
+            angle *= 180. / torch.pi  # 360 degrees
+        return angle  # [...]
 
-    def relative_dist(self, pred_cam_t_m2c: torch.Tensor) -> torch.Tensor:
-        return torch.norm(pred_cam_t_m2c - self.gt_cam_t_m2c, p=2, dim=-1) * 100.  # [N], cm
-
+    def relative_dist(self, pred_cam_t_m2c: torch.Tensor, cm=False) -> torch.Tensor:
+        dist = torch.linalg.vector_norm(pred_cam_t_m2c - self.gt_cam_t_m2c, ord=2, dim=-1)  # [N]
+        if cm:
+            dist *= 100.  # cm
+        return dist  # [N]
 
     def visualize(self) -> None:
-        def normalize(x):
-            # x: [C, H, W]
-            min_val = x.min(-1)[0].min(-1)[0]
-            max_val = x.max(-1)[0].max(-1)[0]
-            x = (x - min_val[..., None, None]) / (max_val - min_val)[..., None, None]
-            return x
-
-        def draw(ax, img_1, bg_1=None, mask=None, bboxes=None):
-            img_255 = img_1.permute(1, 2, 0)[..., :3] * 255
-            if img_255.shape[-1] == 2:
-                img_255 = torch.cat([img_255, torch.zeros_like(img_255[..., :1])], dim=-1)
-            if bg_1 is not None:
-                bg_255 = bg_1.permute(1, 2, 0)[..., :3] * 255
-                if mask is not None:
-                    mask = mask.squeeze()[..., None].bool()
-                    img_255 = img_255 * mask + bg_255 * ~mask
-                else:
-                    img_255 = img_255 * 0.5 + bg_255 * 0.5
-
-            if ax is None:
-                fig = plt.figure()
-                ax = plt.Axes(fig, [0., 0., 1., 1.])
-                fig.add_axes(ax)
-            ax.imshow(img_255.detach().cpu().numpy().astype('uint8'))
-
-            if bboxes is not None:
-                def add_bbox(ax, x, y, w, h, text=None, color='red'):
-                    rect = patches.Rectangle((x - w * .5, y - h * .5), w, h,
-                                             linewidth=2, edgecolor=color, facecolor='none')
-                    ax.add_patch(rect)
-                    ax.text(x, y, text, color=color, size=12, ha='center', va='center')
-
-                if bboxes.dim() < 2:
-                    bboxes = bboxes[None]
-                bboxes = bboxes.detach().cpu().numpy()
-                for i in range(len(bboxes)):
-                    add_bbox(ax, *bboxes[i], text=str(i), color=plot_colors[i % len(plot_colors)])
-            return ax
-
         for i in range(len(self.obj_id)):
             fig, axs = plt.subplots(2, 2)
-            draw(axs[0, 0], self.img_roi[i])
-            draw(axs[0, 1], self.gt_coord_3d_roi[i] / self.obj_size[i, ..., None, None] + .5)
-            draw(axs[1, 0], torch.cat([self.gt_mask_obj_roi[i], self.gt_mask_vis_roi[i]], dim=0))
-            draw(axs[1, 1], normalize(self.coord_2d_roi[i]))
+            draw_ax(axs[0, 0], self.img_roi[i])
+            draw_ax(axs[0, 1], normalize_coord_3d(self.gt_coord_3d_roi[i], self.obj_size[i]))
+            draw_ax(axs[1, 0], torch.cat([self.gt_mask_obj_roi[i], self.gt_mask_vis_roi[i]], dim=0))
+            draw_ax(axs[1, 1], normalize_channel(self.coord_2d_roi[i]))
             plt.show()
 
         if debug_mode:
             fig = plt.figure()
             ax = plt.Axes(fig, [0., 0., 1., 1.])
             fig.add_axes(ax)
-            draw(ax, self.dbg_img[0], bboxes=self.bbox)
+            draw_ax(ax, self.dbg_img[0], bboxes=self.bbox)
             plt.show()
