@@ -4,6 +4,7 @@ from typing import Any, Iterator, Union
 import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as vF
+import torchvision.transforms as T
 from pytorch3d.transforms import random_rotations
 from torch.utils.data import IterableDataset
 from torch.utils.data.dataloader import default_collate
@@ -34,6 +35,9 @@ class RandomPoseRegularObjDataset(IterableDataset):
         self.objects_eval: dict[int, ObjMesh] = {}
 
         self._set_model_meshes()
+
+    def __len__(self) -> int:
+        return 100  # epoch length
 
     def __iter__(self) -> Iterator:
         item = None
@@ -79,12 +83,15 @@ class RandomPoseRegularObjDataset(IterableDataset):
 
     def _get_bg_img(self, num):
         if self.bg_img_path is not None:
+            transform = T.RandomCrop(img_render_size)
             idx = torch.randint(len(self.bg_img_path), [num])
             img = []
             for i in idx:
                 im = read_img_file(self.bg_img_path[i], dtype=self.dtype, device=self.device)
-                # todo random crop
-                im = vF.resize(im, [img_render_size, img_render_size])
+                im_size = min(im.shape[-2:])
+                if im_size < img_render_size:
+                    im = vF.resize(im, [img_render_size])
+                im = transform(im)
                 img.append(im)
             img = torch.cat(img, dim=0)
         else:

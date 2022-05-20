@@ -1,7 +1,7 @@
 .DS_Store
 .idea/
 /data/
-/output/
+/outputs/
 /test/
 
 # Byte-compiled / optimized / DLL files

@@ -32,21 +32,14 @@ class LitModel(pl.LightningModule):
         features = features.view(-1, 512, 8, 8)
         mask, coord_3d_normalized, _region = self.rot_head_net(features)
         coord_3d = denormalize_coord_3d(coord_3d_normalized, sample.obj_size)
-        pred_cam_R_m2c, pred_cam_t_m2c, *other_outputs = self.pnp_net(sample, coord_3d)
-        angle = sample.relative_angle(pred_cam_R_m2c, degree=True)
-        dist = sample.relative_dist(pred_cam_t_m2c, cm=True)
-        add = sample.add_score(self.objects_eval, pred_cam_R_m2c, pred_cam_t_m2c)
-        proj_dist = sample.proj_dist(self.objects_eval, pred_cam_R_m2c, pred_cam_t_m2c)
-        return pred_cam_R_m2c, pred_cam_t_m2c, [angle, dist, add, proj_dist], *other_outputs
+        pred_cam_R_m2c, pred_cam_t_m2c, _pred_cam_R_m2c_6d, _pred_cam_R_m2c_allo, pred_cam_t_m2c_site \
+            = self.pnp_net(sample, coord_3d)
+        return pred_cam_R_m2c, pred_cam_t_m2c, coord_3d_normalized, mask, pred_cam_t_m2c_site
 
     def training_step(self, sample: Sample, batch_idx):
         # training_step defined the train loop.
         # It is independent of forward
-        features = self.backbone(sample.img_roi)
-        features = features.view(-1, 512, 8, 8)
-        mask, coord_3d_normalized, _region = self.rot_head_net(features)
-        coord_3d = denormalize_coord_3d(coord_3d_normalized, sample.obj_size)
-        pred_cam_R_m2c, pred_cam_t_m2c, *_, pred_cam_t_m2c_site = self.pnp_net(sample, coord_3d)
+        pred_cam_R_m2c, pred_cam_t_m2c, coord_3d_normalized, mask, pred_cam_t_m2c_site = self.forward(sample)
         loss_coord_3d = sample.coord_3d_loss(coord_3d_normalized)
         loss_mask = sample.mask_loss(mask)
         loss_pm = sample.pm_loss(self.objects_eval, pred_cam_R_m2c)
@@ -54,9 +47,16 @@ class LitModel(pl.LightningModule):
         loss_t_site_depth = sample.t_site_depth_loss(pred_cam_t_m2c_site)
         total_loss = loss_coord_3d + loss_mask + loss_pm + loss_t_site_center + loss_t_site_depth
         loss = total_loss.mean()
-        # Logging to TensorBoard by default
         self.log('train_loss', loss)
         return loss
+
+    def validation_step(self, sample: Sample, batch_idx):
+        pred_cam_R_m2c, pred_cam_t_m2c, *_ = self.forward(sample)
+        re = sample.relative_angle(pred_cam_R_m2c, degree=True)
+        te = sample.relative_dist(pred_cam_t_m2c, cm=True)
+        add = sample.add_score(self.objects_eval, pred_cam_R_m2c, pred_cam_t_m2c)
+        proj = sample.proj_dist(self.objects_eval, pred_cam_R_m2c, pred_cam_t_m2c)
+        return pred_cam_R_m2c, pred_cam_t_m2c, re, te, add, proj
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-2)

@@ -2,11 +2,11 @@ import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
-from matplotlib import pyplot as plt, patches
+from matplotlib import pyplot as plt
 
 from dataloader.obj_mesh import ObjMesh
-from utils.const import debug_mode, plot_colors
-from utils.image_2d import normalize_channel, draw_ax
+from utils.const import debug_mode
+from utils.image_2d import normalize_channel, draw_ax, lp_loss
 from utils.transform_3d import normalize_coord_3d
 
 
@@ -102,7 +102,7 @@ class Sample:
         dist = torch.empty(n, device=pred_cam_R_m2c.device)
         for i in range(n):
             obj = objects_eval[int(self.obj_id[i])]
-            dist[i] = obj.average_projected_distance(self.cam_K, pred_cam_R_m2c[i], self.gt_cam_R_m2c[i],
+            dist[i] = obj.average_projected_distance(self.cam_K[i], pred_cam_R_m2c[i], self.gt_cam_R_m2c[i],
                                                      pred_cam_t_m2c[i], self.gt_cam_t_m2c[i])
         return dist
 
@@ -122,21 +122,26 @@ class Sample:
 
     def coord_3d_loss(self, pred_coord_3d_roi_normalized: torch.Tensor) -> torch.Tensor:
         """
-        :param pred_coord_3d_roi_normalized: [N, 3, H, W]
-        :return: [N]
+        :param pred_coord_3d_roi_normalized: [..., 3, H, W]
+        :return: [...]
         """
         gt_coord_3d_roi_normalized = normalize_coord_3d(self.gt_coord_3d_roi, self.obj_size)
-        return torch.linalg.vector_norm(
-            (pred_coord_3d_roi_normalized - gt_coord_3d_roi_normalized) * self.gt_mask_vis_roi, ord=1, dim=[-3, -2, -1])
+        return lp_loss((pred_coord_3d_roi_normalized - gt_coord_3d_roi_normalized) * self.gt_mask_vis_roi, p=1)
 
     def mask_loss(self, pred_mask_vis_roi: torch.Tensor) -> torch.Tensor:
         """
-        :param pred_coord_3d_roi: [N, 3, H, W]
-        :return: [N]
+        :param pred_mask_vis_roi: [..., 1, H, W]
+        :return: [...]
         """
-        return torch.linalg.vector_norm(pred_mask_vis_roi - self.gt_mask_vis_roi.float(), ord=1, dim=[-3, -2, -1])
+        return lp_loss(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype), p=1)
 
     def relative_angle(self, pred_cam_R_m2c: torch.Tensor, degree=False) -> torch.Tensor:
+        """
+
+        :param pred_cam_R_m2c: [..., 3, 3]
+        :param degree: bool, use 360 degrees
+        :return: [...]
+        """
         R_diff = pred_cam_R_m2c @ self.gt_cam_R_m2c.transpose(-2, -1)  # [..., 3, 3]
         trace = R_diff[..., 0, 0] + R_diff[..., 1, 1] + R_diff[..., 2, 2]  # [...]
         angle = ((trace.clamp(-1., 3.) - 1.) * .5).acos()  # [...]
@@ -145,10 +150,16 @@ class Sample:
         return angle  # [...]
 
     def relative_dist(self, pred_cam_t_m2c: torch.Tensor, cm=False) -> torch.Tensor:
-        dist = torch.linalg.vector_norm(pred_cam_t_m2c - self.gt_cam_t_m2c, ord=2, dim=-1)  # [N]
+        """
+
+        :param pred_cam_t_m2c: [.., 3]
+        :param cm: bool, use cm instead of meter
+        :return:
+        """
+        dist = torch.linalg.vector_norm(pred_cam_t_m2c - self.gt_cam_t_m2c, ord=2, dim=-1)  # [...]
         if cm:
             dist *= 100.  # cm
-        return dist  # [N]
+        return dist  # [...]
 
     def visualize(self) -> None:
         for i in range(len(self.obj_id)):

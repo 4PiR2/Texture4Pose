@@ -97,13 +97,13 @@ def get_dzi_bbox(bbox: torch.Tensor, dzi_ratio: torch.Tensor) -> torch.Tensor:
     """
     dynamic zoom in
 
-    :param bbox: [N, 4(XYWH)]
-    :param dzi_ratio: [N, 4(XYWH)]
-    :return: [N, 4(XYWH)]
+    :param bbox: [..., 4(XYWH)]
+    :param dzi_ratio: [..., 4(XYWH)]
+    :return: [..., 4(XYWH)]
     """
     bbox = bbox.clone()
-    bbox[:, :2] += bbox[:, 2:] * dzi_ratio[:, :2]  # [N, 2]
-    bbox[:, 2:] *= 1. + dzi_ratio[:, 2:]  # [N, 2]
+    bbox[..., :2] += bbox[..., 2:] * dzi_ratio[..., :2]  # [..., 2]
+    bbox[..., 2:] *= 1. + dzi_ratio[..., 2:]  # [..., 2]
     return bbox
 
 
@@ -111,11 +111,11 @@ def get_dzi_crop_size(bbox: torch.Tensor, dzi_bbox_zoom_out: Union[torch.Tensor,
     """
     dynamic zoom in
 
-    :param bbox: [N, 4(XYWH)]
-    :param dzi_bbox_zoom_out: [N] or float
-    :return: [N]
+    :param bbox: [..., 4(XYWH)]
+    :param dzi_bbox_zoom_out: [...] or float
+    :return: [...]
     """
-    crop_size, _ = bbox[:, 2:].max(dim=-1)
+    crop_size, _ = bbox[..., 2:].max(dim=-1)
     crop_size *= dzi_bbox_zoom_out
     return crop_size
 
@@ -129,6 +129,25 @@ def normalize_channel(x: torch.Tensor) -> torch.Tensor:
     min_val = x.min(-1)[0].min(-1)[0]  # [...]
     max_val = x.max(-1)[0].max(-1)[0]  # [...]
     return (x - min_val[..., None, None]) / (max_val - min_val)[..., None, None]
+
+
+def lp_loss(x: torch.Tensor, y: torch.Tensor = None, p: int = 1) -> torch.Tensor:
+    """
+
+    :param x: [..., C, H, W]
+    :param y: [..., C, H, W]
+    :param p: int
+    :return: [...]
+    """
+    if y is not None:
+        x = x - y
+    if p == 1:
+        x = x.abs()
+    elif p == 2:
+        x = x * x
+    else:
+        x = x.abs() ** p
+    return x.mean(dim=[-3, -2, -1])
 
 
 def draw_ax(ax: plt.Axes, img_1: torch.Tensor, bg_1: torch.Tensor = None, mask: torch.Tensor = None,
