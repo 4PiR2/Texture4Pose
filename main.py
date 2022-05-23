@@ -1,46 +1,50 @@
 import gc
+import os
 import pickle
 import time
 
-import cv2
 import numpy as np
-import pytorch3d
 import torch
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import TQDMProgressBar
-from torch.optim import Adam, SGD
+from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor
 from torch.utils.data import DataLoader
 from torchvision.transforms import transforms as T
 
-from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset, RandomPoseBOPObjDataset, RandomPoseRegularObjDataset
+from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset, RandomPoseBOPObjDataset, \
+    RandomPoseRegularObjDataset
 from dataloader.sample import Sample
 from engine.trainer import LitModel
 from utils.const import lmo_objects, device, debug_mode, lm_objects, lm13_objects, gdr_mode, regular_objects
 
 
 def main():
+    # state_dict = torch.load('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth')['model']
+    # for key in state_dict:
+    #     show_hist(state_dict[key], title=key, bins=100)
+    #     a = 0
+
     test_objects = {101: 'sphere'}
     composed = T.Compose([T.ColorJitter(brightness=.3, contrast=.3, saturation=.3, hue=0.)])
 
     dataset = RandomPoseRegularObjDataset(obj_list=test_objects, scene_mode=False, transform=composed,
                                           bg_img_path='/data/coco/train2017', device=device)
-    dataloader = DataLoader(dataset, batch_size=4, num_workers=0, collate_fn=Sample.collate)
+    dataloader = DataLoader(dataset, batch_size=16, num_workers=0, collate_fn=Sample.collate)
 
     model = LitModel(dataset.objects)
-    model.load_pretrain('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth')
+    # model.load_pretrain('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth')
     model = model.to(device)
 
     trainer = Trainer(
         accelerator='auto',
         devices=1 if torch.cuda.is_available() else None,
-        max_epochs=10,
-        callbacks=[TQDMProgressBar(refresh_rate=20)],
+        max_epochs=100,
+        callbacks=[TQDMProgressBar(refresh_rate=20), LearningRateMonitor(logging_interval='step')],
         default_root_dir='outputs',
     )
 
-    ckpt_path = f'outputs/lightning_logs/version_{12}/checkpoints/epoch={1}-step={49}.ckpt'
-    # ckpt_path = None
-    trainer.fit(model, train_dataloaders=dataloader, val_dataloaders=dataloader, ckpt_path=ckpt_path)
+    # ckpt_path = f'outputs/lightning_logs/version_{12}/checkpoints/epoch={1}-step={49}.ckpt'
+    ckpt_path = None
+    trainer.fit(model, train_dataloaders=dataloader, val_dataloaders=None, ckpt_path=ckpt_path)
 
 
 def data_loading_test():

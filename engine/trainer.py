@@ -47,7 +47,8 @@ class LitModel(pl.LightningModule):
         loss_t_site_depth = sample.t_site_depth_loss(pred_cam_t_m2c_site)
         total_loss = loss_coord_3d + loss_mask + loss_pm + loss_t_site_center + loss_t_site_depth
         loss = total_loss.mean()
-        self.log('train_loss', loss)
+        self.log('loss', {'total': loss, 'coord_3d': loss_coord_3d, 'mask': loss_mask, 'pm': loss_pm,
+                          'ts_center': loss_t_site_center, 'ts_depth': loss_t_site_depth}, on_step=True)
         return loss
 
     def validation_step(self, sample: Sample, batch_idx):
@@ -59,8 +60,15 @@ class LitModel(pl.LightningModule):
         return pred_cam_R_m2c, pred_cam_t_m2c, re, te, add, proj
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-2)
-        return optimizer
+        params = [
+            {'params': self.backbone.parameters(), 'lr': 1e-4, 'name': 'backbone'},
+            {'params': self.rot_head_net.parameters(), 'lr': 1e-4, 'name': 'rot_head'},
+            {'params': self.pnp_net.parameters(), 'lr': 1e-4, 'name': 'pnp'},
+            {'params': self.texture_net.parameters(), 'lr': 1e-2, 'name': 'texture'}
+        ]
+        optimizer = torch.optim.Adam(params)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=.1)
+        return [optimizer], [scheduler]
 
     def load_pretrain(self, gdr_pth_path):
         state_dict = torch.load(gdr_pth_path)['model']
@@ -69,5 +77,5 @@ class LitModel(pl.LightningModule):
         self.pnp_net.load_pretrain(gdr_pth_path)
 
     def on_train_start(self):
-        # validation/test/predict
+        # ! validation/test/predict
         Scene.texture_net = self.texture_net

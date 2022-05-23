@@ -37,7 +37,7 @@ class RandomPoseRegularObjDataset(IterableDataset):
         self._set_model_meshes()
 
     def __len__(self) -> int:
-        return 100  # epoch length
+        return 10000  # epoch length
 
     def __iter__(self) -> Iterator:
         item = None
@@ -191,6 +191,9 @@ class RenderedPoseBOPObjDataset(RandomPoseBOPObjDataset):
         self._data_path: str = os.path.join(self.path, 'test_all')
         self._data_path: list[str] = []
         self._read_scene_gt_from_BOP()
+
+    def __len__(self) -> int:
+        return min(len(self._scene_gt), super().__len__())
 
     def __iter__(self) -> Iterator:
         for item in range(len(self._scene_gt)):

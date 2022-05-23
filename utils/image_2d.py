@@ -204,3 +204,9 @@ def visualize(x: torch.Tensor) -> None:
         fig.add_axes(ax)
         draw_ax(ax, i)
         plt.show()
+
+
+def show_tensor_hist(x: torch.Tensor, title=None, bins=None) -> None:
+    plt.hist(x.detach().cpu().numpy().flatten(), bins=bins)
+    plt.title(str(title))
+    plt.show()
