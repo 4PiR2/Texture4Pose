@@ -31,7 +31,7 @@ def main():
     dataloader = DataLoader(dataset, batch_size=16, num_workers=0, collate_fn=Sample.collate)
 
     model = LitModel(dataset.objects)
-    # model.load_pretrain('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth')
+    model.load_pretrain('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth')
     model = model.to(device)
 
     trainer = Trainer(

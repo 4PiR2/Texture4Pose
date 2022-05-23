@@ -47,8 +47,9 @@ class LitModel(pl.LightningModule):
         loss_t_site_depth = sample.t_site_depth_loss(pred_cam_t_m2c_site)
         total_loss = loss_coord_3d + loss_mask + loss_pm + loss_t_site_center + loss_t_site_depth
         loss = total_loss.mean()
-        self.log('loss', {'total': loss, 'coord_3d': loss_coord_3d, 'mask': loss_mask, 'pm': loss_pm,
-                          'ts_center': loss_t_site_center, 'ts_depth': loss_t_site_depth}, on_step=True)
+        self.log('loss', {'total': loss, 'coord_3d': loss_coord_3d.mean(), 'mask': loss_mask.mean(),
+                          'pm': loss_pm.mean(), 'ts_center': loss_t_site_center.mean(),
+                          'ts_depth': loss_t_site_depth.mean()}, on_step=True)
         return loss
 
     def validation_step(self, sample: Sample, batch_idx):
@@ -63,7 +64,7 @@ class LitModel(pl.LightningModule):
         params = [
             {'params': self.backbone.parameters(), 'lr': 1e-4, 'name': 'backbone'},
             {'params': self.rot_head_net.parameters(), 'lr': 1e-4, 'name': 'rot_head'},
-            {'params': self.pnp_net.parameters(), 'lr': 1e-4, 'name': 'pnp'},
+            {'params': self.pnp_net.parameters(), 'lr': 1e-5, 'name': 'pnp'},
             {'params': self.texture_net.parameters(), 'lr': 1e-2, 'name': 'texture'}
         ]
         optimizer = torch.optim.Adam(params)
