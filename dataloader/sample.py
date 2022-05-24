@@ -1,5 +1,3 @@
-import cv2
-import numpy as np
 import torch
 import torch.nn.functional as F
 from matplotlib import pyplot as plt
@@ -7,13 +5,13 @@ from matplotlib import pyplot as plt
 from dataloader.obj_mesh import ObjMesh
 from utils.const import debug_mode
 from utils.image_2d import normalize_channel, draw_ax, lp_loss
-from utils.transform_3d import normalize_coord_3d
+from utils.transform_3d import normalize_coord_3d, ransac_pnp
 
 
 class Sample:
     def __init__(self, obj_id=None, obj_size=None, cam_K=None, gt_cam_R_m2c=None, gt_cam_t_m2c=None,
-                 gt_cam_t_m2c_site=None, coord_2d_roi=None, gt_coord_3d_roi=None, gt_mask_vis_roi=None, gt_mask_obj_roi=None,
-                 img_roi=None, dbg_img=None, bbox=None, gt_bbox_vis=None, gt_bbox_obj=None):
+                 gt_cam_t_m2c_site=None, coord_2d_roi=None, gt_coord_3d_roi=None, gt_mask_vis_roi=None,
+                 gt_mask_obj_roi=None, img_roi=None, dbg_img=None, bbox=None, gt_bbox_vis=None, gt_bbox_obj=None):
         self.obj_id: torch.Tensor = obj_id
         self.obj_size: torch.Tensor = obj_size
         self.cam_K: torch.Tensor = cam_K
@@ -44,20 +42,7 @@ class Sample:
         return out
 
     def sanity_check(self) -> tuple[torch.Tensor, torch.Tensor]:
-        pred_cam_R_m2c = torch.empty_like(self.gt_cam_R_m2c)
-        pred_cam_t_m2c = torch.empty_like(self.gt_cam_t_m2c)
-        for i in range(len(self.obj_id)):
-            mask = self.gt_mask_vis_roi[i].squeeze()
-            x = self.gt_coord_3d_roi[i].permute(1, 2, 0)[mask]
-            y = self.coord_2d_roi[i].permute(1, 2, 0)[mask]
-            # sol = efficient_pnp(x[None], y[None])
-            # pred_R2, pred_t2 = sol.R[0].T, sol.T[0]
-            _, pred_R_exp, pred_t, _ = cv2.solvePnPRansac(x.detach().cpu().numpy(), y.detach().cpu().numpy(), np.eye(3), None,
-                                                          reprojectionError=.01)
-            pred_R, _ = cv2.Rodrigues(pred_R_exp)
-            device = self.obj_id.device
-            pred_cam_R_m2c[i] = torch.Tensor(pred_R).to(device)
-            pred_cam_t_m2c[i] = torch.Tensor(pred_t).to(device).flatten()
+        pred_cam_R_m2c, pred_cam_t_m2c = ransac_pnp(self.gt_coord_3d_roi, self.coord_2d_roi, self.gt_mask_vis_roi)
         return pred_cam_R_m2c, pred_cam_t_m2c
 
     def pm_loss(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor) -> torch.Tensor:
@@ -73,7 +58,7 @@ class Sample:
             loss[i] = obj.average_distance(pred_cam_R_m2c[i], self.gt_cam_R_m2c[i], p=1)
         return loss
 
-    def add_score(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor)\
+    def add_score(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor) \
             -> torch.Tensor:
         """
         :param objects_eval: dict[int, ObjMesh]
@@ -90,7 +75,7 @@ class Sample:
             add[i] /= obj.diameter
         return add
 
-    def proj_dist(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor)\
+    def proj_dist(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor) \
             -> torch.Tensor:
         """
         :param objects_eval: dict[int, ObjMesh]

@@ -1,5 +1,7 @@
 from typing import Union
 
+import cv2
+import numpy as np
 import torch
 import torch.nn.functional as F
 from pytorch3d.transforms import quaternion_to_matrix
@@ -45,7 +47,7 @@ def t_site_to_t(t_site: torch.Tensor, bbox: torch.Tensor, r: Union[torch.Tensor,
     if cam_K is not None:
         # if bbox is in image space
         cam_K = normalize_cam_K(cam_K)
-        t = torch.linalg.solve(cam_K, t[..., None])[..., 0]  # [N, 3], (inv(K) @ t).T
+        t = torch.linalg.solve(cam_K, t[..., None])[..., 0]  # [..., 3], (inv(K) @ t).T
     return t
 
 
@@ -90,3 +92,32 @@ def normalize_coord_3d(coord_3d: torch.Tensor, obj_size: torch.Tensor) -> torch.
     :return: [..., 3(XYZ), H, W] \in [0, 1]
     """
     return coord_3d / obj_size[..., None, None] + .5
+
+
+def ransac_pnp(coord_3d: torch.Tensor, coord_2d: torch.Tensor, mask: torch.Tensor = None) \
+        -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    assume K = I
+
+    :param coord_3d: [N, 3(XYZ), H, W]
+    :param coord_2d: [N, 2(XY), H, W]
+    :param mask: [N, 1, H, W] or None
+    :return: [N, 3, 3], [N, 3]
+    """
+    dtype = coord_3d.dtype
+    device = coord_3d.device
+    N, _, H, W = coord_3d.shape
+    pred_cam_R_m2c = torch.empty(N, 3, 3, device=device)
+    pred_cam_t_m2c = torch.empty(N, 3, device=device)
+    if mask is None:
+        mask = torch.ones(N, 1, H, W, dtype=torch.bool, device=device)
+    else:
+        mask = mask.to(dtype).round().bool()
+    for i in range(N):
+        x = coord_3d[i].permute(1, 2, 0)[mask[i, 0]].detach().cpu().numpy()
+        y = coord_2d[i].permute(1, 2, 0)[mask[i, 0]].detach().cpu().numpy()
+        _, pred_R_exp, pred_t, _ = cv2.solvePnPRansac(x, y, np.eye(3), None, reprojectionError=.01)
+        pred_R, _ = cv2.Rodrigues(pred_R_exp)
+        pred_cam_R_m2c[i] = torch.tensor(pred_R, dtype=dtype, device=device)
+        pred_cam_t_m2c[i] = torch.tensor(pred_t.flatten(), dtype=dtype, device=device)
+    return pred_cam_R_m2c, pred_cam_t_m2c

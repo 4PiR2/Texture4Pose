@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import torchvision.transforms.functional as vF
 import torchvision.transforms as T
 from pytorch3d.transforms import random_rotations
-from torch.utils.data import IterableDataset
+from torch.utils.data import IterableDataset, Dataset
 from torch.utils.data.dataloader import default_collate
 
 from dataloader.obj_mesh import ObjMesh, BOPMesh, RegularMesh
@@ -17,6 +17,18 @@ from utils.const import debug_mode, pnp_input_size, img_input_size, dtype, img_r
 from utils.io import read_json_file, parse_device, read_img_file, read_depth_img_file
 from utils.transform_3d import t_to_t_site, normalize_cam_K
 from utils.image_2d import get_coord_2d_map, crop_roi, get_dzi_bbox, get_dzi_crop_size
+
+
+class DatasetWrapper(Dataset):
+    def __init__(self, dataset: IterableDataset, len: int):
+        self.dataset_iter: Iterator = iter(dataset)
+        self.len: int = len
+
+    def __len__(self) -> int:
+        return self.len
+
+    def __getitem__(self, item: int = None) -> Sample:
+        return self.dataset_iter.__next__()
 
 
 class RandomPoseRegularObjDataset(IterableDataset):
@@ -35,9 +47,6 @@ class RandomPoseRegularObjDataset(IterableDataset):
         self.objects_eval: dict[int, ObjMesh] = {}
 
         self._set_model_meshes()
-
-    def __len__(self) -> int:
-        return 10000  # epoch length
 
     def __iter__(self) -> Iterator:
         item = None
@@ -193,7 +202,7 @@ class RenderedPoseBOPObjDataset(RandomPoseBOPObjDataset):
         self._read_scene_gt_from_BOP()
 
     def __len__(self) -> int:
-        return min(len(self._scene_gt), super().__len__())
+        return len(self._scene_gt)
 
     def __iter__(self) -> Iterator:
         for item in range(len(self._scene_gt)):

@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import transforms as T
 
 from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset, RandomPoseBOPObjDataset, \
-    RandomPoseRegularObjDataset
+    RandomPoseRegularObjDataset, DatasetWrapper
 from dataloader.sample import Sample
 from engine.trainer import LitModel
 from utils.const import lmo_objects, device, debug_mode, lm_objects, lm13_objects, gdr_mode, regular_objects
@@ -28,7 +28,8 @@ def main():
 
     dataset = RandomPoseRegularObjDataset(obj_list=test_objects, scene_mode=False, transform=composed,
                                           bg_img_path='/data/coco/train2017', device=device)
-    dataloader = DataLoader(dataset, batch_size=16, num_workers=0, collate_fn=Sample.collate)
+    dataloader_train = DataLoader(DatasetWrapper(dataset, 10000), batch_size=16, collate_fn=Sample.collate)
+    dataloader_val = DataLoader(DatasetWrapper(dataset, 100), batch_size=16, collate_fn=Sample.collate)
 
     model = LitModel(dataset.objects)
     model.load_pretrain('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth')
@@ -40,11 +41,13 @@ def main():
         max_epochs=100,
         callbacks=[TQDMProgressBar(refresh_rate=20), LearningRateMonitor(logging_interval='step')],
         default_root_dir='outputs',
+        log_every_n_steps=50,
     )
 
-    # ckpt_path = f'outputs/lightning_logs/version_{12}/checkpoints/epoch={1}-step={49}.ckpt'
+    # ckpt_path = f'outputs/lightning_logs/version_{0}/checkpoints/epoch={4}-step={3124}.ckpt'
     ckpt_path = None
-    trainer.fit(model, train_dataloaders=dataloader, val_dataloaders=None, ckpt_path=ckpt_path)
+    trainer.fit(model, train_dataloaders=dataloader_train, val_dataloaders=dataloader_val, ckpt_path=ckpt_path)
+    # trainer.validate(model, val_dataloaders=dataloader, ckpt_path=ckpt_path)
 
 
 def data_loading_test():

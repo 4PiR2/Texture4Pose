@@ -11,7 +11,7 @@ from dataloader.scene import Scene
 from models.conv_pnp_net import ConvPnPNet
 from models.texture_net import TextureNet
 from models.rot_head import RotWithRegionHead
-from utils.transform_3d import denormalize_coord_3d
+from utils.transform_3d import denormalize_coord_3d, ransac_pnp
 
 
 class LitModel(pl.LightningModule):
@@ -34,12 +34,10 @@ class LitModel(pl.LightningModule):
         coord_3d = denormalize_coord_3d(coord_3d_normalized, sample.obj_size)
         pred_cam_R_m2c, pred_cam_t_m2c, _pred_cam_R_m2c_6d, _pred_cam_R_m2c_allo, pred_cam_t_m2c_site \
             = self.pnp_net(sample, coord_3d)
-        return pred_cam_R_m2c, pred_cam_t_m2c, coord_3d_normalized, mask, pred_cam_t_m2c_site
+        return pred_cam_R_m2c, pred_cam_t_m2c, coord_3d, coord_3d_normalized, mask, pred_cam_t_m2c_site
 
-    def training_step(self, sample: Sample, batch_idx):
-        # training_step defined the train loop.
-        # It is independent of forward
-        pred_cam_R_m2c, pred_cam_t_m2c, coord_3d_normalized, mask, pred_cam_t_m2c_site = self.forward(sample)
+    def training_step(self, sample: Sample, batch_idx: int):
+        pred_cam_R_m2c, pred_cam_t_m2c, coord_3d, coord_3d_normalized, mask, pred_cam_t_m2c_site = self.forward(sample)
         loss_coord_3d = sample.coord_3d_loss(coord_3d_normalized)
         loss_mask = sample.mask_loss(mask)
         loss_pm = sample.pm_loss(self.objects_eval, pred_cam_R_m2c)
@@ -49,15 +47,20 @@ class LitModel(pl.LightningModule):
         loss = total_loss.mean()
         self.log('loss', {'total': loss, 'coord_3d': loss_coord_3d.mean(), 'mask': loss_mask.mean(),
                           'pm': loss_pm.mean(), 'ts_center': loss_t_site_center.mean(),
-                          'ts_depth': loss_t_site_depth.mean()}, on_step=True)
+                          'ts_depth': loss_t_site_depth.mean()})
         return loss
 
-    def validation_step(self, sample: Sample, batch_idx):
-        pred_cam_R_m2c, pred_cam_t_m2c, *_ = self.forward(sample)
+    def get_metrics(self, sample: Sample, pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor):
         re = sample.relative_angle(pred_cam_R_m2c, degree=True)
         te = sample.relative_dist(pred_cam_t_m2c, cm=True)
         add = sample.add_score(self.objects_eval, pred_cam_R_m2c, pred_cam_t_m2c)
         proj = sample.proj_dist(self.objects_eval, pred_cam_R_m2c, pred_cam_t_m2c)
+        return re, te, add, proj
+
+    def validation_step(self, sample: Sample, batch_idx: int):
+        pred_cam_R_m2c, pred_cam_t_m2c, coord_3d, coord_3d_normalized, mask, pred_cam_t_m2c_site = self.forward(sample)
+        re, te, add, proj = self.get_metrics(sample, pred_cam_R_m2c, pred_cam_t_m2c)
+        # self.log('metric', {'re': re.mean(), 'te': te.mean(), 'add': add.mean(), 'proj': proj.mean()})
         return pred_cam_R_m2c, pred_cam_t_m2c, re, te, add, proj
 
     def configure_optimizers(self):
@@ -65,18 +68,26 @@ class LitModel(pl.LightningModule):
             {'params': self.backbone.parameters(), 'lr': 1e-4, 'name': 'backbone'},
             {'params': self.rot_head_net.parameters(), 'lr': 1e-4, 'name': 'rot_head'},
             {'params': self.pnp_net.parameters(), 'lr': 1e-5, 'name': 'pnp'},
-            {'params': self.texture_net.parameters(), 'lr': 1e-2, 'name': 'texture'}
+            {'params': self.texture_net.parameters(), 'lr': 1e-2, 'name': 'texture'},
         ]
         optimizer = torch.optim.Adam(params)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=.1)
         return [optimizer], [scheduler]
 
-    def load_pretrain(self, gdr_pth_path):
+    def load_pretrain(self, gdr_pth_path: str):
         state_dict = torch.load(gdr_pth_path)['model']
         self.load_state_dict(state_dict, strict=False)
         self.backbone.conv1.weight = nn.Parameter(self.backbone.conv1.weight.flip(dims=[1]))
         self.pnp_net.load_pretrain(gdr_pth_path)
 
     def on_train_start(self):
-        # ! validation/test/predict
+        self.on_validation_start()
+
+    def on_validation_start(self):
         Scene.texture_net = self.texture_net
+
+    def on_test_start(self):
+        self.on_validation_start()
+
+    def on_predict_start(self):
+        self.on_validation_start()
