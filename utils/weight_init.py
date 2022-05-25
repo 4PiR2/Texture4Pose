@@ -1,4 +1,4 @@
-import torch.nn as nn
+from torch import nn
 
 
 def constant_init(module, val, bias=0):

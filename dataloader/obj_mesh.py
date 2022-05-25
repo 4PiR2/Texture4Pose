@@ -1,26 +1,23 @@
-import math
-
 import torch
 import torch.nn.functional as F
 from pytorch3d.io import IO
 from pytorch3d.renderer import TexturesVertex
 from pytorch3d.renderer.mesh import TexturesBase
 from pytorch3d.structures import Meshes
-from pytorch3d.utils import ico_sphere
+import pytorch3d.utils
 
-from utils.const import dtype
-from utils.cube_mesh import cube
-from utils.io import parse_device
+import config.const as cc
+import utils.cube_mesh
 from utils.mbsc.exact_min_bound_sphere_3D import exact_min_bound_sphere_3D
 
 
 class ObjMesh:
-    def __init__(self, mesh=None, dtype=dtype, device=None, obj_id=None, name=None, is_eval=None, diameter=None,
+    def __init__(self, mesh=None, dtype=cc.dtype, device=cc.device, obj_id=None, name=None, is_eval=None, diameter=None,
                  min=None, size=None, radius=None, center=None, **kwargs):
         if not hasattr(self, 'dtype'):
             self.dtype: torch.dtype = dtype
         if not hasattr(self, 'device'):
-            self.device: torch.device = parse_device(device)
+            self.device: torch.device = device
         if not hasattr(self, 'mesh'):
             self.mesh: Meshes = mesh.to(self.device)
         if not hasattr(self, 'obj_id'):
@@ -152,10 +149,10 @@ class RegularMesh(ObjMesh):
         center = torch.zeros(3)
         if name == 'sphere':
             radius = scale
-            mesh = ico_sphere(level=1).scale_verts_(scale)
+            mesh = pytorch3d.utils.ico_sphere(level=1).scale_verts_(scale)
         elif name == 'cube':
-            radius = scale * math.sqrt(2.)
-            mesh = cube(level=1).scale_verts_(scale)
+            radius = scale * 3. ** .5
+            mesh = utils.cube_mesh.cube(level=1).scale_verts_(scale)
         else:
             raise NotImplementedError
         diameter = radius * 2.

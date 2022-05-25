@@ -1,6 +1,6 @@
 import torch
-from pytorch3d.renderer import TexturesVertex
 from torch import nn
+from pytorch3d.renderer import TexturesVertex
 
 from dataloader.obj_mesh import ObjMesh
 

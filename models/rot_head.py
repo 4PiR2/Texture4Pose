@@ -1,7 +1,7 @@
-import torch.nn as nn
+from torch import nn
 from torch.nn.modules.batchnorm import _BatchNorm
 
-from utils.weight_init import normal_init, constant_init
+import utils.weight_init
 
 
 class RotWithRegionHead(nn.Module):
@@ -60,11 +60,11 @@ class RotWithRegionHead(nn.Module):
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                normal_init(m, std=0.001)
+                utils.weight_init.normal_init(m, std=0.001)
             elif isinstance(m, (_BatchNorm, nn.GroupNorm)):
-                constant_init(m, 1)
+                utils.weight_init.constant_init(m, 1)
             elif isinstance(m, nn.ConvTranspose2d):
-                normal_init(m, std=0.001)
+                utils.weight_init.normal_init(m, std=0.001)
 
     def forward(self, x):
         x = self.features(x)

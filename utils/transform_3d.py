@@ -5,9 +5,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from matplotlib.axes import Axes
-from pytorch3d.transforms import quaternion_to_matrix
-
-from utils.const import bbox_zoom_out
+import pytorch3d.transforms
 
 
 def normalize_cam_K(cam_K: torch.Tensor) -> torch.Tensor:
@@ -74,7 +72,7 @@ def rot_allo2ego(translation: torch.Tensor) -> torch.Tensor:
     axis = F.normalize(torch.cross(cam_ray.expand_as(obj_ray), obj_ray), dim=-1)  # [..., 3]
     # Build quaternion representing the rotation around the computed axis
     quat_allo_to_ego = torch.cat([cos_half_theta, axis * sin_half_theta], dim=-1)  # [..., 4]
-    return quaternion_to_matrix(quat_allo_to_ego)  # [..., 3, 3]
+    return pytorch3d.transforms.quaternion_to_matrix(quat_allo_to_ego)  # [..., 3, 3]
 
 
 def denormalize_coord_3d(normalized_coord_3d: torch.Tensor, obj_size: torch.Tensor) -> torch.Tensor:
@@ -127,7 +125,7 @@ def ransac_pnp(coord_3d: torch.Tensor, coord_2d: torch.Tensor, mask: torch.Tenso
 
 
 def show_pose(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, cam_t_m2c: torch.Tensor, obj_size: torch.Tensor,
-              bbox: torch.Tensor = None, bbox_zoom_out=bbox_zoom_out,  adjust_axis: bool = True, alpha: float = 1.) \
+              bbox: torch.Tensor = None, bbox_zoom_out=1.5,  adjust_axis: bool = True, alpha: float = 1.) \
         -> Axes:
     """
 
@@ -144,12 +142,12 @@ def show_pose(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, cam_t_m2c:
     dtype = cam_R_m2c.dtype
     device = cam_R_m2c.device
     verts = torch.tensor([[1, 1, -1], [-1, 1, -1], [-1, -1, -1], [1, -1, -1],
-                          [1, 1, 1], [-1, 1, 1], [-1, -1, 1], [1, -1, 1]],
-                         dtype=dtype, device=device)  # [8, 3]
+                          [1, 1, 1], [-1, 1, 1], [-1, -1, 1], [1, -1, 1],
+                          [0, 0, 0]], dtype=dtype, device=device)  # [8+1, 3]
     edges = [[0, 1], [1, 2], [2, 3], [3, 0], [0, 4], [1, 5], [2, 6], [3, 7], [4, 5], [5, 6], [6, 7], [7, 4]]
-    vert_colors = ['#000000', '#FF0000', '#FFFF00', '#00FF00', '#0000FF', '#FF00FF', '#BFBFBF', '#00FFFF']
+    vert_colors = ['#ffff00', '#00ff00', '#404040', '#ff0000', '#bfbfbf', '#00ffff', '#0000ff', '#ff00ff', '#000000']
     faces = [[0, 1, 2, 3], [0, 3, 7, 4], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [4, 7, 6, 5]]
-    verts = (verts * (obj_size * .5)) @ cam_R_m2c.T + cam_t_m2c  # [8, 3]
+    verts = (verts * (obj_size * .5)) @ cam_R_m2c.T + cam_t_m2c  # [8+1, 3]
     votes = torch.zeros(12, dtype=torch.uint8)
 
     def inc_vote(i, j):
@@ -165,8 +163,8 @@ def show_pose(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, cam_t_m2c:
             inc_vote(i1, i2)
             inc_vote(i2, i3)
             inc_vote(i3, i0)
-    verts_proj = verts @ cam_K.T  # [8, 3]
-    verts_proj = verts_proj[:, :-1] / verts_proj[:, -1:]  # [8, 2]
+    verts_proj = verts @ cam_K.T  # [8+1, 3]
+    verts_proj = verts_proj[:, :-1] / verts_proj[:, -1:]  # [8+1, 2]
     if bbox is not None:
         bbox_size = float(bbox[2:].max() * bbox_zoom_out)
         verts_proj -= bbox[:2] - bbox_size * .5
@@ -177,7 +175,8 @@ def show_pose(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, cam_t_m2c:
         c1 = [int(vert_colors[i1][1:][k * 2:k * 2 + 2], 16) for k in range(3)]
         ec = '#' + ''.join([hex((512 + c0[k] + c1[k]) // 2)[-2:] for k in range(3)])
         ax.plot([v0[0], v1[0]], [v0[1], v1[1]], ls='--' if vote >= 2 else '-', c=ec, alpha=alpha)
-    ax.scatter(verts_proj[:, 0], verts_proj[:, 1], c=vert_colors, zorder=10, alpha=1.)
+    ax.scatter(verts_proj[:-1, 0], verts_proj[:-1, 1], c=vert_colors[:-1], zorder=10, alpha=1.)
+    ax.scatter(verts_proj[-1, 0], verts_proj[-1, 1], c=vert_colors[-1], marker='+', zorder=10, alpha=1.)
     if bbox is not None and adjust_axis:
         ax.set_xlim(0, bbox_size)
         ax.set_ylim(bbox_size, 0)

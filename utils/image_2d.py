@@ -4,26 +4,25 @@ import torch
 from matplotlib import pyplot as plt, patches
 from torch.nn import functional as F
 
-from utils.const import dtype, plot_colors
-from utils.io import parse_device
-from utils.transform_3d import normalize_cam_K
+import config.const as cc
+import utils.transform_3d
 
 
 def get_coord_2d_map(width: int, height: int, cam_K: torch.Tensor = None, device: Union[torch.device, str]=None,
-                     dtype: torch.dtype = dtype) -> torch.Tensor:
+                     dtype: torch.dtype = cc.dtype) -> torch.Tensor:
     """
     :param width: int
     :param height: int
     :param cam_K: [..., 3, 3]
     :return: [2(XY), H, W]
     """
-    device = cam_K.device if cam_K is not None else parse_device(device)
+    device = cam_K.device if cam_K is not None else cc.device
     dtype = cam_K.dtype if cam_K is not None else dtype
     coord_2d_x, coord_2d_y = torch.meshgrid(
         torch.arange(float(width), dtype=dtype), torch.arange(float(height), dtype=dtype), indexing='xy')  # [H, W]
     coord_2d = torch.stack([coord_2d_x, coord_2d_y, torch.ones_like(coord_2d_x)], dim=0).to(device)  # [3(XY1), H, W]
     if cam_K is not None:
-        cam_K = normalize_cam_K(cam_K)
+        cam_K = utils.transform_3d.normalize_cam_K(cam_K)
         coord_2d = torch.linalg.solve(cam_K, coord_2d.reshape(3, -1)).reshape(*cam_K.shape[:-2], 3, height, width)
         # solve(K, M) == K.inv() @ M
     return coord_2d[..., :2, :, :]  # [..., 2(XY), H, W]
@@ -184,7 +183,7 @@ def draw_ax(ax: plt.Axes, img_1: torch.Tensor, bg_1: torch.Tensor = None, mask: 
             bboxes = bboxes[None]
         bboxes = bboxes.detach().cpu().numpy()
         for i in range(len(bboxes)):
-            add_bbox(ax, *bboxes[i], text=str(i), color=plot_colors[i % len(plot_colors)])
+            add_bbox(ax, *bboxes[i], text=str(i), color=cc.plot_colors[i % len(cc.plot_colors)])
     return ax
 
 

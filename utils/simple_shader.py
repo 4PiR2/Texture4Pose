@@ -1,5 +1,5 @@
 import torch
-import torch.nn as nn
+from torch import nn
 from pytorch3d.renderer.blending import hard_rgb_blend, BlendParams
 
 

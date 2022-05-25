@@ -1,13 +1,13 @@
 import torch
-from pytorch3d.transforms import rotation_6d_to_matrix
 from torch import nn
 from torch.nn.modules.batchnorm import _BatchNorm
+import pytorch3d.transforms
 
 from dataloader.sample import Sample
-from utils.const import pnp_input_size, gdr_mode, bbox_zoom_out
-from utils.transform_3d import t_site_to_t, rot_allo2ego, t_to_t_site
-from utils.image_2d import get_dzi_crop_size
-from utils.weight_init import normal_init, constant_init
+from config.const import gdr_mode
+import utils.image_2d
+import utils.transform_3d
+import utils.weight_init
 
 
 class ConvPnPNet(nn.Module):
@@ -36,15 +36,15 @@ class ConvPnPNet(nn.Module):
 
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.Conv1d)):
-                normal_init(m, std=0.001)
+                utils.weight_init.normal_init(m, std=0.001)
             elif isinstance(m, (_BatchNorm, nn.GroupNorm)):
-                constant_init(m, 1)
+                utils.weight_init.constant_init(m, 1)
             elif isinstance(m, nn.ConvTranspose2d):
-                normal_init(m, std=0.001)
+                utils.weight_init.normal_init(m, std=0.001)
             elif isinstance(m, nn.Linear):
-                normal_init(m, std=0.001)
-        normal_init(self.fc_R, std=0.01)
-        normal_init(self.fc_t, std=0.01)
+                utils.weight_init.normal_init(m, std=0.001)
+        utils.weight_init.normal_init(self.fc_R, std=0.01)
+        utils.weight_init.normal_init(self.fc_t, std=0.01)
 
     def load_pretrain(self, gdr_pth_path):
         params = torch.load(gdr_pth_path)['model']
@@ -85,20 +85,23 @@ class ConvPnPNet(nn.Module):
             self.fc_t.weight = pnp_params['pnp_net.fc_t.weight']
             self.fc_t.bias = pnp_params['pnp_net.fc_t.bias']
 
-    def forward(self, sample: Sample, pred_coor3d=None):
-        if pred_coor3d is None:
-            pred_coor3d = sample.gt_coord_3d_roi
+    def forward(self, sample: Sample):
+        if sample.pred_coord_3d_roi_normalized is None:
+            pred_coord_3d_roi = sample.gt_coord_3d_roi
+        elif sample.pred_coord_3d_roi is None:
+            pred_coord_3d_roi = sample.get_pred_coord_3d_roi(store=True)
+        else:
+            pred_coord_3d_roi = sample.pred_coord_3d_roi
 
-        x = torch.cat([pred_coor3d, sample.coord_2d_roi], dim=1)
+        x = torch.cat([pred_coord_3d_roi, sample.coord_2d_roi], dim=1)
 
         if gdr_mode:
             x = self.gdr_conv(x)
         x = self.conv_layers(x)
         x = self.fc_layers(x)
-        pred_cam_R_m2c_6d, pred_cam_t_m2c_site = self.fc_R(x), self.fc_t(x)
-        pred_cam_R_m2c_allo = rotation_6d_to_matrix(pred_cam_R_m2c_6d)
+        pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.fc_R(x), self.fc_t(x)
+        pred_cam_R_m2c_allo = pytorch3d.transforms.rotation_6d_to_matrix(pred_cam_R_m2c_6d)
         pred_cam_R_m2c_allo = pred_cam_R_m2c_allo.transpose(-2, -1)  # use GDR's pre-trained weights
-        crop_size = get_dzi_crop_size(sample.bbox, bbox_zoom_out)
-        pred_cam_t_m2c = t_site_to_t(pred_cam_t_m2c_site, sample.bbox, pnp_input_size / crop_size, sample.cam_K)
-        pred_cam_R_m2c = rot_allo2ego(pred_cam_t_m2c) @ pred_cam_R_m2c_allo
-        return pred_cam_R_m2c, pred_cam_t_m2c, pred_cam_R_m2c_6d, pred_cam_R_m2c_allo, pred_cam_t_m2c_site
+        sample.pred_cam_t_m2c = sample.get_pred_cam_t_m2c(store=True)
+        sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c) @ pred_cam_R_m2c_allo
+        return sample, pred_cam_R_m2c_6d, pred_cam_R_m2c_allo
