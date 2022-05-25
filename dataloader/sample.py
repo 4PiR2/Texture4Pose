@@ -3,9 +3,9 @@ import torch.nn.functional as F
 from matplotlib import pyplot as plt
 
 from dataloader.obj_mesh import ObjMesh
-from utils.const import debug_mode
+from utils.const import debug_mode, bbox_zoom_out
 from utils.image_2d import normalize_channel, draw_ax, lp_loss
-from utils.transform_3d import normalize_coord_3d, ransac_pnp
+from utils.transform_3d import normalize_coord_3d, ransac_pnp, show_pose
 
 
 class Sample:
@@ -58,12 +58,13 @@ class Sample:
             loss[i] = obj.average_distance(pred_cam_R_m2c[i], self.gt_cam_R_m2c[i], p=1)
         return loss
 
-    def add_score(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor) \
-            -> torch.Tensor:
+    def add_score(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor,
+                  div_diameter: bool = True) -> torch.Tensor:
         """
         :param objects_eval: dict[int, ObjMesh]
         :param pred_cam_R_m2c: [N, 3, 3]
         :param pred_cam_t_m2c: [N, 3]
+        :param div_diameter: bool
         :return: [N]
         """
         n = len(self.obj_id)
@@ -72,7 +73,8 @@ class Sample:
             obj = objects_eval[int(self.obj_id[i])]
             add[i] = obj.average_distance(pred_cam_R_m2c[i], self.gt_cam_R_m2c[i], pred_cam_t_m2c[i],
                                           self.gt_cam_t_m2c[i])
-            add[i] /= obj.diameter
+            if div_diameter:
+                add[i] /= obj.diameter
         return add
 
     def proj_dist(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor) \
@@ -146,13 +148,37 @@ class Sample:
             dist *= 100.  # cm
         return dist  # [...]
 
-    def visualize(self) -> None:
+    def visualize(self, pred_coord_3d_roi: torch.Tensor = None, pred_mask_roi: torch.Tensor = None,
+                  pred_cam_R_m2c: torch.Tensor = None, pred_cam_t_m2c: torch.Tensor = None) -> None:
         for i in range(len(self.obj_id)):
-            fig, axs = plt.subplots(2, 2)
+            fig, axs = plt.subplots(4, 2, figsize=(6, 14))
             draw_ax(axs[0, 0], self.img_roi[i])
-            draw_ax(axs[0, 1], normalize_coord_3d(self.gt_coord_3d_roi[i], self.obj_size[i]))
-            draw_ax(axs[1, 0], torch.cat([self.gt_mask_obj_roi[i], self.gt_mask_vis_roi[i]], dim=0))
-            draw_ax(axs[1, 1], normalize_channel(self.coord_2d_roi[i]))
+            axs[0, 0].set_title('rendered image')
+            draw_ax(axs[0, 1], normalize_channel(self.coord_2d_roi[i]))
+            axs[0, 1].set_title('2D coord (norm)')
+            draw_ax(axs[1, 0], normalize_coord_3d(self.gt_coord_3d_roi[i], self.obj_size[i]))
+            axs[1, 0].set_title('gt 3D coord (norm)')
+            if pred_coord_3d_roi is not None:
+                draw_ax(axs[1, 1], normalize_coord_3d(pred_coord_3d_roi[i], self.obj_size[i]).clamp(0., 1.))
+            else:
+                axs[1, 1].set_aspect('equal')
+            axs[1, 1].set_title('pred 3D coord (norm)')
+            draw_ax(axs[2, 0], torch.cat([self.gt_mask_obj_roi[i], self.gt_mask_vis_roi[i]], dim=0))
+            axs[2, 0].set_title('gt mask (r-obj, g-vis)')
+            if pred_mask_roi is not None:
+                draw_ax(axs[2, 1], pred_mask_roi[i])
+            else:
+                axs[2, 1].set_aspect('equal')
+            axs[2, 1].set_title('pred mask')
+            show_pose(axs[3, 0], self.cam_K[i], self.gt_cam_R_m2c[i], self.gt_cam_t_m2c[i], self.obj_size[i],
+                      self.bbox[i], bbox_zoom_out, True)
+            axs[3, 0].set_title('gt pose')
+            if pred_cam_R_m2c is not None and pred_cam_t_m2c is not None:
+                show_pose(axs[3, 1], self.cam_K[i], pred_cam_R_m2c[i], pred_cam_t_m2c[i], self.obj_size[i],
+                          self.bbox[i], bbox_zoom_out, True)
+            else:
+                axs[3, 1].set_aspect('equal')
+            axs[3, 1].set_title('pred pose')
             plt.show()
 
         if debug_mode:
@@ -160,4 +186,6 @@ class Sample:
             ax = plt.Axes(fig, [0., 0., 1., 1.])
             fig.add_axes(ax)
             draw_ax(ax, self.dbg_img[0], bboxes=self.bbox)
+            for i in range(len(self.obj_id)):
+                show_pose(ax, self.cam_K[i], self.gt_cam_R_m2c[i], self.gt_cam_t_m2c[i], self.obj_size[i])
             plt.show()

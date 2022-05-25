@@ -1,4 +1,7 @@
+from typing import Optional
+
 import torch
+from pytorch_lightning.utilities.types import EPOCH_OUTPUT, STEP_OUTPUT
 from torch import nn
 import torch.nn.functional as F
 import torchvision.transforms.functional as vF
@@ -34,9 +37,10 @@ class LitModel(pl.LightningModule):
         coord_3d = denormalize_coord_3d(coord_3d_normalized, sample.obj_size)
         pred_cam_R_m2c, pred_cam_t_m2c, _pred_cam_R_m2c_6d, _pred_cam_R_m2c_allo, pred_cam_t_m2c_site \
             = self.pnp_net(sample, coord_3d)
+        # sample.visualize(coord_3d, mask, pred_cam_R_m2c, pred_cam_t_m2c)
         return pred_cam_R_m2c, pred_cam_t_m2c, coord_3d, coord_3d_normalized, mask, pred_cam_t_m2c_site
 
-    def training_step(self, sample: Sample, batch_idx: int):
+    def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:
         pred_cam_R_m2c, pred_cam_t_m2c, coord_3d, coord_3d_normalized, mask, pred_cam_t_m2c_site = self.forward(sample)
         loss_coord_3d = sample.coord_3d_loss(coord_3d_normalized)
         loss_mask = sample.mask_loss(mask)
@@ -50,18 +54,22 @@ class LitModel(pl.LightningModule):
                           'ts_depth': loss_t_site_depth.mean()})
         return loss
 
-    def get_metrics(self, sample: Sample, pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor):
+    def validation_step(self, sample: Sample, batch_idx: int) -> Optional[STEP_OUTPUT]:
+        pred_cam_R_m2c, pred_cam_t_m2c, coord_3d, coord_3d_normalized, mask, pred_cam_t_m2c_site = self.forward(sample)
         re = sample.relative_angle(pred_cam_R_m2c, degree=True)
         te = sample.relative_dist(pred_cam_t_m2c, cm=True)
-        add = sample.add_score(self.objects_eval, pred_cam_R_m2c, pred_cam_t_m2c)
+        add = sample.add_score(self.objects_eval, pred_cam_R_m2c, pred_cam_t_m2c, div_diameter=True)
         proj = sample.proj_dist(self.objects_eval, pred_cam_R_m2c, pred_cam_t_m2c)
-        return re, te, add, proj
+        return {'re(deg)': re, 'te(cm)': te, 'ad(d)': add, 'proj': proj}
 
-    def validation_step(self, sample: Sample, batch_idx: int):
-        pred_cam_R_m2c, pred_cam_t_m2c, coord_3d, coord_3d_normalized, mask, pred_cam_t_m2c_site = self.forward(sample)
-        re, te, add, proj = self.get_metrics(sample, pred_cam_R_m2c, pred_cam_t_m2c)
-        # self.log('metric', {'re': re.mean(), 'te': te.mean(), 'add': add.mean(), 'proj': proj.mean()})
-        return pred_cam_R_m2c, pred_cam_t_m2c, re, te, add, proj
+    def validation_epoch_end(self, outputs: EPOCH_OUTPUT) -> None:
+        keys = list(outputs[0].keys())
+        outputs = {key: torch.cat([output[key] for output in outputs], dim=0) for key in keys}
+        metrics = torch.stack([outputs[key] for key in keys], dim=0)
+        q = torch.linspace(0., 1., 9, device=metrics.device)[1:-1]
+        quantiles = metrics.quantile(q, dim=1).T
+        for i in range(len(keys)):
+            self.log(keys[i], {f'%{int((q[j] * 100.).round())}': float(quantiles[i, j]) for j in range(len(q))})
 
     def configure_optimizers(self):
         params = [

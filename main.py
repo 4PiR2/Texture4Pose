@@ -28,7 +28,7 @@ def main():
 
     dataset = RandomPoseRegularObjDataset(obj_list=test_objects, scene_mode=False, transform=composed,
                                           bg_img_path='/data/coco/train2017', device=device)
-    dataloader_train = DataLoader(DatasetWrapper(dataset, 10000), batch_size=16, collate_fn=Sample.collate)
+    dataloader_train = DataLoader(DatasetWrapper(dataset, 10000), batch_size=16, drop_last=True, collate_fn=Sample.collate)
     dataloader_val = DataLoader(DatasetWrapper(dataset, 100), batch_size=16, collate_fn=Sample.collate)
 
     model = LitModel(dataset.objects)
@@ -44,15 +44,15 @@ def main():
         log_every_n_steps=50,
     )
 
-    # ckpt_path = f'outputs/lightning_logs/version_{0}/checkpoints/epoch={4}-step={3124}.ckpt'
-    ckpt_path = None
-    trainer.fit(model, train_dataloaders=dataloader_train, val_dataloaders=dataloader_val, ckpt_path=ckpt_path)
-    # trainer.validate(model, val_dataloaders=dataloader, ckpt_path=ckpt_path)
+    ckpt_path = f'outputs/lightning_logs/version_{0}/checkpoints/epoch={4}-step={3124}.ckpt'
+    # ckpt_path = None
+    # trainer.fit(model, train_dataloaders=dataloader_train, val_dataloaders=dataloader_val, ckpt_path=ckpt_path)
+    trainer.validate(model, val_dataloaders=dataloader_val, ckpt_path=ckpt_path)
 
 
 def data_loading_test():
-    # dataset = RandomPoseRegularObjDataset(obj_list=regular_objects, scene_mode=True, device=device, bg_img_path='/data/coco/train2017')
-    dataset = RandomPoseBOPObjDataset(obj_list=lmo_objects, path='data/BOP/lmo', scene_mode=False, device=device, bg_img_path='/data/coco/train2017')
+    dataset = RandomPoseRegularObjDataset(obj_list=regular_objects, scene_mode=True, device=device, bg_img_path='/data/coco/train2017')
+    # dataset = RandomPoseBOPObjDataset(obj_list=lmo_objects, path='data/BOP/lmo', scene_mode=False, device=device, bg_img_path='/data/coco/train2017')
     # dataset = RenderedPoseBOPObjDataset(obj_list=lmo_objects, path='data/BOP/lmo', scene_mode=True, device=device)
     # dataset = BOPObjDataset(obj_list=lmo_objects, path='data/BOP/lmo', device=device)
     for s in dataset:

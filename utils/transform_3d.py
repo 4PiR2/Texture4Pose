@@ -4,7 +4,10 @@ import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
+from matplotlib.axes import Axes
 from pytorch3d.transforms import quaternion_to_matrix
+
+from utils.const import bbox_zoom_out
 
 
 def normalize_cam_K(cam_K: torch.Tensor) -> torch.Tensor:
@@ -121,3 +124,62 @@ def ransac_pnp(coord_3d: torch.Tensor, coord_2d: torch.Tensor, mask: torch.Tenso
         pred_cam_R_m2c[i] = torch.tensor(pred_R, dtype=dtype, device=device)
         pred_cam_t_m2c[i] = torch.tensor(pred_t.flatten(), dtype=dtype, device=device)
     return pred_cam_R_m2c, pred_cam_t_m2c
+
+
+def show_pose(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, cam_t_m2c: torch.Tensor, obj_size: torch.Tensor,
+              bbox: torch.Tensor = None, bbox_zoom_out=bbox_zoom_out,  adjust_axis: bool = True, alpha: float = 1.) \
+        -> Axes:
+    """
+
+    :param ax:
+    :param cam_K: [3, 3]
+    :param cam_R_m2c: [3, 3]
+    :param cam_t_m2c: [3]
+    :param obj_size: [3(XYZ)]
+    :param bbox: [4(XYWH)]
+    :param adjust_axis: bool
+    :param alpha: float
+    :return:
+    """
+    dtype = cam_R_m2c.dtype
+    device = cam_R_m2c.device
+    verts = torch.tensor([[1, 1, -1], [-1, 1, -1], [-1, -1, -1], [1, -1, -1],
+                          [1, 1, 1], [-1, 1, 1], [-1, -1, 1], [1, -1, 1]],
+                         dtype=dtype, device=device)  # [8, 3]
+    edges = [[0, 1], [1, 2], [2, 3], [3, 0], [0, 4], [1, 5], [2, 6], [3, 7], [4, 5], [5, 6], [6, 7], [7, 4]]
+    vert_colors = ['#000000', '#FF0000', '#FFFF00', '#00FF00', '#0000FF', '#FF00FF', '#BFBFBF', '#00FFFF']
+    faces = [[0, 1, 2, 3], [0, 3, 7, 4], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [4, 7, 6, 5]]
+    verts = (verts * (obj_size * .5)) @ cam_R_m2c.T + cam_t_m2c  # [8, 3]
+    votes = torch.zeros(12, dtype=torch.uint8)
+
+    def inc_vote(i, j):
+        if [i, j] in edges:
+            votes[edges.index([i, j])] += 1
+        else:
+            votes[edges.index([j, i])] += 1
+
+    for i0, i1, i2, i3 in faces:
+        direction = torch.cross(verts[i1] - verts[i0], verts[i2] - verts[i1])
+        if torch.dot(direction, verts[i0]) < 0.:
+            inc_vote(i0, i1)
+            inc_vote(i1, i2)
+            inc_vote(i2, i3)
+            inc_vote(i3, i0)
+    verts_proj = verts @ cam_K.T  # [8, 3]
+    verts_proj = verts_proj[:, :-1] / verts_proj[:, -1:]  # [8, 2]
+    if bbox is not None:
+        bbox_size = float(bbox[2:].max() * bbox_zoom_out)
+        verts_proj -= bbox[:2] - bbox_size * .5
+    verts_proj = verts_proj.detach().cpu().numpy()
+    for (i0, i1), vote in zip(edges, votes):
+        v0, v1 = verts_proj[i0], verts_proj[i1]
+        c0 = [int(vert_colors[i0][1:][k * 2:k * 2 + 2], 16) for k in range(3)]
+        c1 = [int(vert_colors[i1][1:][k * 2:k * 2 + 2], 16) for k in range(3)]
+        ec = '#' + ''.join([hex((512 + c0[k] + c1[k]) // 2)[-2:] for k in range(3)])
+        ax.plot([v0[0], v1[0]], [v0[1], v1[1]], ls='--' if vote >= 2 else '-', c=ec, alpha=alpha)
+    ax.scatter(verts_proj[:, 0], verts_proj[:, 1], c=vert_colors, zorder=10, alpha=1.)
+    if bbox is not None and adjust_axis:
+        ax.set_xlim(0, bbox_size)
+        ax.set_ylim(bbox_size, 0)
+        ax.set_aspect('equal')
+    return ax
