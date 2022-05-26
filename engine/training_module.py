@@ -1,11 +1,13 @@
 from typing import Optional
 
+import pytorch_lightning as pl
+from pytorch3d.renderer.mesh import TexturesBase, TexturesVertex
+from pytorch_lightning.utilities.types import EPOCH_OUTPUT, STEP_OUTPUT
 import torch
 from torch import nn
 import torch.nn.functional as F
 import torchvision
-import pytorch_lightning as pl
-from pytorch_lightning.utilities.types import EPOCH_OUTPUT, STEP_OUTPUT
+from torch.utils.tensorboard import SummaryWriter
 
 from dataloader.obj_mesh import ObjMesh
 from dataloader.sample import Sample
@@ -22,8 +24,7 @@ class LitModel(pl.LightningModule):
         self.backbone = torchvision.models.resnet34()
         self.backbone.avgpool = nn.Sequential()
         self.backbone.fc = nn.Sequential()
-        self.rot_head_net = RotWithRegionHead(512, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1,
-                                     num_regions=64)
+        self.rot_head_net = RotWithRegionHead(512, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
         self.pnp_net = ConvPnPNet(nIn=5)
         self.objects_eval = objects_eval if objects_eval is not None else objects
 
@@ -31,13 +32,47 @@ class LitModel(pl.LightningModule):
         # in lightning, forward defines the prediction/inference actions
         features = self.backbone(sample.img_roi)
         features = features.view(-1, 512, 8, 8)
-        sample.pred_mask_vis_roi, sample.pred_coord_3d_roi_normalized, _region = self.rot_head_net(features)
+        sample.pred_mask_vis_roi, sample.pred_coord_3d_roi_normalized = self.rot_head_net(features)
         sample, _pred_cam_R_m2c_6d, _pred_cam_R_m2c_allo = self.pnp_net(sample)
         # sample.visualize()
         return sample
 
+    def _log_meshes(self) -> None:
+        for obj_id in self.objects_eval:
+            obj = self.objects_eval[obj_id]
+            verts = obj.mesh.verts_packed()  # [V, 3(XYZ)]
+            faces = obj.mesh.faces_packed()  # [F, 3]
+            texture: TexturesBase = self.texture_net(obj)
+            if isinstance(texture, TexturesVertex):
+                v_texture = texture.verts_features_packed()
+            else:
+                fv_texture = texture.faces_verts_textures_packed()  # [F, 3, 3(RGB)]
+                v_texture = torch.empty_like(verts)  # [V, 3(RGB)]
+                for i in range(len(verts)):
+                    v_texture[i] = fv_texture[faces == i].mean(dim=0)
+            v_texture = (v_texture * 255.).to(dtype=torch.uint8)
+            config_dict = {'lights': [{'cls': 'AmbientLight', 'color': 0xffffff, 'intensity': 1.}]}
+            # ref: https://www.tensorflow.org/graphics/tensorboard#scene_configuration
+            writer: SummaryWriter = self.logger.experiment
+            writer.add_mesh(f'{obj_id}-{obj.name}', vertices=verts[None], colors=v_texture[None], faces=faces[None],
+                            config_dict=config_dict, global_step=self.global_step)
+
+    def _log_sample_visualizations(self, sample: Sample) -> None:
+        writer: SummaryWriter = self.logger.experiment
+        figs = sample.visualize(return_figs=True)
+        count = {}
+        for obj_id, fig in zip(sample.obj_id, figs):
+            obj_id = int(obj_id)
+            c = count[obj_id] if obj_id in count else 0
+            writer.add_figure(f'{obj_id}-{self.objects_eval[obj_id].name}-{c}', fig,
+                              global_step=self.global_step, close=True)
+            count[obj_id] = c + 1
+
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:
         sample = self.forward(sample)
+        if (batch_idx + 1) % self.trainer.log_every_n_steps == 0:
+            self._log_meshes()
+            self._log_sample_visualizations(sample)
         loss_coord_3d = sample.coord_3d_loss().mean()
         loss_mask = sample.mask_loss().mean()
         loss_pm = sample.pm_loss(self.objects_eval).mean()
@@ -78,6 +113,8 @@ class LitModel(pl.LightningModule):
 
     def load_pretrain(self, gdr_pth_path: str):
         state_dict = torch.load(gdr_pth_path)['model']
+        state_dict['rot_head_net.features.23.weight'] = state_dict['rot_head_net.features.23.weight'][:4]
+        state_dict['rot_head_net.features.23.bias'] = state_dict['rot_head_net.features.23.bias'][:4]
         self.load_state_dict(state_dict, strict=False)
         self.backbone.conv1.weight = nn.Parameter(self.backbone.conv1.weight.flip(dims=[1]))
         self.pnp_net.load_pretrain(gdr_pth_path)

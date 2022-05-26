@@ -5,11 +5,10 @@ import utils.weight_init
 
 
 class RotWithRegionHead(nn.Module):
-    def __init__(self, in_channels, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1, num_regions=64):
+    def __init__(self, in_channels, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1):
         super().__init__()
 
         assert kernel_size == 2 or kernel_size == 3 or kernel_size == 4, "Only support kenerl 2, 3 and 4"
-        assert num_regions > 1, f"Only support num_regions > 1, but got {num_regions}"
         padding = 1
         output_padding = 0
         if kernel_size == 3:
@@ -45,12 +44,10 @@ class RotWithRegionHead(nn.Module):
             features.append(nn.BatchNorm2d(num_filters))
             features.append(nn.ReLU(inplace=True))
 
-        self.region_output_dim = num_regions + 1  # add one channel for bg
-
         features.append(
             nn.Conv2d(
                 num_filters,
-                1 + 3 + self.region_output_dim,
+                1 + 3,
                 kernel_size=output_kernel_size,
                 padding=pad,
                 bias=True,
@@ -68,5 +65,5 @@ class RotWithRegionHead(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
-        mask, coord_3d_normalized, region = x.split([1, 3, x.shape[1] - 4], dim=1)
-        return mask, coord_3d_normalized, region
+        mask, coord_3d_normalized = x.split([1, 3], dim=1)
+        return mask, coord_3d_normalized

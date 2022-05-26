@@ -5,74 +5,62 @@ import time
 
 import numpy as np
 import torch
+from torch.utils.data import DataLoader
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor
-from torch.utils.data import DataLoader
-import torchvision.transforms as T
 
-from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset, RandomPoseBOPObjDataset, \
-    RandomPoseRegularObjDataset, DatasetWrapper
-from dataloader.sample import Sample
-from engine.trainer import LitModel
-from utils.config import Config
 import config.const as cc
+from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset, RandomPoseBOPObjDataset, \
+    RandomPoseRegularObjDataset
+from dataloader.sample import Sample
+from engine.data_module import LitDataModule
+from engine.training_module import LitModel
+from utils.config import Config
+import utils.io
 
 
 def main():
     def setup(args=None) -> Config:
         """Create configs and perform basic setups."""
-        cfg = Config.fromfile('config/pipeline.py')
+        cfg = Config.fromfile('config/input.py')
         if args is not None:
             cfg.merge_from_dict(args)
         return cfg
 
     cfg = setup()
-    # data_loading_test(cfg)
-
-    # state_dict = torch.load('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth')['model']
-    # for key in state_dict:
-    #     show_hist(state_dict[key], title=key, bins=100)
-    #     a = 0
-
-    test_objects = {101: 'sphere'}
-    composed = T.Compose([T.ColorJitter(brightness=.3, contrast=.3, saturation=.3, hue=0.)])
-
-    dataset = RandomPoseRegularObjDataset(obj_list=test_objects, scene_mode=False, transform=composed,
-                                          bg_img_path='/data/coco/train2017', device=cfg.device)
-    dataloader_train = DataLoader(DatasetWrapper(dataset, 10000), batch_size=16, drop_last=True, collate_fn=Sample.collate)
-    dataloader_val = DataLoader(DatasetWrapper(dataset, 100), batch_size=16, collate_fn=Sample.collate)
-
-    model = LitModel(dataset.objects)
-    model.load_pretrain('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth')
+    datamodule = LitDataModule(cfg)
+    model = LitModel(datamodule.dataset.objects, datamodule.dataset.objects_eval)
+    if cfg.model.pretrain is not None:
+        model.load_pretrain(cfg.model.pretrain)
     model = model.to(cfg.device)
 
     trainer = Trainer(
         accelerator='auto',
         devices=1 if torch.cuda.is_available() else None,
         max_epochs=100,
-        callbacks=[TQDMProgressBar(refresh_rate=20), LearningRateMonitor(logging_interval='step')],
+        callbacks=[TQDMProgressBar(refresh_rate=20), LearningRateMonitor(logging_interval='step', log_momentum=False)],
         default_root_dir='outputs',
         log_every_n_steps=50,
     )
 
-    ckpt_path = f'outputs/lightning_logs/version_{0}/checkpoints/epoch={4}-step={3124}.ckpt'
-    # ckpt_path = None
-    # trainer.fit(model, train_dataloaders=dataloader_train, val_dataloaders=dataloader_val, ckpt_path=ckpt_path)
-    trainer.validate(model, val_dataloaders=dataloader_val, ckpt_path=ckpt_path)
+    # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
+    ckpt_path = None
+    trainer.fit(model, ckpt_path=ckpt_path, datamodule=datamodule)
+    # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
 
-def data_loading_test(cfg: Config):
-    dataset = RandomPoseRegularObjDataset(obj_list=cc.regular_objects, scene_mode=True, device=cfg.device, bg_img_path='/data/coco/train2017')
-    # dataset = RandomPoseBOPObjDataset(obj_list=cc.lmo_objects, path='data/BOP/lmo', scene_mode=False, device=cfg.device, bg_img_path='/data/coco/train2017')
-    # dataset = RenderedPoseBOPObjDataset(obj_list=cc.lmo_objects, path='data/BOP/lmo', scene_mode=True, device=cfg.device)
-    # dataset = BOPObjDataset(obj_list=cc.lmo_objects, path='data/BOP/lmo', device=cfg.device)
+def data_loading_test(cfg):
+    dataset = RandomPoseRegularObjDataset(obj_list=cc.regular_objects, scene_mode=True, device=cc.device, bg_img_path='/data/coco/train2017')
+    # dataset = RandomPoseBOPObjDataset(obj_list=cc.lmo_objects, path='data/BOP/lmo', scene_mode=False, device=cc.device, bg_img_path='/data/coco/train2017')
+    # dataset = RenderedPoseBOPObjDataset(obj_list=cc.lmo_objects, path='data/BOP/lmo', scene_mode=True, device=cc.device)
+    # dataset = BOPObjDataset(obj_list=cc.lmo_objects, path='data/BOP/lmo', device=cc.device)
     for s in dataset:
         s.visualize()
         a = 0
 
 
 def numerical_check(cfg, model):
-    dataset = BOPObjDataset(obj_list={1: 'ape'}, path='data/BOP/lm', device=cfg.device)
+    dataset = BOPObjDataset(obj_list={1: 'ape'}, path='data/BOP/lm', device=cc.device)
     dataloader = DataLoader(dataset, batch_size=1, collate_fn=Sample.collate)
     with open('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/inference_/lm_13_test/a6-cPnP-lm13_lm_13_test_preds.pkl', 'rb') as f:
         gdr_results = pickle.load(f)['ape']
@@ -98,8 +86,8 @@ def numerical_check(cfg, model):
             re, te = sample.relative_angle(degree=True), sample.relative_dist(cm=True)
             ad = sample.add_score(dataset.objects_eval)
             proj = sample.proj_dist(dataset.objects_eval)
-            gdr_R = torch.tensor(gdr_result['R'], device=cfg.device)[None]
-            gdr_t = torch.tensor(gdr_result['t'], device=cfg.device)[None]
+            gdr_R = torch.tensor(gdr_result['R'], device=cc.device)[None]
+            gdr_t = torch.tensor(gdr_result['t'], device=cc.device)[None]
             gdr_re = sample.relative_angle(gdr_R, degree=True)
             gdr_te = sample.relative_dist(gdr_t, cm=True)
             gdr_ad = sample.add_score(dataset.objects_eval, gdr_R, gdr_t)

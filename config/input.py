@@ -1,9 +1,9 @@
-import config.const as cc
+# import config.const as cc
 
 _base_ = './pipeline.py'
 
-dataloader = dict(
-    obj_list=cc.lmo_objects,
+dataset = dict(
+    obj_list={101: 'sphere'},
+    # cam_K=cc.lm_cam_K,
     scene_mode=True,
-    bg_img_path=None,
 )

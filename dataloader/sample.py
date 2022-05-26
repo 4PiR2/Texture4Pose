@@ -1,8 +1,10 @@
-from typing import Callable
+import copy
+from typing import Callable, Optional
 
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 
 from dataloader.obj_mesh import ObjMesh
 import utils.image_2d
@@ -44,12 +46,12 @@ class Sample:
         self.gt_bbox_obj: torch.Tensor = gt_bbox_obj
         self.bbox_zoom_out_ratio: float = bbox_zoom_out_ratio
 
-        self.pred_cam_R_m2c = None
-        self.pred_cam_t_m2c = None
-        self.pred_cam_t_m2c_site = None
-        self.pred_coord_3d_roi = None
-        self.pred_coord_3d_roi_normalized = None
-        self.pred_mask_vis_roi = None
+        self.pred_cam_R_m2c: Optional[torch.Tensor] = None
+        self.pred_cam_t_m2c: Optional[torch.Tensor] = None
+        self.pred_cam_t_m2c_site: Optional[torch.Tensor] = None
+        self.pred_coord_3d_roi: Optional[torch.Tensor] = None
+        self.pred_coord_3d_roi_normalized: Optional[torch.Tensor] = None
+        self.pred_mask_vis_roi: Optional[torch.Tensor] = None
 
     @classmethod
     def collate(cls, batch: list):
@@ -69,37 +71,38 @@ class Sample:
             self.pred_cam_R_m2c, self.pred_cam_t_m2c = pred_cam_R_m2c, pred_cam_t_m2c
         return pred_cam_R_m2c, pred_cam_t_m2c
 
-    def _get_roi_zoom_in_ratio(self):
+    def _get_roi_zoom_in_ratio(self) -> torch.Tensor:
         pnp_input_size = max(self.gt_coord_3d_roi.shape[-2:])
         crop_size = utils.image_2d.get_dzi_crop_size(self.bbox, self.bbox_zoom_out_ratio)
-        return pnp_input_size / crop_size
+        return pnp_input_size / crop_size  # [N]
 
-    def _get_cam_t_m2c_site(self, cam_t_m2c: torch.Tensor):
-        return utils.transform_3d.t_to_t_site(cam_t_m2c, self.bbox, self._get_roi_zoom_in_ratio(), self.cam_K)
+    def _get_cam_t_m2c_site(self, cam_t_m2c: torch.Tensor) -> torch.Tensor:
+        return utils.transform_3d.t_to_t_site(cam_t_m2c, self.bbox, self._get_roi_zoom_in_ratio(), self.cam_K)  # [N, 3]
 
-    def _get_cam_t_m2c(self, cam_t_m2c_site: torch.Tensor):
+    def _get_cam_t_m2c(self, cam_t_m2c_site: torch.Tensor) -> torch.Tensor:
         return utils.transform_3d.t_site_to_t(cam_t_m2c_site, self.bbox, self._get_roi_zoom_in_ratio(), self.cam_K)
+        # [N, 3]
 
-    def gt_cam_t_m2c_site(self):
-        return self._get_cam_t_m2c_site(self.gt_cam_t_m2c)
+    def gt_cam_t_m2c_site(self) -> torch.Tensor:
+        return self._get_cam_t_m2c_site(self.gt_cam_t_m2c)  # [N, 3]
 
-    def get_pred_cam_t_m2c(self, store: bool = True):
+    def get_pred_cam_t_m2c(self, store: bool = True) -> torch.Tensor:
         pred_cam_t_m2c = self._get_cam_t_m2c(self.pred_cam_t_m2c_site)
         if store:
             self.pred_cam_t_m2c = pred_cam_t_m2c
-        return pred_cam_t_m2c
+        return pred_cam_t_m2c  # [N, 3]
 
-    def _get_coord_3d_roi_normalized(self, coord_3d_roi):
-        return utils.transform_3d.normalize_coord_3d(coord_3d_roi, self.obj_size)
+    def _get_coord_3d_roi_normalized(self, coord_3d_roi: torch.Tensor) -> torch.Tensor:
+        return utils.transform_3d.normalize_coord_3d(coord_3d_roi, self.obj_size)  # [N, 3(XYZ), H, W]
 
-    def _get_coord_3d_roi(self, coord_3d_roi_normalized):
-        return utils.transform_3d.denormalize_coord_3d(coord_3d_roi_normalized, self.obj_size)
+    def _get_coord_3d_roi(self, coord_3d_roi_normalized: torch.Tensor) -> torch.Tensor:
+        return utils.transform_3d.denormalize_coord_3d(coord_3d_roi_normalized, self.obj_size)  # [N, 3(XYZ), H, W]
 
-    def get_pred_coord_3d_roi(self, store: bool = True):
+    def get_pred_coord_3d_roi(self, store: bool = True) -> torch.Tensor:
         pred_coord_3d_roi = self._get_coord_3d_roi(self.pred_coord_3d_roi_normalized)
         if store:
             self.pred_coord_3d_roi = pred_coord_3d_roi
-        return pred_coord_3d_roi
+        return pred_coord_3d_roi  # [N, 3(XYZ), H, W]
 
     def pm_loss(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor = None) -> torch.Tensor:
         """
@@ -217,8 +220,9 @@ class Sample:
             dist *= 100.  # cm
         return dist  # [...]
 
-    def visualize(self, pred_coord_3d_roi: torch.Tensor = None, pred_mask_vis_roi: torch.Tensor = None,
-                  pred_cam_R_m2c: torch.Tensor = None, pred_cam_t_m2c: torch.Tensor = None) -> None:
+    def visualize(self, return_figs: bool = False, pred_coord_3d_roi: torch.Tensor = None,
+                  pred_mask_vis_roi: torch.Tensor = None, pred_cam_R_m2c: torch.Tensor = None,
+                  pred_cam_t_m2c: torch.Tensor = None) -> Optional[list[Figure]]:
         pred_coord_3d_roi_normalized = _get_param(
             (pred_coord_3d_roi, lambda x: self._get_coord_3d_roi_normalized(x)),
             self.pred_coord_3d_roi_normalized,
@@ -228,6 +232,7 @@ class Sample:
         pred_cam_R_m2c = _get_param(pred_cam_R_m2c, self.pred_cam_R_m2c)
         pred_cam_t_m2c = _get_param(pred_cam_t_m2c, self.pred_cam_t_m2c,
                                     (self.pred_cam_t_m2c_site, lambda: self.get_pred_cam_t_m2c(store=True)))
+        figs = []
         for i in range(len(self.obj_id)):
             fig, axs = plt.subplots(2, 4, figsize=(12, 6))
             utils.image_2d.draw_ax(axs[0, 0], self.img_roi[i])
@@ -259,7 +264,10 @@ class Sample:
                 axs[1, 3].set_aspect('equal')
             axs[1, 3].set_title('pred pose')
             fig.tight_layout()
-            plt.show()
+            if return_figs:
+                figs.append(fig)
+            else:
+                plt.show()
 
         if self.dbg_img is not None:
             fig = plt.figure()
@@ -270,4 +278,21 @@ class Sample:
                 utils.transform_3d.show_pose(
                     ax, self.cam_K[i], self.gt_cam_R_m2c[i], self.gt_cam_t_m2c[i], self.obj_size[i])
             fig.tight_layout()
-            plt.show()
+            if return_figs:
+                figs.append(fig)
+            else:
+                plt.show()
+        return figs if return_figs else None
+
+    def clone(self, detach: bool = False):
+        out = Sample()
+        for key in [key for key in dir(self) if not key.startswith('__') and not callable(getattr(self, key))]:
+            value = getattr(self, key)
+            if isinstance(value, torch.Tensor):
+                if detach:
+                    setattr(out, key, value.detach())
+                else:
+                    setattr(out, key, value.clone())
+            else:
+                setattr(out, key, copy.deepcopy(value))
+        return out

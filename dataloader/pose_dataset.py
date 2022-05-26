@@ -32,7 +32,7 @@ class DatasetWrapper(torch.utils.data.Dataset):
 class RandomPoseRegularObjDataset(torch.utils.data.IterableDataset):
     def __init__(self, obj_list=None, transform=None, dtype=cc.dtype, device=cc.device, scene_mode=True,
                  bg_img_path=None, img_render_size=512, img_input_size=256, pnp_input_size=64, cam_K=cc.lm_cam_K,
-                 random_t_depth_range=(.8, 1.2), vis_ratio_filter_threshold=.5, max_dzi_ratio=.25,
+                 random_t_depth_range=(.5, 1.2), vis_ratio_filter_threshold=.5, max_dzi_ratio=.25,
                  bbox_zoom_out_ratio=1.5, light_ambient_range=(.5, 1.), light_diffuse_range=(0., .3),
                  light_specular_range=(0., .2), light_shininess_range=(40, 80), light_color_range=(1., 1.), **kwargs):
         self.obj_list: Union[dict[int, str], list[int]] = obj_list
