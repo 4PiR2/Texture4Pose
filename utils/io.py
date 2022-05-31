@@ -40,17 +40,20 @@ def parse_device(device: Union[torch.device, str] = None) -> Union[torch.device,
 def find_lightning_ckpt_path(root: str = '.', version: int = None, epoch: int = None, step: int = None) \
         -> Optional[str]:
     paths = []
-    pattern = re.compile(r'/version_(\d+)/checkpoints/epoch=(\d+)-step=(\d+)\.ckpt$')
+    # pattern = re.compile(r'/version_(\d+)/checkpoints/epoch=(\d+)-step=(\d+)\.ckpt$')
     for path in glob.iglob(os.path.join(root, '**', '*.ckpt'), recursive=True):
-        m = pattern.search(path)
-        v, e, s = m.group(1), m.group(2), m.group(3)
-        paths.append([v, e, s, path])
-    if version is not None:
-        paths = filter(lambda path: path[0] == version, paths)
-    if epoch is not None:
-        paths = filter(lambda path: path[1] == epoch, paths)
-    if step is not None:
-        paths = filter(lambda path: path[2] == step, paths)
+        # m = pattern.search(path)
+        # v, e, s = m.group(1), m.group(2), m.group(3)
+        # paths.append([v, e, s, path])
+        if path.endswith('lask.ckpt'):
+            return path
+        paths.append(path)
+    # if version is not None:
+    #     paths = filter(lambda path: path[0] == version, paths)
+    # if epoch is not None:
+    #     paths = filter(lambda path: path[1] == epoch, paths)
+    # if step is not None:
+    #     paths = filter(lambda path: path[2] == step, paths)
     paths.sort(reverse=True)
-    paths = [path[-1] for path in paths]
+    # paths = [path[-1] for path in paths]
     return paths[0] if len(paths) else None

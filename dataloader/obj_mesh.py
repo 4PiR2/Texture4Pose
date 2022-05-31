@@ -143,16 +143,16 @@ class BOPMesh(ObjMesh):
 
 
 class RegularMesh(ObjMesh):
-    def __init__(self, name=None, scale=5e-2, **kwargs):
+    def __init__(self, name=None, scale=5e-2, level=5, **kwargs):
         min = torch.full([3], -scale)
         size = torch.full([3], scale * 2.)
         center = torch.zeros(3)
         if name == 'sphere':
             radius = scale
-            mesh = pytorch3d.utils.ico_sphere(level=1).scale_verts_(scale)
+            mesh = pytorch3d.utils.ico_sphere(level=level).scale_verts_(scale)
         elif name == 'cube':
             radius = scale * 3. ** .5
-            mesh = utils.cube_mesh.cube(level=1).scale_verts_(scale)
+            mesh = utils.cube_mesh.cube(level=level).scale_verts_(scale)
         else:
             raise NotImplementedError
         diameter = radius * 2.

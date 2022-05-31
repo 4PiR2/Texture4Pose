@@ -1,7 +1,8 @@
 from typing import Optional
 
-import pytorch_lightning as pl
 from pytorch3d.renderer.mesh import TexturesBase, TexturesVertex
+import pytorch3d.transforms
+import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT, STEP_OUTPUT
 import torch
 from torch import nn
@@ -15,6 +16,7 @@ from dataloader.scene import Scene
 from models.conv_pnp_net import ConvPnPNet
 from models.texture_net import TextureNet
 from models.rot_head import RotWithRegionHead
+import utils.transform_3d
 
 
 class LitModel(pl.LightningModule):
@@ -33,7 +35,12 @@ class LitModel(pl.LightningModule):
         features = self.backbone(sample.img_roi)
         features = features.view(-1, 512, 8, 8)
         sample.pred_mask_vis_roi, sample.pred_coord_3d_roi_normalized = self.rot_head_net(features)
-        sample, _pred_cam_R_m2c_6d, _pred_cam_R_m2c_allo = self.pnp_net(sample)
+        pred_coord_3d_roi = sample.get_pred_coord_3d_roi(store=True)
+        pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(pred_coord_3d_roi, sample.coord_2d_roi)
+        pred_cam_R_m2c_allo = pytorch3d.transforms.rotation_6d_to_matrix(pred_cam_R_m2c_6d)
+        pred_cam_R_m2c_allo = pred_cam_R_m2c_allo.transpose(-2, -1)  # use GDR's pre-trained weights
+        sample.pred_cam_t_m2c = sample.get_pred_cam_t_m2c(store=True)
+        sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c) @ pred_cam_R_m2c_allo
         # sample.visualize()
         return sample
 
@@ -70,9 +77,6 @@ class LitModel(pl.LightningModule):
 
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:
         sample = self.forward(sample)
-        if (batch_idx + 1) % self.trainer.log_every_n_steps == 0:
-            self._log_meshes()
-            self._log_sample_visualizations(sample)
         loss_coord_3d = sample.coord_3d_loss().mean()
         loss_mask = sample.mask_loss().mean()
         loss_pm = sample.pm_loss(self.objects_eval).mean()
@@ -85,6 +89,8 @@ class LitModel(pl.LightningModule):
 
     def validation_step(self, sample: Sample, batch_idx: int) -> Optional[STEP_OUTPUT]:
         sample = self.forward(sample)
+        if (batch_idx + 1) % (self.trainer.log_every_n_steps * 999) == 1:
+            self._log_sample_visualizations(sample)
         re = sample.relative_angle(degree=True)
         te = sample.relative_dist(cm=True)
         add = sample.add_score(self.objects_eval, div_diameter=True)
@@ -92,6 +98,7 @@ class LitModel(pl.LightningModule):
         return {'re(deg)': re, 'te(cm)': te, 'ad(d)': add, 'proj': proj}
 
     def validation_epoch_end(self, outputs: EPOCH_OUTPUT) -> None:
+        # self._log_meshes()
         keys = list(outputs[0].keys())
         outputs = {key: torch.cat([output[key] for output in outputs], dim=0) for key in keys}
         metrics = torch.stack([outputs[key] for key in keys], dim=0)
@@ -99,6 +106,7 @@ class LitModel(pl.LightningModule):
         quantiles = metrics.quantile(q, dim=1).T
         for i in range(len(keys)):
             self.log(keys[i], {f'%{int((q[j] * 100.).round())}': float(quantiles[i, j]) for j in range(len(q))})
+        self.log('val_metric', metrics[2].mean())  # mean add score, for model selection
 
     def configure_optimizers(self):
         params = [
@@ -120,6 +128,11 @@ class LitModel(pl.LightningModule):
         self.pnp_net.load_pretrain(gdr_pth_path)
 
     def on_train_start(self):
+        writer: SummaryWriter = self.logger.experiment
+        writer.add_text('backbone', str(self.backbone), global_step=0)
+        writer.add_text('rot_head_net', str(self.rot_head_net), global_step=0)
+        writer.add_text('pnp_net', str(self.pnp_net), global_step=0)
+        writer.add_text('texture_net', str(self.texture_net), global_step=0)
         self.on_validation_start()
 
     def on_validation_start(self):

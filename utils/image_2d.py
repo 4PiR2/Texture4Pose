@@ -1,6 +1,7 @@
 from typing import Union
 
 import torch
+import torchvision
 from matplotlib import pyplot as plt, patches
 from torch.nn import functional as F
 
@@ -29,6 +30,18 @@ def get_coord_2d_map(width: int, height: int, cam_K: torch.Tensor = None, device
 
 
 def get_bbox2d_from_mask(mask: torch.Tensor) -> torch.Tensor:
+    """
+    :param mask: [N, 1, H, W]
+    :return: [N, 1, 4(XYWH)]
+    """
+    bbox = torchvision.ops.masks_to_boxes(mask[:, 0])  # [N, 4(XYXY)]
+    bbox2 = torch.empty_like(bbox)
+    bbox2[:, :2] = (bbox[:, :2] + bbox[:, 2:]) * .5
+    bbox2[:, 2:] = bbox[:, 2:] - bbox[:, :2]
+    return bbox2[:, None]
+
+
+def get_bbox2d_from_mask_old(mask: torch.Tensor) -> torch.Tensor:
     """
     :param mask: [..., H, W]
     :return: [..., 4(XYWH)]

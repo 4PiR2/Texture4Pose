@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor
+from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor, ModelCheckpoint
 
 import config.const as cc
 from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset, RandomPoseBOPObjDataset, \
@@ -34,17 +34,34 @@ def main():
         model.load_pretrain(cfg.model.pretrain)
     model = model.to(cfg.device)
 
+    checkpoint_callback = ModelCheckpoint(
+        save_top_k=2,
+        monitor='val_metric',
+        mode='min',
+        filename='{epoch:04d}-{val_metric:.4f}',
+        save_last=True,
+    )
+
+    from pytorch_lightning.profiler import PyTorchProfiler
+
+    profiler = PyTorchProfiler(filename='profile', emit_nvtx=False)
+
     trainer = Trainer(
         accelerator='auto',
         devices=1 if torch.cuda.is_available() else None,
-        max_epochs=100,
-        callbacks=[TQDMProgressBar(refresh_rate=20), LearningRateMonitor(logging_interval='step', log_momentum=False)],
+        max_epochs=10,
+        callbacks=[
+            TQDMProgressBar(refresh_rate=20),
+            LearningRateMonitor(logging_interval='step', log_momentum=False),
+            checkpoint_callback,
+        ],
         default_root_dir='outputs',
         log_every_n_steps=50,
+        profiler=profiler,
     )
 
-    # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
-    ckpt_path = None
+    ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
+    # ckpt_path = None
     trainer.fit(model, ckpt_path=ckpt_path, datamodule=datamodule)
     # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
