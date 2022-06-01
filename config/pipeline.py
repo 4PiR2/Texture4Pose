@@ -24,7 +24,7 @@ augmentation = dict(  # torchvision.transforms.ColorJitter
 )
 
 dataloader = dict(
-    batch_size=16,
+    batch_size=32,
     train_epoch_len=10000,
     val_epoch_len=100,
 )

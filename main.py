@@ -8,6 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.profiler import PyTorchProfiler
 
 import config.const as cc
 from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset, RandomPoseBOPObjDataset, \
@@ -42,9 +43,7 @@ def main():
         save_last=True,
     )
 
-    from pytorch_lightning.profiler import PyTorchProfiler
-
-    profiler = PyTorchProfiler(filename='profile', emit_nvtx=False)
+    # profiler = PyTorchProfiler(filename='profile', emit_nvtx=False)
 
     trainer = Trainer(
         accelerator='auto',
@@ -57,10 +56,11 @@ def main():
         ],
         default_root_dir='outputs',
         log_every_n_steps=50,
-        profiler=profiler,
+        # profiler=profiler,
     )
 
-    ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
+    # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
+    ckpt_path = 'outputs/lightning_logs/version_3/checkpoints/epoch=0008-val_metric=0.0511.ckpt'
     # ckpt_path = None
     trainer.fit(model, ckpt_path=ckpt_path, datamodule=datamodule)
     # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)

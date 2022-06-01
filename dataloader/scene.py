@@ -110,8 +110,8 @@ class Scene:
         return self.gt_mask_vis.sum(dim=(1, 2, 3)) / self.gt_mask_obj.sum(dim=(1, 2, 3))  # [N]
 
     def _get_bboxes(self) -> tuple[torch.Tensor, torch.Tensor]:
-        gt_bbox_vis = get_bbox2d_from_mask(self.gt_mask_vis)[:, 0]  # [N, 4(XYWH)]
-        gt_bbox_obj = get_bbox2d_from_mask(self.gt_mask_obj)[:, 0]  # [N, 4(XYWH)]
+        gt_bbox_vis = get_bbox2d_from_mask(self.gt_mask_vis[:, 0])  # [N, 4(XYWH)]
+        gt_bbox_obj = get_bbox2d_from_mask(self.gt_mask_obj[:, 0])  # [N, 4(XYWH)]
         return gt_bbox_vis, gt_bbox_obj
 
     def render_scene(self, f: Callable[[ObjMesh], TexturesBase] = None,
@@ -179,7 +179,7 @@ class SceneBatch(Scene):
         return torch.ones(len(self.gt_cam_R_m2c), dtype=self.dtype, device=self.device)
 
     def _get_bboxes(self) -> tuple[torch.Tensor, torch.Tensor]:
-        gt_bbox_obj = get_bbox2d_from_mask(self.gt_mask_obj)[:, 0]  # [N, 4(XYWH)]
+        gt_bbox_obj = get_bbox2d_from_mask(self.gt_mask_obj[:, 0])  # [N, 4(XYWH)]
         return gt_bbox_obj, gt_bbox_obj
 
     def _get_scene_meshes(self) -> Meshes:

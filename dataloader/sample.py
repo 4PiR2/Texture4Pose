@@ -189,8 +189,11 @@ class Sample:
         :param pred_mask_vis_roi: [..., 1, H, W]
         :return: [...]
         """
+        # TODO
         pred_mask_vis_roi = _get_param(pred_mask_vis_roi, self.pred_mask_vis_roi)
-        return utils.image_2d.lp_loss(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype), p=1)
+        return F.binary_cross_entropy(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype),
+                                      reduction='mean')
+        # return utils.image_2d.lp_loss(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype), p=1)
 
     def relative_angle(self, pred_cam_R_m2c: torch.Tensor = None, degree: bool =False) -> torch.Tensor:
         """

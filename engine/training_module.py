@@ -27,16 +27,18 @@ class LitModel(pl.LightningModule):
         self.backbone.avgpool = nn.Sequential()
         self.backbone.fc = nn.Sequential()
         self.rot_head_net = RotWithRegionHead(512, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
-        self.pnp_net = ConvPnPNet(nIn=5)
+        self.pnp_net = ConvPnPNet(in_channels=6)
         self.objects_eval = objects_eval if objects_eval is not None else objects
 
     def forward(self, sample: Sample):
         # in lightning, forward defines the prediction/inference actions
         features = self.backbone(sample.img_roi)
         features = features.view(-1, 512, 8, 8)
-        sample.pred_mask_vis_roi, sample.pred_coord_3d_roi_normalized = self.rot_head_net(features)
-        pred_coord_3d_roi = sample.get_pred_coord_3d_roi(store=True)
-        pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(pred_coord_3d_roi, sample.coord_2d_roi)
+        pred_mask_vis_roi, sample.pred_coord_3d_roi_normalized = self.rot_head_net(features)
+        sample.pred_mask_vis_roi = pred_mask_vis_roi.sigmoid()
+        sample.get_pred_coord_3d_roi(store=True)
+        pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(
+            sample.pred_coord_3d_roi, sample.coord_2d_roi, sample.pred_mask_vis_roi)
         pred_cam_R_m2c_allo = pytorch3d.transforms.rotation_6d_to_matrix(pred_cam_R_m2c_6d)
         pred_cam_R_m2c_allo = pred_cam_R_m2c_allo.transpose(-2, -1)  # use GDR's pre-trained weights
         sample.pred_cam_t_m2c = sample.get_pred_cam_t_m2c(store=True)

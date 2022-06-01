@@ -31,28 +31,28 @@ def get_coord_2d_map(width: int, height: int, cam_K: torch.Tensor = None, device
 
 def get_bbox2d_from_mask(mask: torch.Tensor) -> torch.Tensor:
     """
-    :param mask: [N, 1, H, W]
-    :return: [N, 1, 4(XYWH)]
+    :param mask: [N, H, W]
+    :return: [N, 4(XYWH)]
     """
-    bbox = torchvision.ops.masks_to_boxes(mask[:, 0])  # [N, 4(XYXY)]
+    bbox = torchvision.ops.masks_to_boxes(mask)  # [N, 4(XYXY)]
     bbox2 = torch.empty_like(bbox)
     bbox2[:, :2] = (bbox[:, :2] + bbox[:, 2:]) * .5
     bbox2[:, 2:] = bbox[:, 2:] - bbox[:, :2]
-    return bbox2[:, None]
+    return bbox2
 
 
-def get_bbox2d_from_mask_old(mask: torch.Tensor) -> torch.Tensor:
-    """
-    :param mask: [..., H, W]
-    :return: [..., 4(XYWH)]
-    """
-    w_mask = mask.any(dim=-2)  # [..., W]
-    h_mask = mask.any(dim=-1)  # [..., H]
-    x0 = w_mask.to(dtype=torch.uint8).argmax(dim=-1)  # [...]
-    y0 = h_mask.to(dtype=torch.uint8).argmax(dim=-1)  # [...]
-    w = w_mask.sum(dim=-1)  # [...]
-    h = h_mask.sum(dim=-1)  # [...]
-    return torch.stack([x0 + w * .5, y0 + h * .5, w, h], dim=-1)  # [..., 4(XYWH)]
+# def get_bbox2d_from_mask(mask: torch.Tensor) -> torch.Tensor:
+#     """
+#     :param mask: [..., H, W]
+#     :return: [..., 4(XYWH)]
+#     """
+#     w_mask = mask.any(dim=-2)  # [..., W]
+#     h_mask = mask.any(dim=-1)  # [..., H]
+#     x0 = w_mask.to(dtype=torch.uint8).argmax(dim=-1)  # [...]
+#     y0 = h_mask.to(dtype=torch.uint8).argmax(dim=-1)  # [...]
+#     w = w_mask.sum(dim=-1)  # [...]
+#     h = h_mask.sum(dim=-1)  # [...]
+#     return torch.stack([x0 + w * .5, y0 + h * .5, w, h], dim=-1)  # [..., 4(XYWH)]
 
 
 def crop_roi(img: Union[list[torch.Tensor], torch.Tensor], bbox: torch.Tensor,
