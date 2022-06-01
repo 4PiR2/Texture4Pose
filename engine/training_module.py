@@ -81,7 +81,7 @@ class LitModel(pl.LightningModule):
         sample = self.forward(sample)
         loss_coord_3d = sample.coord_3d_loss().mean()
         loss_mask = sample.mask_loss().mean()
-        loss_pm = sample.pm_loss(self.objects_eval).mean()
+        loss_pm = sample.pm_loss(self.objects_eval, div_diameter=False).mean()
         loss_t_site_center = sample.t_site_center_loss().mean()
         loss_t_site_depth = sample.t_site_depth_loss().mean()
         loss = loss_coord_3d + loss_mask + loss_pm + loss_t_site_center + loss_t_site_depth

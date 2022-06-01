@@ -104,10 +104,12 @@ class Sample:
             self.pred_coord_3d_roi = pred_coord_3d_roi
         return pred_coord_3d_roi  # [N, 3(XYZ), H, W]
 
-    def pm_loss(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor = None) -> torch.Tensor:
+    def pm_loss(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor = None, div_diameter: bool = True
+                ) -> torch.Tensor:
         """
         :param objects_eval: dict[int, ObjMesh]
         :param pred_cam_R_m2c: [N, 3, 3]
+        :param div_diameter: bool
         :return: [N]
         """
         pred_cam_R_m2c = _get_param(pred_cam_R_m2c, self.pred_cam_R_m2c)
@@ -116,6 +118,8 @@ class Sample:
         for i in range(N):
             obj = objects_eval[int(self.obj_id[i])]
             loss[i] = obj.average_distance(pred_cam_R_m2c[i], self.gt_cam_R_m2c[i], p=1)
+            if div_diameter:
+                loss[i] /= obj.diameter
         return loss
 
     def add_score(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor = None,
@@ -191,9 +195,11 @@ class Sample:
         """
         # TODO
         pred_mask_vis_roi = _get_param(pred_mask_vis_roi, self.pred_mask_vis_roi)
-        return F.binary_cross_entropy(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype),
-                                      reduction='mean')
-        # return utils.image_2d.lp_loss(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype), p=1)
+        # loss = F.binary_cross_entropy(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype),
+        #                               reduction='mean')
+        pred_mask_vis_roi = utils.image_2d.conditional_clamp(pred_mask_vis_roi, self.gt_mask_vis_roi, l0=0., u1=1.)
+        loss = utils.image_2d.lp_loss(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype), p=1)
+        return loss
 
     def relative_angle(self, pred_cam_R_m2c: torch.Tensor = None, degree: bool =False) -> torch.Tensor:
         """

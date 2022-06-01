@@ -48,7 +48,7 @@ def main():
     trainer = Trainer(
         accelerator='auto',
         devices=1 if torch.cuda.is_available() else None,
-        max_epochs=10,
+        max_epochs=100,
         callbacks=[
             TQDMProgressBar(refresh_rate=20),
             LearningRateMonitor(logging_interval='step', log_momentum=False),
@@ -60,8 +60,9 @@ def main():
     )
 
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
-    ckpt_path = 'outputs/lightning_logs/version_3/checkpoints/epoch=0008-val_metric=0.0511.ckpt'
-    # ckpt_path = None
+    # ckpt_path = 'outputs/lightning_logs/version_3/checkpoints/epoch=0008-val_metric=0.0511.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_5/checkpoints/last.ckpt'
+    ckpt_path = None
     trainer.fit(model, ckpt_path=ckpt_path, datamodule=datamodule)
     # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 

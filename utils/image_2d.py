@@ -162,6 +162,10 @@ def lp_loss(x: torch.Tensor, y: torch.Tensor = None, p: int = 1) -> torch.Tensor
     return x.mean(dim=[-3, -2, -1])
 
 
+def conditional_clamp(x: torch.Tensor, mask: torch.Tensor, l0=None, u0=None, l1=None, u1=None) -> torch.Tensor:
+    return torch.where(mask, x.clamp(min=l1, max=u1), x.clamp(min=l0, max=u0))
+
+
 def draw_ax(ax: plt.Axes, img_1: torch.Tensor, bg_1: torch.Tensor = None, mask: torch.Tensor = None,
             bboxes: torch.Tensor = None) -> plt.Axes:
     """
