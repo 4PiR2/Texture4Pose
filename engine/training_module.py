@@ -6,13 +6,12 @@ import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT, STEP_OUTPUT
 import torch
 from torch import nn
-import torch.nn.functional as F
 import torchvision
 from torch.utils.tensorboard import SummaryWriter
 
 from dataloader.obj_mesh import ObjMesh
 from dataloader.sample import Sample
-from dataloader.scene import Scene
+from renderer.scene import Scene
 from models.conv_pnp_net import ConvPnPNet
 from models.texture_net import TextureNet
 from models.rot_head import RotWithRegionHead
@@ -39,43 +38,15 @@ class LitModel(pl.LightningModule):
         sample.get_pred_coord_3d_roi(store=True)
         pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(
             sample.pred_coord_3d_roi, sample.coord_2d_roi, sample.pred_mask_vis_roi)
+        # sample.gt_coord_3d_roi, sample.coord_2d_roi, sample.gt_mask_vis_roi)
         pred_cam_R_m2c_allo = pytorch3d.transforms.rotation_6d_to_matrix(pred_cam_R_m2c_6d)
         pred_cam_R_m2c_allo = pred_cam_R_m2c_allo.transpose(-2, -1)  # use GDR's pre-trained weights
         sample.pred_cam_t_m2c = sample.get_pred_cam_t_m2c(store=True)
         sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c) @ pred_cam_R_m2c_allo
+        # sample.pred_cam_R_m2c, sample.pred_cam_t_m2c = \
+        #     utils.transform_3d.ransac_pnp(sample.pred_coord_3d_roi, sample.coord_2d_roi, sample.pred_mask_vis_roi)
         # sample.visualize()
         return sample
-
-    def _log_meshes(self) -> None:
-        for obj_id in self.objects_eval:
-            obj = self.objects_eval[obj_id]
-            verts = obj.mesh.verts_packed()  # [V, 3(XYZ)]
-            faces = obj.mesh.faces_packed()  # [F, 3]
-            texture: TexturesBase = self.texture_net(obj)
-            if isinstance(texture, TexturesVertex):
-                v_texture = texture.verts_features_packed()
-            else:
-                fv_texture = texture.faces_verts_textures_packed()  # [F, 3, 3(RGB)]
-                v_texture = torch.empty_like(verts)  # [V, 3(RGB)]
-                for i in range(len(verts)):
-                    v_texture[i] = fv_texture[faces == i].mean(dim=0)
-            v_texture = (v_texture * 255.).to(dtype=torch.uint8)
-            config_dict = {'lights': [{'cls': 'AmbientLight', 'color': 0xffffff, 'intensity': 1.}]}
-            # ref: https://www.tensorflow.org/graphics/tensorboard#scene_configuration
-            writer: SummaryWriter = self.logger.experiment
-            writer.add_mesh(f'{obj_id}-{obj.name}', vertices=verts[None], colors=v_texture[None], faces=faces[None],
-                            config_dict=config_dict, global_step=self.global_step)
-
-    def _log_sample_visualizations(self, sample: Sample) -> None:
-        writer: SummaryWriter = self.logger.experiment
-        figs = sample.visualize(return_figs=True)
-        count = {}
-        for obj_id, fig in zip(sample.obj_id, figs):
-            obj_id = int(obj_id)
-            c = count[obj_id] if obj_id in count else 0
-            writer.add_figure(f'{obj_id}-{self.objects_eval[obj_id].name}-{c}', fig,
-                              global_step=self.global_step, close=True)
-            count[obj_id] = c + 1
 
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:
         sample = self.forward(sample)
@@ -128,6 +99,37 @@ class LitModel(pl.LightningModule):
         self.load_state_dict(state_dict, strict=False)
         self.backbone.conv1.weight = nn.Parameter(self.backbone.conv1.weight.flip(dims=[1]))
         self.pnp_net.load_pretrain(gdr_pth_path)
+
+    def _log_meshes(self) -> None:
+        for obj_id in self.objects_eval:
+            obj = self.objects_eval[obj_id]
+            verts = obj.mesh.verts_packed()  # [V, 3(XYZ)]
+            faces = obj.mesh.faces_packed()  # [F, 3]
+            texture: TexturesBase = self.texture_net(obj)
+            if isinstance(texture, TexturesVertex):
+                v_texture = texture.verts_features_packed()
+            else:
+                fv_texture = texture.faces_verts_textures_packed()  # [F, 3, 3(RGB)]
+                v_texture = torch.empty_like(verts)  # [V, 3(RGB)]
+                for i in range(len(verts)):
+                    v_texture[i] = fv_texture[faces == i].mean(dim=0)
+            v_texture = (v_texture * 255.).to(dtype=torch.uint8)
+            config_dict = {'lights': [{'cls': 'AmbientLight', 'color': 0xffffff, 'intensity': 1.}]}
+            # ref: https://www.tensorflow.org/graphics/tensorboard#scene_configuration
+            writer: SummaryWriter = self.logger.experiment
+            writer.add_mesh(f'{obj_id}-{obj.name}', vertices=verts[None], colors=v_texture[None], faces=faces[None],
+                            config_dict=config_dict, global_step=self.global_step)
+
+    def _log_sample_visualizations(self, sample: Sample) -> None:
+        writer: SummaryWriter = self.logger.experiment
+        figs = sample.visualize(return_figs=True)
+        count = {}
+        for obj_id, fig in zip(sample.obj_id, figs):
+            obj_id = int(obj_id)
+            c = count[obj_id] if obj_id in count else 0
+            writer.add_figure(f'{obj_id}-{self.objects_eval[obj_id].name}-{c}', fig,
+                              global_step=self.global_step, close=True)
+            count[obj_id] = c + 1
 
     def on_train_start(self):
         writer: SummaryWriter = self.logger.experiment

@@ -13,6 +13,8 @@ dataset = dict(
     light_specular_range=(0., .2),
     light_shininess_range=(40, 80),
     light_color_range=(.9, 1.),
+    num_obj=None,
+    repeated_sample_obj=False,
     path=None,
 )
 
@@ -24,7 +26,7 @@ augmentation = dict(  # torchvision.transforms.ColorJitter
 )
 
 dataloader = dict(
-    batch_size=32,
+    batch_size=2,
     train_epoch_len=10000,
     val_epoch_len=100,
 )

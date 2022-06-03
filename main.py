@@ -14,6 +14,7 @@ import config.const as cc
 from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset, RandomPoseBOPObjDataset, \
     RandomPoseRegularObjDataset
 from dataloader.sample import Sample
+from engine.ckpt_io import CkptIO
 from engine.data_module import LitDataModule
 from engine.training_module import LitModel
 from utils.config import Config
@@ -29,11 +30,6 @@ def main():
         return cfg
 
     cfg = setup()
-    datamodule = LitDataModule(cfg)
-    model = LitModel(datamodule.dataset.objects, datamodule.dataset.objects_eval)
-    if cfg.model.pretrain is not None:
-        model.load_pretrain(cfg.model.pretrain)
-    model = model.to(cfg.device)
 
     checkpoint_callback = ModelCheckpoint(
         save_top_k=2,
@@ -54,6 +50,7 @@ def main():
             LearningRateMonitor(logging_interval='step', log_momentum=False),
             checkpoint_callback,
         ],
+        plugins=[CkptIO()],
         default_root_dir='outputs',
         log_every_n_steps=50,
         # profiler=profiler,
@@ -62,9 +59,21 @@ def main():
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_3/checkpoints/epoch=0008-val_metric=0.0511.ckpt'
     # ckpt_path = 'outputs/lightning_logs/version_5/checkpoints/last.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_7/checkpoints/last.ckpt'
-    # ckpt_path = None
-    trainer.fit(model, ckpt_path=ckpt_path, datamodule=datamodule)
+    # ckpt_path = 'outputs/lightning_logs/version_7/checkpoints/last.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_9/checkpoints/epoch=0010-val_metric=0.0520.ckpt'
+    ckpt_path_n = None
+
+    datamodule = LitDataModule(cfg)
+
+    # model = LitModel(datamodule.dataset.objects, datamodule.dataset.objects_eval)
+    # if cfg.model.pretrain is not None:
+    #     model.load_pretrain(cfg.model.pretrain)
+
+    model = LitModel.load_from_checkpoint(
+        ckpt_path, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
+
+    model = model.to(cfg.device)
+    trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
     # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
 

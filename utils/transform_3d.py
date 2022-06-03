@@ -117,7 +117,8 @@ def ransac_pnp(coord_3d: torch.Tensor, coord_2d: torch.Tensor, mask: torch.Tenso
     for i in range(N):
         x = coord_3d[i].permute(1, 2, 0)[mask[i, 0]].detach().cpu().numpy()
         y = coord_2d[i].permute(1, 2, 0)[mask[i, 0]].detach().cpu().numpy()
-        _, pred_R_exp, pred_t, _ = cv2.solvePnPRansac(x, y, np.eye(3), None, reprojectionError=.01)
+        _, pred_R_exp, pred_t, _ = cv2.solvePnPRansac(x, y, np.eye(3), None, iterationsCount=1000,
+                                                      reprojectionError=.001)
         pred_R, _ = cv2.Rodrigues(pred_R_exp)
         pred_cam_R_m2c[i] = torch.tensor(pred_R, dtype=dtype, device=device)
         pred_cam_t_m2c[i] = torch.tensor(pred_t.flatten(), dtype=dtype, device=device)

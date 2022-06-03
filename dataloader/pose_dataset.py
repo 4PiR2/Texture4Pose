@@ -11,7 +11,7 @@ import pytorch3d.transforms
 import config.const as cc
 from dataloader.obj_mesh import ObjMesh, BOPMesh, RegularMesh
 from dataloader.sample import Sample
-from dataloader.scene import Scene, SceneBatch, SceneBatchOne
+from renderer.scene import Scene, SceneBatch, SceneBatchOne
 import utils.io
 import utils.image_2d
 import utils.transform_3d
@@ -34,7 +34,8 @@ class RandomPoseRegularObjDataset(torch.utils.data.IterableDataset):
                  bg_img_path=None, img_render_size=512, img_input_size=256, pnp_input_size=64, cam_K=cc.lm_cam_K,
                  random_t_depth_range=(.5, 1.2), vis_ratio_filter_threshold=.5, max_dzi_ratio=.25,
                  bbox_zoom_out_ratio=1.5, light_ambient_range=(.5, 1.), light_diffuse_range=(0., .3),
-                 light_specular_range=(0., .2), light_shininess_range=(40, 80), light_color_range=(1., 1.), **kwargs):
+                 light_specular_range=(0., .2), light_shininess_range=(40, 80), light_color_range=(1., 1.),
+                 num_obj=None, repeated_sample_obj=False, **kwargs):
         self.obj_list: Union[dict[int, str], list[int]] = obj_list
         self.transform: Any = transform
         self.dtype: torch.dtype = dtype
@@ -56,6 +57,8 @@ class RandomPoseRegularObjDataset(torch.utils.data.IterableDataset):
         self.light_specular_range: tuple[float, float] = light_specular_range  # \in [0., 1.]
         self.light_shininess_range: tuple[int, int] = light_shininess_range  # \in [0, 1000]
         self.light_color_range: tuple[float, float] = light_color_range  # \in [0., 1.]
+        self.num_obj: int = num_obj if num_obj else len(obj_list)
+        self.repeated_sample_obj: bool = repeated_sample_obj
 
         self.objects: dict[int, ObjMesh] = {}
         self.objects_eval: dict[int, ObjMesh] = {}
@@ -77,15 +80,15 @@ class RandomPoseRegularObjDataset(torch.utils.data.IterableDataset):
 
     def _get_pose_gt(self, item):
         obj_id = torch.tensor([oid for oid in self.obj_list], dtype=torch.uint8, device=self.device)
-        num_obj = len(obj_id)
-        selected, _ = torch.multinomial(torch.ones(len(obj_id)), num_obj, replacement=False).sort()
+        selected, _ = torch.multinomial(torch.ones(len(obj_id)), self.num_obj,
+                                        replacement=self.repeated_sample_obj).sort()
         obj_id = obj_id[selected]
 
         radii = torch.tensor([self.objects[int(oid)].radius for oid in obj_id], dtype=self.dtype, device=self.device)
         # [N]
         centers = torch.stack([self.objects[int(oid)].center for oid in obj_id], dim=0)  # [N, 3(XYZ)]
 
-        cam_K = utils.transform_3d.normalize_cam_K(self.cam_K.to(self.device)).expand(len(obj_id), -1, -1)  # [N, 3, 3]
+        cam_K = utils.transform_3d.normalize_cam_K(self.cam_K.to(self.device)).expand(self.num_obj, -1, -1)  # [N, 3, 3]
         box2d_min = torch.linalg.inv(cam_K)[..., -1]  # [N, 3(XY1)], inv(K) @ [0., 0., 1.].T
         box2d_max = torch.linalg.solve(cam_K, torch.tensor([[self.img_render_size], [self.img_render_size], [1.]],
             dtype=self.dtype, device=self.device))[..., 0]  # [N, 3(XY1)], inv(K) @ [W, H, 1.].T
@@ -95,14 +98,15 @@ class RandomPoseRegularObjDataset(torch.utils.data.IterableDataset):
         box3d_min = box2d_min * t_depth_min - centers + radii[:, None]  # [N, 3(XYZ)]
 
         if self.scene_mode:
-            triu_indices = torch.triu_indices(num_obj, num_obj, 1)
+            triu_indices = torch.triu_indices(self.num_obj, self.num_obj, 1)
             mdist = (radii + radii[..., None])[triu_indices[0], triu_indices[1]]
 
         while True:
-            gt_cam_t_m2c = torch.rand((num_obj, 3), dtype=self.dtype, device=self.device) * box3d_size + box3d_min
+            gt_cam_t_m2c = torch.rand((self.num_obj, 3), dtype=self.dtype, device=self.device) * box3d_size + box3d_min
             if not self.scene_mode or (F.pdist(gt_cam_t_m2c) >= mdist).all():
                 break
-        gt_cam_R_m2c = pytorch3d.transforms.random_rotations(num_obj, dtype=self.dtype, device=self.device)  # [N, 3, 3]
+        gt_cam_R_m2c = pytorch3d.transforms.random_rotations(self.num_obj, dtype=self.dtype, device=self.device)
+        # [N, 3, 3]
         return cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c
 
     def _get_bg_img(self, num):
@@ -158,7 +162,12 @@ class RandomPoseRegularObjDataset(torch.utils.data.IterableDataset):
         return sample
 
     def _get_features(self, item, cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, coord_2d, img):
-        scene_cls = Scene if self.scene_mode else SceneBatch
+        if self.scene_mode:
+            scene_cls = Scene
+        elif len(obj_id.unique()) == 1:
+            scene_cls = SceneBatchOne
+        else:
+            scene_cls = SceneBatch
         height, width = coord_2d.shape[-2:]
         scene = scene_cls(objects=self.objects, cam_K=cam_K, obj_id=obj_id, gt_cam_R_m2c=gt_cam_R_m2c,
                           gt_cam_t_m2c=gt_cam_t_m2c, width=width, height=height)
@@ -210,6 +219,8 @@ class RenderedPoseBOPObjDataset(RandomPoseBOPObjDataset):
         kwargs['img_render_size'] = None
         kwargs['cam_K'] = None
         kwargs['random_t_depth_range'] = None
+        kwargs['num_obj'] = None
+        kwargs['repeat_sample_obj'] = False
         super().__init__(**kwargs)
         self._scene_camera: list[dict[str, Any]] = []
         self._scene_gt: list[dict[str, Any]] = []
