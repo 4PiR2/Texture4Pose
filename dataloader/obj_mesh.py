@@ -7,7 +7,7 @@ from pytorch3d.structures import Meshes
 import pytorch3d.utils
 
 import config.const as cc
-import utils.cube_mesh
+import renderer.cube_mesh
 from utils.mbsc.exact_min_bound_sphere_3D import exact_min_bound_sphere_3D
 
 
@@ -152,7 +152,7 @@ class RegularMesh(ObjMesh):
             mesh = pytorch3d.utils.ico_sphere(level=level).scale_verts_(scale)
         elif name == 'cube':
             radius = scale * 3. ** .5
-            mesh = utils.cube_mesh.cube(level=level).scale_verts_(scale)
+            mesh = renderer.cube_mesh.cube(level=level).scale_verts_(scale)
         else:
             raise NotImplementedError
         diameter = radius * 2.

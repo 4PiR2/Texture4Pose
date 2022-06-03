@@ -195,10 +195,10 @@ class Sample:
         """
         # TODO
         pred_mask_vis_roi = _get_param(pred_mask_vis_roi, self.pred_mask_vis_roi)
-        # loss = F.binary_cross_entropy(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype),
-        #                               reduction='mean')
-        pred_mask_vis_roi = utils.image_2d.conditional_clamp(pred_mask_vis_roi, self.gt_mask_vis_roi, l0=0., u1=1.)
-        loss = utils.image_2d.lp_loss(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype), p=1)
+        loss = F.binary_cross_entropy(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype),
+                                      reduction='mean')
+        # pred_mask_vis_roi = utils.image_2d.conditional_clamp(pred_mask_vis_roi, self.gt_mask_vis_roi, l0=0., u1=1.)
+        # loss = utils.image_2d.lp_loss(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype), p=1)
         return loss
 
     def relative_angle(self, pred_cam_R_m2c: torch.Tensor = None, degree: bool =False) -> torch.Tensor:

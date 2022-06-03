@@ -62,15 +62,16 @@ def main():
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_3/checkpoints/epoch=0008-val_metric=0.0511.ckpt'
     # ckpt_path = 'outputs/lightning_logs/version_5/checkpoints/last.ckpt'
-    ckpt_path = None
+    ckpt_path = 'outputs/lightning_logs/version_7/checkpoints/last.ckpt'
+    # ckpt_path = None
     trainer.fit(model, ckpt_path=ckpt_path, datamodule=datamodule)
     # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
 
 def data_loading_test(cfg):
-    dataset = RandomPoseRegularObjDataset(obj_list=cc.regular_objects, scene_mode=True, device=cc.device, bg_img_path='/data/coco/train2017')
+    # dataset = RandomPoseRegularObjDataset(obj_list=cc.regular_objects, scene_mode=True, device=cc.device, bg_img_path='/data/coco/train2017')
     # dataset = RandomPoseBOPObjDataset(obj_list=cc.lmo_objects, path='data/BOP/lmo', scene_mode=False, device=cc.device, bg_img_path='/data/coco/train2017')
-    # dataset = RenderedPoseBOPObjDataset(obj_list=cc.lmo_objects, path='data/BOP/lmo', scene_mode=True, device=cc.device)
+    dataset = RenderedPoseBOPObjDataset(obj_list=cc.lmo_objects, path='data/BOP/lmo', scene_mode=True, device=cc.device)
     # dataset = BOPObjDataset(obj_list=cc.lmo_objects, path='data/BOP/lmo', device=cc.device)
     for s in dataset:
         s.visualize()

@@ -9,7 +9,7 @@ import config.const as cc
 import utils.transform_3d
 
 
-def get_coord_2d_map(width: int, height: int, cam_K: torch.Tensor = None, device: Union[torch.device, str]=None,
+def get_coord_2d_map(width: int, height: int, cam_K: torch.Tensor = None, device: Union[torch.device, str] = cc.device,
                      dtype: torch.dtype = cc.dtype) -> torch.Tensor:
     """
     :param width: int
@@ -17,7 +17,7 @@ def get_coord_2d_map(width: int, height: int, cam_K: torch.Tensor = None, device
     :param cam_K: [..., 3, 3]
     :return: [2(XY), H, W]
     """
-    device = cam_K.device if cam_K is not None else cc.device
+    device = cam_K.device if cam_K is not None else device
     dtype = cam_K.dtype if cam_K is not None else dtype
     coord_2d_x, coord_2d_y = torch.meshgrid(
         torch.arange(float(width), dtype=dtype), torch.arange(float(height), dtype=dtype), indexing='xy')  # [H, W]
@@ -39,20 +39,6 @@ def get_bbox2d_from_mask(mask: torch.Tensor) -> torch.Tensor:
     bbox2[:, :2] = (bbox[:, :2] + bbox[:, 2:]) * .5
     bbox2[:, 2:] = bbox[:, 2:] - bbox[:, :2]
     return bbox2
-
-
-# def get_bbox2d_from_mask(mask: torch.Tensor) -> torch.Tensor:
-#     """
-#     :param mask: [..., H, W]
-#     :return: [..., 4(XYWH)]
-#     """
-#     w_mask = mask.any(dim=-2)  # [..., W]
-#     h_mask = mask.any(dim=-1)  # [..., H]
-#     x0 = w_mask.to(dtype=torch.uint8).argmax(dim=-1)  # [...]
-#     y0 = h_mask.to(dtype=torch.uint8).argmax(dim=-1)  # [...]
-#     w = w_mask.sum(dim=-1)  # [...]
-#     h = h_mask.sum(dim=-1)  # [...]
-#     return torch.stack([x0 + w * .5, y0 + h * .5, w, h], dim=-1)  # [..., 4(XYWH)]
 
 
 def crop_roi(img: Union[list[torch.Tensor], torch.Tensor], bbox: torch.Tensor,
