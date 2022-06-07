@@ -73,8 +73,8 @@ def main():
         ckpt_path, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
 
     model = model.to(cfg.device)
-    trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
-    # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
+    # trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
+    trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
 
 def data_loading_test(cfg):

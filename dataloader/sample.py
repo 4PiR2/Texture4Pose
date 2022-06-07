@@ -1,6 +1,7 @@
 import copy
 from typing import Callable, Optional
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
@@ -52,6 +53,7 @@ class Sample:
         self.pred_coord_3d_roi: Optional[torch.Tensor] = None
         self.pred_coord_3d_roi_normalized: Optional[torch.Tensor] = None
         self.pred_mask_vis_roi: Optional[torch.Tensor] = None
+        self.pred_mask_inlier_roi: Optional[torch.Tensor] = None
 
     @classmethod
     def collate(cls, batch: list):
@@ -64,12 +66,13 @@ class Sample:
                 setattr(out, key, torch.cat([getattr(b, key) for b in batch], dim=0))
         return out
 
-    def sanity_check(self, store: bool = True) -> tuple[torch.Tensor, torch.Tensor]:
-        pred_cam_R_m2c, pred_cam_t_m2c = utils.transform_3d.ransac_pnp(
+    def sanity_check(self, store: bool = True) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        pred_cam_R_m2c, pred_cam_t_m2c, pred_mask_inliers_roi = utils.transform_3d.solve_pnp(
             self.gt_coord_3d_roi, self.coord_2d_roi, self.gt_mask_vis_roi)
         if store:
-            self.pred_cam_R_m2c, self.pred_cam_t_m2c = pred_cam_R_m2c, pred_cam_t_m2c
-        return pred_cam_R_m2c, pred_cam_t_m2c
+            self.pred_cam_R_m2c, self.pred_cam_t_m2c, self.pred_mask_inlier_roi \
+                = pred_cam_R_m2c, pred_cam_t_m2c, pred_mask_inliers_roi
+        return pred_cam_R_m2c, pred_cam_t_m2c, pred_mask_inliers_roi
 
     def _get_roi_zoom_in_ratio(self) -> torch.Tensor:
         pnp_input_size = max(self.gt_coord_3d_roi.shape[-2:])
@@ -237,32 +240,58 @@ class Sample:
             self.pred_coord_3d_roi_normalized,
             (self.pred_coord_3d_roi, lambda x: self._get_coord_3d_roi_normalized(x))
         )
+        pred_coord_3d_roi = _get_param(
+            pred_coord_3d_roi, self.pred_coord_3d_roi,
+            (self.pred_coord_3d_roi_normalized, lambda x: self._get_coord_3d_roi(x))
+        )
         pred_mask_vis_roi = _get_param(pred_mask_vis_roi, self.pred_mask_vis_roi)
         pred_cam_R_m2c = _get_param(pred_cam_R_m2c, self.pred_cam_R_m2c)
         pred_cam_t_m2c = _get_param(pred_cam_t_m2c, self.pred_cam_t_m2c,
                                     (self.pred_cam_t_m2c_site, lambda: self.get_pred_cam_t_m2c(store=True)))
+        # pred_mask_vis_roi_erode = utils.image_2d.erode_mask(pred_mask_vis_roi, 5., 10.)
+        # pred_coord_3d_roi = pred_coord_3d_roi / torch.linalg.vector_norm(pred_coord_3d_roi, dim=1)[:, None] * (.1 * .5)
         figs = []
         for i in range(len(self.obj_id)):
-            fig, axs = plt.subplots(2, 4, figsize=(12, 6))
+            fig, axs = plt.subplots(3, 4, figsize=(12, 9))
+
             utils.image_2d.draw_ax(axs[0, 0], self.img_roi[i])
             axs[0, 0].set_title('rendered image')
-            utils.image_2d.draw_ax(axs[1, 0], utils.image_2d.normalize_channel(self.coord_2d_roi[i]))
-            axs[1, 0].set_title('2D coord (norm)')
-            utils.image_2d.draw_ax(axs[0, 1],
-                utils.transform_3d.normalize_coord_3d(self.gt_coord_3d_roi[i], self.obj_size[i]))
-            axs[0, 1].set_title('gt 3D coord (norm)')
+
+            if self.coord_2d_roi is not None:
+                utils.image_2d.draw_ax(axs[1, 0], utils.image_2d.normalize_channel(self.coord_2d_roi[i]))
+            else:
+                axs[1, 0].set_aspect('equal')
+            axs[1, 0].set_title('2D coord (relative)')
+
+            if self.gt_coord_3d_roi is not None and self.obj_size is not None:
+                utils.image_2d.draw_ax(axs[0, 1],
+                    utils.transform_3d.normalize_coord_3d(self.gt_coord_3d_roi[i], self.obj_size[i]))
+            else:
+                axs[0, 1].set_aspect('equal')
+            axs[0, 1].set_title('gt 3D coord (relative)')
+
             if pred_coord_3d_roi_normalized is not None:
                 utils.image_2d.draw_ax(axs[1, 1], pred_coord_3d_roi_normalized[i].clamp(0., 1.))
             else:
                 axs[1, 1].set_aspect('equal')
-            axs[1, 1].set_title('pred 3D coord (norm)')
-            utils.image_2d.draw_ax(axs[0, 2], torch.cat([self.gt_mask_obj_roi[i], self.gt_mask_vis_roi[i]], dim=0))
+            axs[1, 1].set_title('pred 3D coord (relative)')
+
+            if self.gt_mask_vis_roi is not None:
+                if self.gt_mask_obj_roi is not None:
+                    gt_mask_roi = torch.cat([self.gt_mask_obj_roi[i], self.gt_mask_vis_roi[i]], dim=-3)
+                else:
+                    gt_mask_roi = self.gt_mask_vis_roi[i].expand(2, -1, -1)
+                utils.image_2d.draw_ax(axs[0, 2], gt_mask_roi)
+            else:
+                axs[0, 2].set_aspect('equal')
             axs[0, 2].set_title('gt mask (r-obj, g-vis)')
+
             if pred_mask_vis_roi is not None:
-                utils.image_2d.draw_ax(axs[1, 2], pred_mask_vis_roi[i].clamp(0., 1.))
+                utils.image_2d.draw_ax(axs[1, 2], pred_mask_vis_roi[i].clamp(0., 1.).expand(2, -1, -1))
             else:
                 axs[1, 2].set_aspect('equal')
-            axs[1, 2].set_title('pred mask')
+            axs[1, 2].set_title('pred mask vis')
+
             utils.transform_3d.show_pose(axs[0, 3], self.cam_K[i], self.gt_cam_R_m2c[i], self.gt_cam_t_m2c[i],
                                          self.obj_size[i], self.bbox[i], self.bbox_zoom_out_ratio, True)
             axs[0, 3].set_title('gt pose')
@@ -272,6 +301,29 @@ class Sample:
             else:
                 axs[1, 3].set_aspect('equal')
             axs[1, 3].set_title('pred pose')
+
+            if pred_coord_3d_roi is not None and self.gt_coord_3d_roi is not None:
+                diff = torch.linalg.vector_norm(pred_coord_3d_roi[i] * self.gt_mask_vis_roi[i] - self.gt_coord_3d_roi[i], dim=-3)
+                utils.image_2d.draw_ax_diff(axs[2, 1], diff, thresh_min=0., thresh_max=1e-2, log_mode=False)
+            else:
+                axs[2, 1].set_aspect('equal')
+            axs[2, 1].set_title('diff 3D coord (L2)')
+
+            if pred_mask_vis_roi is not None and self.gt_mask_vis_roi is not None:
+                diff = pred_mask_vis_roi[i] - self.gt_mask_vis_roi[i].to(dtype=pred_mask_vis_roi.dtype)
+                utils.image_2d.draw_ax_diff(axs[2, 2], diff.abs(), thresh_min=1e-4, thresh_max=1., log_mode=True)
+            else:
+                axs[2, 2].set_aspect('equal')
+            axs[2, 2].set_title('diff mask (abs)')
+
+            if self.pred_mask_inlier_roi is not None:
+                utils.image_2d.draw_ax(axs[2, 0], self.pred_mask_inlier_roi[i].expand(3, -1, -1))
+            else:
+                axs[2, 0].set_aspect('equal')
+            axs[2, 0].set_title('pnp inlier')
+
+            axs[2, 3].set_aspect('equal')
+
             fig.tight_layout()
             if return_figs:
                 figs.append(fig)

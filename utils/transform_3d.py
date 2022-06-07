@@ -1,11 +1,11 @@
 from typing import Union
 
 import cv2
+from matplotlib.axes import Axes
 import numpy as np
+import pytorch3d.transforms
 import torch
 import torch.nn.functional as F
-from matplotlib.axes import Axes
-import pytorch3d.transforms
 
 
 def normalize_cam_K(cam_K: torch.Tensor) -> torch.Tensor:
@@ -95,14 +95,15 @@ def normalize_coord_3d(coord_3d: torch.Tensor, obj_size: torch.Tensor) -> torch.
     return coord_3d / obj_size[..., None, None] + .5
 
 
-def ransac_pnp(coord_3d: torch.Tensor, coord_2d: torch.Tensor, mask: torch.Tensor = None) \
-        -> tuple[torch.Tensor, torch.Tensor]:
+def solve_pnp(coord_3d: torch.Tensor, coord_2d: torch.Tensor, mask: torch.Tensor = None, ransac: bool = True) \
+        -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     assume K = I
 
     :param coord_3d: [N, 3(XYZ), H, W]
     :param coord_2d: [N, 2(XY), H, W]
     :param mask: [N, 1, H, W] or None
+    :param ransac: bool
     :return: [N, 3, 3], [N, 3]
     """
     dtype = coord_3d.dtype
@@ -113,16 +114,29 @@ def ransac_pnp(coord_3d: torch.Tensor, coord_2d: torch.Tensor, mask: torch.Tenso
     if mask is None:
         mask = torch.ones(N, 1, H, W, dtype=torch.bool, device=device)
     else:
-        mask = mask.to(dtype).round().bool()
+        mask = mask.to(dtype=dtype).round().bool()
+    if ransac:
+        mask_inlier = torch.empty_like(mask)
+    else:
+        mask_inlier = mask
     for i in range(N):
         x = coord_3d[i].permute(1, 2, 0)[mask[i, 0]].detach().cpu().numpy()
         y = coord_2d[i].permute(1, 2, 0)[mask[i, 0]].detach().cpu().numpy()
-        _, pred_R_exp, pred_t, _ = cv2.solvePnPRansac(x, y, np.eye(3), None, iterationsCount=1000,
-                                                      reprojectionError=.001)
+        if ransac:
+            _, pred_R_exp, pred_t, inliers = cv2.solvePnPRansac(x, y, np.eye(3), None, iterationsCount=10000,
+                                                                reprojectionError=1e-3, flags=cv2.SOLVEPNP_ITERATIVE)
+            inliers = inliers.flatten()
+            m = mask[i, 0].detach().cpu().numpy()
+            m_i, m_j = np.where(m)
+            m_inlier = np.zeros_like(m)
+            m_inlier[m_i[inliers], m_j[inliers]] = 2
+            mask_inlier[i, 0] = torch.tensor(m_inlier)
+        else:
+            _, pred_R_exp, pred_t = cv2.solvePnP(x, y, np.eye(3), None, flags=cv2.SOLVEPNP_ITERATIVE)
         pred_R, _ = cv2.Rodrigues(pred_R_exp)
         pred_cam_R_m2c[i] = torch.tensor(pred_R, dtype=dtype, device=device)
         pred_cam_t_m2c[i] = torch.tensor(pred_t.flatten(), dtype=dtype, device=device)
-    return pred_cam_R_m2c, pred_cam_t_m2c
+    return pred_cam_R_m2c, pred_cam_t_m2c, mask_inlier
 
 
 def show_pose(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, cam_t_m2c: torch.Tensor, obj_size: torch.Tensor,

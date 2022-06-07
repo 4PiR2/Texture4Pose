@@ -1,9 +1,10 @@
 from typing import Union
 
+from matplotlib import pyplot as plt, cm, patches
+import numpy as np
 import torch
-import torchvision
-from matplotlib import pyplot as plt, patches
 from torch.nn import functional as F
+import torchvision
 
 import config.const as cc
 import utils.transform_3d
@@ -152,6 +153,25 @@ def conditional_clamp(x: torch.Tensor, mask: torch.Tensor, l0=None, u0=None, l1=
     return torch.where(mask, x.clamp(min=l1, max=u1), x.clamp(min=l0, max=u0))
 
 
+def erode_mask(mask: torch.Tensor, radius_min: float = 0., radius_max: float = torch.inf) -> torch.Tensor:
+    N, _, H, W = mask.shape
+    dtype = mask.dtype
+    device = mask.device
+    mask = mask.to(cc.dtype).round().bool()
+    index = torch.stack(torch.meshgrid(torch.arange(0, W, dtype=cc.dtype, device=device),
+        torch.arange(0, H, dtype=cc.dtype, device=device), indexing='ij'), dim=-1).reshape(-1, 2)
+    eroded_mask = torch.empty(mask.shape, dtype=dtype, device=device)
+    for i in range(N):
+        zero_positions = (~mask[i, 0]).nonzero().to(dtype=cc.dtype)
+        cdist = torch.cdist(index, zero_positions)
+        mask_min = (cdist > radius_min).all(dim=-1)
+        mask_max = (cdist < radius_max).any(dim=-1)
+        eroded_mask[i, 0] = (mask_min & mask_max).reshape(H, W)
+    eroded_mask[..., :int(radius_min)] = eroded_mask[..., -int(radius_min):] = 0
+    eroded_mask[..., :int(radius_min), :] = eroded_mask[..., -int(radius_min):, :] = 0
+    return eroded_mask
+
+
 def draw_ax(ax: plt.Axes, img_1: torch.Tensor, bg_1: torch.Tensor = None, mask: torch.Tensor = None,
             bboxes: torch.Tensor = None) -> plt.Axes:
     """
@@ -187,6 +207,37 @@ def draw_ax(ax: plt.Axes, img_1: torch.Tensor, bg_1: torch.Tensor = None, mask: 
         bboxes = bboxes.detach().cpu().numpy()
         for i in range(len(bboxes)):
             add_bbox(ax, *bboxes[i], text=str(i), color=cc.plot_colors[i % len(cc.plot_colors)])
+    return ax
+
+
+def draw_ax_diff(ax: plt.Axes, x: torch.Tensor, thresh_min: float = 1e-4, thresh_max: float = 1e0, num_ticks: int = 5,
+                 log_mode: bool = False) -> plt.Axes:
+    # x: [1, H, W] or [H, W]
+    if x.dim() == 2:
+        x = x[None]
+    ticks_places = np.linspace(0., 1., num_ticks)
+    if log_mode:
+        img_1 = (x.clamp(min=thresh_min, max=thresh_max).log() - np.log(thresh_min)) / np.log(thresh_max / thresh_min)
+        ticks = np.exp(ticks_places * np.log(thresh_max / thresh_min) + np.log(thresh_min))
+    else:
+        img_1 = (x.clamp(min=thresh_min, max=thresh_max) - thresh_min) / (thresh_max - thresh_min)
+        ticks = ticks_places * (thresh_max - thresh_min) + thresh_min
+    draw_ax(ax, img_1)
+
+    def format_num(num):
+        if num == 0:
+            return '0'
+        elif num < 0:
+            return f'-{format_num(-num)}'
+        else:
+            # s = f'{num:.4f}'.lstrip('0')
+            s = f'{num:.1e}'.replace('e-0', 'e-').replace('e+0', 'e').replace('e+', 'e')
+            return s
+
+    cax = ax.inset_axes([1., 0., .02, 1.], transform=ax.transAxes)
+    ax.get_figure().colorbar(cm.ScalarMappable(), ax=ax, cax=cax, ticks=ticks_places, orientation='vertical')
+    cax.tick_params(which='both', length=2, labelsize=6, labelrotation=90)
+    cax.set_yticklabels([format_num(i) for i in ticks], verticalalignment='center')
     return ax
 
 
