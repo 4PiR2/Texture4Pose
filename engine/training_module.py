@@ -15,6 +15,7 @@ from renderer.scene import Scene
 from models.conv_pnp_net import ConvPnPNet
 from models.texture_net import TextureNet
 from models.rot_head import RotWithRegionHead
+import utils.image_2d
 import utils.transform_3d
 
 
@@ -43,8 +44,11 @@ class LitModel(pl.LightningModule):
         pred_cam_R_m2c_allo = pred_cam_R_m2c_allo.transpose(-2, -1)  # use GDR's pre-trained weights
         sample.pred_cam_t_m2c = sample.get_pred_cam_t_m2c(store=True)
         sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c) @ pred_cam_R_m2c_allo
-        # sample.pred_cam_R_m2c, sample.pred_cam_t_m2c = \
-        #     utils.transform_3d.ransac_pnp(sample.pred_coord_3d_roi, sample.coord_2d_roi, sample.pred_mask_vis_roi)
+        # mask_vis_roi_erode = utils.image_2d.erode_mask(sample.gt_mask_vis_roi, 5.,)
+        # coord_3d_roi = sample.pred_coord_3d_roi / torch.linalg.vector_norm(sample.pred_coord_3d_roi, dim=1)[:, None] * (.1 * .5)
+        # coord_3d_roi = sample.pred_coord_3d_roi
+        # sample.pred_cam_R_m2c, sample.pred_cam_t_m2c, sample.pred_mask_inlier_roi = \
+        #     utils.transform_3d.solve_pnp(coord_3d_roi, sample.coord_2d_roi, mask_vis_roi_erode, ransac=True)
         # sample.visualize()
         return sample
 
@@ -75,7 +79,7 @@ class LitModel(pl.LightningModule):
         keys = list(outputs[0].keys())
         outputs = {key: torch.cat([output[key] for output in outputs], dim=0) for key in keys}
         metrics = torch.stack([outputs[key] for key in keys], dim=0)
-        q = torch.linspace(0., 1., 9, device=metrics.device)[1:-1]
+        q = torch.linspace(0., 1., 9, dtype=metrics.dtype, device=metrics.device)[1:-1]
         quantiles = metrics.quantile(q, dim=1).T
         for i in range(len(keys)):
             self.log(keys[i], {f'%{int((q[j] * 100.).round())}': float(quantiles[i, j]) for j in range(len(q))})
@@ -147,3 +151,9 @@ class LitModel(pl.LightningModule):
 
     def on_predict_start(self):
         self.on_validation_start()
+
+    # def to(self, dtype):
+    #     for key in [key for key in dir(self) if not key.startswith('__') and not callable(getattr(self, key))]:
+    #         value = getattr(self, key)
+    #         if isinstance(value, nn.Module):
+    #             setattr(self, key, value.to(dtype=dtype))

@@ -63,7 +63,7 @@ class ObjMesh:
                 return radius, center
 
     def get_transformed_mesh(self, cam_R_m2c, cam_t_m2c) -> Meshes:
-        verts = self.mesh.verts_packed()
+        verts = self.mesh.verts_packed().to(dtype=self.dtype)
         return self.mesh.offset_verts(verts @ (cam_R_m2c.T - torch.eye(3, device=self.device)) + cam_t_m2c)
 
     def get_texture(self, f=None) -> TexturesBase:
@@ -88,7 +88,7 @@ class ObjMesh:
         :param p: int
         :return: [...]
         """
-        verts = self.mesh.verts_packed().expand(*R1.shape[:-2], -1, -1)  # [..., V, 3]
+        verts = self.mesh.verts_packed().to(dtype=self.dtype).expand(*R1.shape[:-2], -1, -1)  # [..., V, 3]
         errors = verts @ (R1 - R2).transpose(-2, -1)  # [..., V, 3]
         if t1 is not None and t2 is not None:
             errors += (t1 - t2)[..., None, :]  # dt: [..., 1, 3]
@@ -117,7 +117,7 @@ class ObjMesh:
             t2 = torch.zeros_like(R1[..., 0])
         P1 = cam_K @ torch.cat([R1, t1[..., None]], dim=-1)  # [..., 3, 4]
         P2 = cam_K @ torch.cat([R2, t2[..., None]], dim=-1)  # [..., 3, 4]
-        verts = self.mesh.verts_packed().expand(*R1.shape[:-2], -1, -1)  # [..., V, 3]
+        verts = self.mesh.verts_packed().to(dtype=self.dtype).expand(*R1.shape[:-2], -1, -1)  # [..., V, 3]
         verts = torch.cat([verts, torch.ones_like(verts[..., -1:])], dim=-1)  # [..., V, 4]
         pv1 = verts @ P1.transpose(-2, -1)  # [..., V, 3]
         pv2 = verts @ P2.transpose(-2, -1)  # [..., V, 3]

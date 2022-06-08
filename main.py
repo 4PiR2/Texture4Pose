@@ -46,7 +46,7 @@ def main():
         devices=1 if torch.cuda.is_available() else None,
         max_epochs=100,
         callbacks=[
-            TQDMProgressBar(refresh_rate=20),
+            TQDMProgressBar(refresh_rate=1),
             LearningRateMonitor(logging_interval='step', log_momentum=False),
             checkpoint_callback,
         ],
@@ -72,9 +72,9 @@ def main():
     model = LitModel.load_from_checkpoint(
         ckpt_path, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
 
-    model = model.to(cfg.device)
-    # trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
-    trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
+    model = model.to(cfg.device, dtype=cfg.dtype)
+    trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
+    # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
 
 def data_loading_test(cfg):

@@ -23,4 +23,4 @@ class TextureNet(nn.Module):
     def forward(self, obj: ObjMesh):
         texture = self.weights[str(obj.obj_id)]
         # texture = self.act(texture)
-        return TexturesVertex(texture[None])
+        return TexturesVertex(texture.to(torch.float32)[None])

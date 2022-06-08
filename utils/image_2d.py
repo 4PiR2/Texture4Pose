@@ -157,12 +157,14 @@ def erode_mask(mask: torch.Tensor, radius_min: float = 0., radius_max: float = t
     N, _, H, W = mask.shape
     dtype = mask.dtype
     device = mask.device
-    mask = mask.to(cc.dtype).round().bool()
-    index = torch.stack(torch.meshgrid(torch.arange(0, W, dtype=cc.dtype, device=device),
-        torch.arange(0, H, dtype=cc.dtype, device=device), indexing='ij'), dim=-1).reshape(-1, 2)
+    intermediate_dtype = cc.dtype
+    if dtype != torch.bool:
+        mask = mask.to(intermediate_dtype).round().bool()
+    index = torch.stack(torch.meshgrid(torch.arange(0, W, dtype=intermediate_dtype, device=device),
+        torch.arange(0, H, dtype=intermediate_dtype, device=device), indexing='ij'), dim=-1).reshape(-1, 2)
     eroded_mask = torch.empty(mask.shape, dtype=dtype, device=device)
     for i in range(N):
-        zero_positions = (~mask[i, 0]).nonzero().to(dtype=cc.dtype)
+        zero_positions = (~mask[i, 0]).nonzero().to(dtype=index.dtype)
         cdist = torch.cdist(index, zero_positions)
         mask_min = (cdist > radius_min).all(dim=-1)
         mask_max = (cdist < radius_max).any(dim=-1)
