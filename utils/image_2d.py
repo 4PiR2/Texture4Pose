@@ -130,12 +130,13 @@ def normalize_channel(x: torch.Tensor) -> torch.Tensor:
     return (x - min_val[..., None, None]) / (max_val - min_val)[..., None, None]
 
 
-def lp_loss(x: torch.Tensor, y: torch.Tensor = None, p: int = 1) -> torch.Tensor:
+def lp_loss(x: torch.Tensor, y: torch.Tensor = None, p: int = 1, reduction: str = 'mean') -> torch.Tensor:
     """
 
     :param x: [..., C, H, W]
     :param y: [..., C, H, W]
     :param p: int
+    :param reduction: 'mean', 'sum', 'none'
     :return: [...]
     """
     if y is not None:
@@ -146,7 +147,14 @@ def lp_loss(x: torch.Tensor, y: torch.Tensor = None, p: int = 1) -> torch.Tensor
         x = x * x
     else:
         x = x.abs() ** p
-    return x.mean(dim=[-3, -2, -1])
+    if reduction == 'none':
+        return x
+    elif reduction == 'mean':
+        return x.mean(dim=[-3, -2, -1])
+    elif reduction == 'sum':
+        return x.sum(dim=[-3, -2, -1])
+    else:
+        raise NotImplementedError
 
 
 def conditional_clamp(x: torch.Tensor, mask: torch.Tensor, l0=None, u0=None, l1=None, u1=None) -> torch.Tensor:
@@ -154,6 +162,7 @@ def conditional_clamp(x: torch.Tensor, mask: torch.Tensor, l0=None, u0=None, l1=
 
 
 def erode_mask(mask: torch.Tensor, radius_min: float = 0., radius_max: float = torch.inf) -> torch.Tensor:
+    # mask: [N, 1, H, W]
     N, _, H, W = mask.shape
     dtype = mask.dtype
     device = mask.device

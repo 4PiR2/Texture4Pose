@@ -60,7 +60,9 @@ def main():
     # ckpt_path = 'outputs/lightning_logs/version_3/checkpoints/epoch=0008-val_metric=0.0511.ckpt'
     # ckpt_path = 'outputs/lightning_logs/version_5/checkpoints/last.ckpt'
     # ckpt_path = 'outputs/lightning_logs/version_7/checkpoints/last.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_9/checkpoints/epoch=0010-val_metric=0.0520.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_9/checkpoints/epoch=0010-val_metric=0.0520.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_12/checkpoints/epoch=0003-val_metric=0.0483.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_13/checkpoints/epoch=0000-val_metric=0.0472.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)

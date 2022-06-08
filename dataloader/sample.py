@@ -1,7 +1,6 @@
 import copy
 from typing import Callable, Optional
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
@@ -182,27 +181,34 @@ class Sample:
 
     def coord_3d_loss(self, pred_coord_3d_roi_normalized: torch.Tensor = None) -> torch.Tensor:
         """
-        :param pred_coord_3d_roi_normalized: [..., 3, H, W]
+        :param pred_coord_3d_roi_normalized: [..., 3(XYZ), H, W]
         :return: [...]
         """
         pred_coord_3d_roi_normalized = _get_param(pred_coord_3d_roi_normalized, self.pred_coord_3d_roi_normalized,
                                                   lambda: self._get_coord_3d_roi_normalized(self.pred_coord_3d_roi))
         gt_coord_3d_roi_normalized = utils.transform_3d.normalize_coord_3d(self.gt_coord_3d_roi, self.obj_size)
-        return utils.image_2d.lp_loss((pred_coord_3d_roi_normalized - gt_coord_3d_roi_normalized)
-                                      * self.gt_mask_vis_roi, p=1)
+        loss = utils.image_2d.lp_loss(
+            (pred_coord_3d_roi_normalized - gt_coord_3d_roi_normalized) * self.gt_mask_vis_roi, p=1, reduction='sum')
+        loss /= self.gt_mask_vis_roi.sum(dim=[-3, -2, -1])
+        return loss
 
-    def mask_loss(self, pred_mask_vis_roi: torch.Tensor = None) -> torch.Tensor:
+    def mask_loss(self, pred_mask_vis_roi: torch.Tensor = None, loss_mode: str = 'BCE') -> torch.Tensor:
         """
         :param pred_mask_vis_roi: [..., 1, H, W]
+        :param loss_mode: 'BCE', 'L1'
         :return: [...]
         """
-        # TODO
         pred_mask_vis_roi = _get_param(pred_mask_vis_roi, self.pred_mask_vis_roi)
-        loss = F.binary_cross_entropy(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype),
-                                      reduction='mean')
-        # pred_mask_vis_roi = utils.image_2d.conditional_clamp(pred_mask_vis_roi, self.gt_mask_vis_roi, l0=0., u1=1.)
-        # loss = utils.image_2d.lp_loss(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype), p=1)
-        return loss
+        if loss_mode == 'BCE':
+            loss = F.binary_cross_entropy(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype),
+                                          reduction='none')
+            return loss.mean(dim=[-3, -2, -1])
+        elif loss_mode == 'L1':
+            pred_mask_vis_roi = utils.image_2d.conditional_clamp(pred_mask_vis_roi, self.gt_mask_vis_roi, l0=0., u1=1.)
+            return utils.image_2d.lp_loss(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype),
+                                          p=1)
+        else:
+            raise NotImplementedError
 
     def relative_angle(self, pred_cam_R_m2c: torch.Tensor = None, degree: bool =False) -> torch.Tensor:
         """
@@ -248,8 +254,6 @@ class Sample:
         pred_cam_R_m2c = _get_param(pred_cam_R_m2c, self.pred_cam_R_m2c)
         pred_cam_t_m2c = _get_param(pred_cam_t_m2c, self.pred_cam_t_m2c,
                                     (self.pred_cam_t_m2c_site, lambda: self.get_pred_cam_t_m2c(store=True)))
-        # pred_mask_vis_roi_erode = utils.image_2d.erode_mask(pred_mask_vis_roi, 5., 10.)
-        # pred_coord_3d_roi = pred_coord_3d_roi / torch.linalg.vector_norm(pred_coord_3d_roi, dim=1)[:, None] * (.1 * .5)
         figs = []
         for i in range(len(self.obj_id)):
             fig, axs = plt.subplots(3, 4, figsize=(12, 9))

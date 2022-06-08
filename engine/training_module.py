@@ -38,7 +38,7 @@ class LitModel(pl.LightningModule):
         sample.pred_mask_vis_roi = pred_mask_vis_roi.sigmoid()
         sample.get_pred_coord_3d_roi(store=True)
         pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(
-            sample.pred_coord_3d_roi, sample.coord_2d_roi, sample.pred_mask_vis_roi)
+            sample.gt_coord_3d_roi, sample.coord_2d_roi, sample.gt_mask_vis_roi)
         # sample.gt_coord_3d_roi, sample.coord_2d_roi, sample.gt_mask_vis_roi)
         pred_cam_R_m2c_allo = pytorch3d.transforms.rotation_6d_to_matrix(pred_cam_R_m2c_6d)
         pred_cam_R_m2c_allo = pred_cam_R_m2c_allo.transpose(-2, -1)  # use GDR's pre-trained weights
@@ -87,10 +87,10 @@ class LitModel(pl.LightningModule):
 
     def configure_optimizers(self):
         params = [
-            {'params': self.backbone.parameters(), 'lr': 1e-4, 'name': 'backbone'},
-            {'params': self.rot_head_net.parameters(), 'lr': 1e-4, 'name': 'rot_head'},
+            {'params': self.backbone.parameters(), 'lr': 1e-5, 'name': 'backbone'},
+            {'params': self.rot_head_net.parameters(), 'lr': 1e-5, 'name': 'rot_head'},
             {'params': self.pnp_net.parameters(), 'lr': 1e-5, 'name': 'pnp'},
-            {'params': self.texture_net.parameters(), 'lr': 1e-2, 'name': 'texture'},
+            {'params': self.texture_net.parameters(), 'lr': 1e-3, 'name': 'texture'},
         ]
         optimizer = torch.optim.Adam(params)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=.1)

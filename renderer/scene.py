@@ -110,7 +110,7 @@ class Scene:
         self.images = images.clamp(min=0., max=1.)
         self.gt_coord_3d_vis, self.gt_coord_3d_obj = pixel_coords * mask_vis, pixel_coords
         self.gt_mask_vis, self.gt_mask_obj = mask_vis, mask_obj
-        self.gt_bbox_vis = get_bbox2d_from_mask(self.gt_mask_vis[:, 0]).to(dtype=self.dtype)  # [N, 4(XYWH)]
+        self.gt_bbox_obj = get_bbox2d_from_mask(self.gt_mask_obj[:, 0]).to(dtype=self.dtype)  # [N, 4(XYWH)]
 
         self._post_process(texels, mask_obj, mask_vis, pixel_coords, pixel_normals)
         return self.images
@@ -122,14 +122,14 @@ class Scene:
         self.images = (self.images * mask_vis).sum(dim=0)[None]
         self.gt_mask = self.gt_mask_obj.any(dim=0)[None]  # [1, 1, H, W]
         self.gt_vis_ratio = self.gt_mask_vis.sum(dim=(1, 2, 3)) / self.gt_mask_obj.sum(dim=(1, 2, 3))  # [N]
-        self.gt_bbox_obj = get_bbox2d_from_mask(self.gt_mask_obj[:, 0]).to(dtype=self.dtype)  # [N, 4(XYWH)]
+        self.gt_bbox_vis = get_bbox2d_from_mask(self.gt_mask_vis[:, 0]).to(dtype=self.dtype)  # [N, 4(XYWH)]
 
 
 class SceneBatch(Scene):
     def _post_process(self, texels, mask_obj, mask_vis, pixel_coords, pixel_normals):
-        self.gt_mask = self.gt_mask_obj  # [N, 1, H, W]
+        self.gt_mask = self.gt_mask_vis = self.gt_mask_obj  # [N, 1, H, W]
         self.gt_vis_ratio = torch.ones(len(self.gt_cam_R_m2c), dtype=self.dtype, device=self.device)
-        self.gt_bbox_obj = self.gt_bbox_vis  # [N, 4(XYWH)]
+        self.gt_bbox_vis = self.gt_bbox_obj  # [N, 4(XYWH)]
 
 
 class SceneBatchOne(SceneBatch):
