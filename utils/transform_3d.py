@@ -109,8 +109,8 @@ def solve_pnp(coord_3d: torch.Tensor, coord_2d: torch.Tensor, mask: torch.Tensor
     dtype = coord_3d.dtype
     device = coord_3d.device
     N, _, H, W = coord_3d.shape
-    pred_cam_R_m2c = torch.empty(N, 3, 3, device=device)
-    pred_cam_t_m2c = torch.empty(N, 3, device=device)
+    pnp_cam_R_m2c = torch.empty(N, 3, 3, dtype=dtype, device=device)
+    pnp_cam_t_m2c = torch.empty(N, 3, dtype=dtype, device=device)
     if mask is None:
         mask = torch.ones(N, 1, H, W, dtype=torch.bool, device=device)
     else:
@@ -134,9 +134,9 @@ def solve_pnp(coord_3d: torch.Tensor, coord_2d: torch.Tensor, mask: torch.Tensor
         else:
             _, pred_R_exp, pred_t = cv2.solvePnP(x, y, np.eye(3), None, flags=cv2.SOLVEPNP_ITERATIVE)
         pred_R, _ = cv2.Rodrigues(pred_R_exp)
-        pred_cam_R_m2c[i] = torch.tensor(pred_R, dtype=dtype, device=device)
-        pred_cam_t_m2c[i] = torch.tensor(pred_t.flatten(), dtype=dtype, device=device)
-    return pred_cam_R_m2c, pred_cam_t_m2c, mask_inlier
+        pnp_cam_R_m2c[i] = torch.tensor(pred_R)
+        pnp_cam_t_m2c[i] = torch.tensor(pred_t.flatten())
+    return pnp_cam_R_m2c, pnp_cam_t_m2c, mask_inlier
 
 
 def show_pose(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, cam_t_m2c: torch.Tensor, obj_size: torch.Tensor,

@@ -52,7 +52,9 @@ class Sample:
         self.pred_coord_3d_roi: Optional[torch.Tensor] = None
         self.pred_coord_3d_roi_normalized: Optional[torch.Tensor] = None
         self.pred_mask_vis_roi: Optional[torch.Tensor] = None
-        self.pred_mask_inlier_roi: Optional[torch.Tensor] = None
+        self.pnp_cam_R_m2c: Optional[torch.Tensor] = None
+        self.pnp_cam_t_m2c: Optional[torch.Tensor] = None
+        self.pnp_inlier_roi: Optional[torch.Tensor] = None
 
     @classmethod
     def collate(cls, batch: list):
@@ -65,13 +67,18 @@ class Sample:
                 setattr(out, key, torch.cat([getattr(b, key) for b in batch], dim=0))
         return out
 
-    def sanity_check(self, store: bool = True) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        pred_cam_R_m2c, pred_cam_t_m2c, pred_mask_inliers_roi = utils.transform_3d.solve_pnp(
-            self.gt_coord_3d_roi, self.coord_2d_roi, self.gt_mask_vis_roi)
+    def compute_pnp(self, sanity_check_mode: bool = False, store: bool = True, ransac: bool = True,
+                erode_min: float = 0., erode_max: float = torch.inf) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if sanity_check_mode:
+            pnp_cam_R_m2c, pnp_cam_t_m2c, pnp_inliers_roi = utils.transform_3d.solve_pnp(self.gt_coord_3d_roi,
+                self.coord_2d_roi, utils.image_2d.erode_mask(self.gt_mask_vis_roi, erode_min, erode_max), ransac)
+        else:
+            pnp_cam_R_m2c, pnp_cam_t_m2c, pnp_inliers_roi = utils.transform_3d.solve_pnp(self.pred_coord_3d_roi,
+                self.coord_2d_roi, utils.image_2d.erode_mask(self.pred_mask_vis_roi, erode_min, erode_max), ransac)
         if store:
-            self.pred_cam_R_m2c, self.pred_cam_t_m2c, self.pred_mask_inlier_roi \
-                = pred_cam_R_m2c, pred_cam_t_m2c, pred_mask_inliers_roi
-        return pred_cam_R_m2c, pred_cam_t_m2c, pred_mask_inliers_roi
+            self.pnp_cam_R_m2c, self.pnp_cam_t_m2c, self.pnp_inlier_roi \
+                = pnp_cam_R_m2c, pnp_cam_t_m2c, pnp_inliers_roi
+        return pnp_cam_R_m2c, pnp_cam_t_m2c, pnp_inliers_roi
 
     def _get_roi_zoom_in_ratio(self) -> torch.Tensor:
         pnp_input_size = max(self.gt_coord_3d_roi.shape[-2:])
@@ -320,13 +327,18 @@ class Sample:
                 axs[2, 2].set_aspect('equal')
             axs[2, 2].set_title('diff mask (abs)')
 
-            if self.pred_mask_inlier_roi is not None:
-                utils.image_2d.draw_ax(axs[2, 0], self.pred_mask_inlier_roi[i].expand(3, -1, -1))
+            if self.pnp_inlier_roi is not None:
+                utils.image_2d.draw_ax(axs[2, 0], self.pnp_inlier_roi[i].expand(3, -1, -1))
             else:
                 axs[2, 0].set_aspect('equal')
             axs[2, 0].set_title('pnp inlier')
 
-            axs[2, 3].set_aspect('equal')
+            if self.pnp_cam_R_m2c is not None and self.pnp_cam_t_m2c is not None:
+                utils.transform_3d.show_pose(axs[2, 3], self.cam_K[i], self.pnp_cam_R_m2c[i], self.pnp_cam_t_m2c[i],
+                                             self.obj_size[i], self.bbox[i], self.bbox_zoom_out_ratio, True)
+            else:
+                axs[2, 3].set_aspect('equal')
+            axs[2, 3].set_title('pnp pose')
 
             fig.tight_layout()
             if return_figs:

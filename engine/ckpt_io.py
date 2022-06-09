@@ -10,4 +10,4 @@ class CkptIO(TorchCheckpointIO):
         return checkpoint
 
     def remove_checkpoint(self, path):
-        print(path)
+        print('remove:', path)

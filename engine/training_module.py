@@ -6,8 +6,8 @@ import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT, STEP_OUTPUT
 import torch
 from torch import nn
-import torchvision
 from torch.utils.tensorboard import SummaryWriter
+import torchvision
 
 from dataloader.obj_mesh import ObjMesh
 from dataloader.sample import Sample
@@ -23,7 +23,7 @@ class LitModel(pl.LightningModule):
     def __init__(self, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
         self.texture_net = TextureNet(objects)
-        self.backbone = torchvision.models.resnet34()
+        self.backbone: torchvision.models.ResNet = torchvision.models.resnet34(num_classes=6+3)
         self.backbone.avgpool = nn.Sequential()
         self.backbone.fc = nn.Sequential()
         self.rot_head_net = RotWithRegionHead(512, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
@@ -38,17 +38,13 @@ class LitModel(pl.LightningModule):
         sample.pred_mask_vis_roi = pred_mask_vis_roi.sigmoid()
         sample.get_pred_coord_3d_roi(store=True)
         pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(
-            sample.gt_coord_3d_roi, sample.coord_2d_roi, sample.gt_mask_vis_roi)
-        # sample.gt_coord_3d_roi, sample.coord_2d_roi, sample.gt_mask_vis_roi)
+            sample.pred_coord_3d_roi * sample.pred_mask_vis_roi.round(), sample.coord_2d_roi, sample.pred_mask_vis_roi.round())
         pred_cam_R_m2c_allo = pytorch3d.transforms.rotation_6d_to_matrix(pred_cam_R_m2c_6d)
         pred_cam_R_m2c_allo = pred_cam_R_m2c_allo.transpose(-2, -1)  # use GDR's pre-trained weights
         sample.pred_cam_t_m2c = sample.get_pred_cam_t_m2c(store=True)
         sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c) @ pred_cam_R_m2c_allo
-        # mask_vis_roi_erode = utils.image_2d.erode_mask(sample.gt_mask_vis_roi, 5.,)
         # coord_3d_roi = sample.pred_coord_3d_roi / torch.linalg.vector_norm(sample.pred_coord_3d_roi, dim=1)[:, None] * (.1 * .5)
-        # coord_3d_roi = sample.pred_coord_3d_roi
-        # sample.pred_cam_R_m2c, sample.pred_cam_t_m2c, sample.pred_mask_inlier_roi = \
-        #     utils.transform_3d.solve_pnp(coord_3d_roi, sample.coord_2d_roi, mask_vis_roi_erode, ransac=True)
+        sample.compute_pnp(erode_min=5.)
         # sample.visualize()
         return sample
 
@@ -65,14 +61,22 @@ class LitModel(pl.LightningModule):
         return loss
 
     def validation_step(self, sample: Sample, batch_idx: int) -> Optional[STEP_OUTPUT]:
-        sample = self.forward(sample)
+        sample: Sample = self.forward(sample)
         if (batch_idx + 1) % (self.trainer.log_every_n_steps * 999) == 1:
             self._log_sample_visualizations(sample)
         re = sample.relative_angle(degree=True)
         te = sample.relative_dist(cm=True)
         add = sample.add_score(self.objects_eval, div_diameter=True)
         proj = sample.proj_dist(self.objects_eval)
-        return {'re(deg)': re, 'te(cm)': te, 'ad(d)': add, 'proj': proj}
+        metric_dict = {'re(deg)': re, 'te(cm)': te, 'ad(d)': add, 'proj': proj}
+        if sample.pnp_cam_R_m2c is not None and sample.pnp_cam_t_m2c is not None:
+            pnp_re = sample.relative_angle(sample.pnp_cam_R_m2c, degree=True)
+            pnp_te = sample.relative_dist(sample.pnp_cam_t_m2c, cm=True)
+            pnp_add = sample.add_score(self.objects_eval, sample.pnp_cam_R_m2c, sample.pnp_cam_t_m2c, div_diameter=True)
+            pnp_proj = sample.proj_dist(self.objects_eval, sample.pnp_cam_R_m2c, sample.pnp_cam_t_m2c)
+            metric_dict.update(
+                {'pnp_re(deg)': pnp_re, 'pnp_te(cm)': pnp_te, 'pnp_ad(d)': pnp_add, 'pnp_proj': pnp_proj})
+        return metric_dict
 
     def validation_epoch_end(self, outputs: EPOCH_OUTPUT) -> None:
         # self._log_meshes()

@@ -62,7 +62,8 @@ def main():
     # ckpt_path = 'outputs/lightning_logs/version_7/checkpoints/last.ckpt'
     # ckpt_path = 'outputs/lightning_logs/version_9/checkpoints/epoch=0010-val_metric=0.0520.ckpt'
     # ckpt_path = 'outputs/lightning_logs/version_12/checkpoints/epoch=0003-val_metric=0.0483.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_13/checkpoints/epoch=0000-val_metric=0.0472.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_13/checkpoints/epoch=0000-val_metric=0.0472.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)
@@ -75,8 +76,8 @@ def main():
         ckpt_path, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
 
     model = model.to(cfg.device, dtype=cfg.dtype)
-    trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
-    # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
+    # trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
+    trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
 
 def data_loading_test(cfg):
