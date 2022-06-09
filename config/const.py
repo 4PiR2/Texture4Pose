@@ -1,6 +1,6 @@
 import torch
 
-dtype = torch.double
+dtype = torch.float32
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
 debug_mode = False
