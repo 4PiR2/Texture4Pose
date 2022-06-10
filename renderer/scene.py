@@ -43,9 +43,9 @@ class Scene:
         K[:, :2, :3] = self.cam_K[:, :2]
         K[:, 2, 3] = K[:, 3, 2] = 1.
         # ref: https://github.com/wangg12/pytorch3d_render_linemod
-        R = self.gt_cam_R_m2c.clone().to(dtype=dtype).transpose(-2, -1)
+        R = self.gt_cam_R_m2c.to(dtype=dtype).clone().transpose(-2, -1)
         R[..., :2] *= -1.
-        t = self.gt_cam_t_m2c.clone().to(dtype=dtype)
+        t = self.gt_cam_t_m2c.to(dtype=dtype).clone()
         t[..., :2] *= -1.
         return PerspectiveCameras(R=R, T=t, K=K, image_size=((self.height, self.width),), device=self.device,
                                   in_ndc=False)
