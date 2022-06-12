@@ -247,7 +247,7 @@ class Sample:
 
     def visualize(self, return_figs: bool = False, pred_coord_3d_roi: torch.Tensor = None,
                   pred_mask_vis_roi: torch.Tensor = None, pred_cam_R_m2c: torch.Tensor = None,
-                  pred_cam_t_m2c: torch.Tensor = None) -> Optional[list[Figure]]:
+                  pred_cam_t_m2c: torch.Tensor = None, max_samples: int = None) -> Optional[list[Figure]]:
         pred_coord_3d_roi_normalized = _get_param(
             (pred_coord_3d_roi, lambda x: self._get_coord_3d_roi_normalized(x)),
             self.pred_coord_3d_roi_normalized,
@@ -262,7 +262,7 @@ class Sample:
         pred_cam_t_m2c = _get_param(pred_cam_t_m2c, self.pred_cam_t_m2c,
                                     (self.pred_cam_t_m2c_site, lambda: self.get_pred_cam_t_m2c(store=True)))
         figs = []
-        for i in range(len(self.obj_id)):
+        for i in range(min(max_samples, len(self.obj_id)) if max_samples is not None else len(self.obj_id)):
             fig, axs = plt.subplots(3, 4, figsize=(12, 9))
 
             utils.image_2d.draw_ax(axs[0, 0], self.img_roi[i])

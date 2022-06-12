@@ -11,15 +11,15 @@ import torchvision
 
 from dataloader.obj_mesh import ObjMesh
 from dataloader.sample import Sample
-from renderer.scene import Scene
-from models.conv_pnp_net import ConvPnPNet
+from models.gdr.conv_pnp_net import ConvPnPNet
+from models.gdr.rot_head import RotWithRegionHead
 from models.texture_net import TextureNet
-from models.rot_head import RotWithRegionHead
+from renderer.scene import Scene
 import utils.image_2d
 import utils.transform_3d
 
 
-class LitModel(pl.LightningModule):
+class GDRN(pl.LightningModule):
     def __init__(self, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
         self.texture_net = TextureNet(objects)
@@ -31,7 +31,6 @@ class LitModel(pl.LightningModule):
         self.objects_eval = objects_eval if objects_eval is not None else objects
 
     def forward(self, sample: Sample):
-        # in lightning, forward defines the prediction/inference actions
         features = self.backbone(sample.img_roi)
         features = features.view(-1, 512, 8, 8)
         pred_mask_vis_roi, sample.pred_coord_3d_roi_normalized = self.rot_head_net(features)
@@ -155,9 +154,3 @@ class LitModel(pl.LightningModule):
 
     def on_predict_start(self):
         self.on_validation_start()
-
-    # def to(self, dtype):
-    #     for key in [key for key in dir(self) if not key.startswith('__') and not callable(getattr(self, key))]:
-    #         value = getattr(self, key)
-    #         if isinstance(value, nn.Module):
-    #             setattr(self, key, value.to(dtype=dtype))

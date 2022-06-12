@@ -1,24 +1,19 @@
-import gc
-import os
 import pickle
-import time
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor, ModelCheckpoint
-from pytorch_lightning.profiler import PyTorchProfiler
 
 import config.const as cc
-from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset, RandomPoseBOPObjDataset, \
-    RandomPoseRegularObjDataset
+from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset
 from dataloader.sample import Sample
-from engine.ckpt_io import CkptIO
-from engine.data_module import LitDataModule
-from engine.training_module import LitModel
+from models.cdpn.cdpn import CDPN
+from utils.ckpt_io import CkptIO
+from dataloader.data_module import LitDataModule
+from models.gdr.gdrn import GDRN
 from utils.config import Config
-import utils.io
 
 
 def main():
@@ -32,7 +27,7 @@ def main():
     cfg = setup()
 
     checkpoint_callback = ModelCheckpoint(
-        save_top_k=2,
+        save_top_k=1,
         monitor='val_metric',
         mode='min',
         filename='{epoch:04d}-{val_metric:.4f}',
@@ -52,7 +47,7 @@ def main():
         ],
         plugins=[CkptIO()],
         default_root_dir='outputs',
-        log_every_n_steps=50,
+        log_every_n_steps=10,
         # profiler=profiler,
     )
 
@@ -63,21 +58,21 @@ def main():
     # ckpt_path = 'outputs/lightning_logs/version_9/checkpoints/epoch=0010-val_metric=0.0520.ckpt'
     # ckpt_path = 'outputs/lightning_logs/version_12/checkpoints/epoch=0003-val_metric=0.0483.ckpt'
     # ckpt_path = 'outputs/lightning_logs/version_13/checkpoints/epoch=0000-val_metric=0.0472.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_19/checkpoints/last.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)
 
-    # model = LitModel(datamodule.dataset.objects, datamodule.dataset.objects_eval)
+    model = CDPN(datamodule.dataset.objects, datamodule.dataset.objects_eval)
     # if cfg.model.pretrain is not None:
     #     model.load_pretrain(cfg.model.pretrain)
 
-    model = LitModel.load_from_checkpoint(
-        ckpt_path, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
+    # model = CDPN.load_from_checkpoint(ckpt_path, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
 
     model = model.to(cfg.device, dtype=cfg.dtype)
-    # trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
-    trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
+    trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
+    # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
 
 def data_loading_test(cfg):
