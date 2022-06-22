@@ -36,5 +36,4 @@ model = dict(
     img_input_size=256,
     pnp_input_size=64,
     pretrain='../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth',
-
 )

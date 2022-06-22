@@ -13,7 +13,7 @@ from dataloader.obj_mesh import ObjMesh
 from dataloader.sample import Sample
 from models.gdr.conv_pnp_net import ConvPnPNet
 from models.gdr.rot_head import RotWithRegionHead
-from models.texture_net import TextureNet
+from models.texture_net_v import TextureNet
 from renderer.scene import Scene
 import utils.image_2d
 import utils.transform_3d
@@ -147,7 +147,7 @@ class GDRN(pl.LightningModule):
         self.on_validation_start()
 
     def on_validation_start(self):
-        Scene.texture_net = self.texture_net
+        Scene.texture_net_v = self.texture_net
 
     def on_test_start(self):
         self.on_validation_start()

@@ -7,6 +7,7 @@ from dataloader.sample import Sample, SampleFields as sf
 import utils.image_2d
 import utils.transform_3d
 
+
 class Loss(nn.Module):
     def __init__(self, objects_eval: dict[int, ObjMesh]):
         super().__init__()

@@ -13,20 +13,6 @@ import utils.image_2d
 import utils.transform_3d
 
 
-def _get_param(*elems):
-    for elem in elems:
-        if isinstance(elem, tuple) and isinstance(elem[1], Callable):
-            if elem[0] is not None:
-                elem = elem[1](elem[0])
-            else:
-                elem = None
-        elif isinstance(elem, Callable):
-            elem = elem()
-        if elem is not None:
-            return elem
-    return None
-
-
 def not_none(l):
     flag = True
     if l is None:
@@ -203,73 +189,6 @@ class Sample:
         pred_coord_3d_roi_normalized = self.get(sf.pred_coord_3d_roi_normalized)
         return self._get_coord_3d_roi(pred_coord_3d_roi_normalized)  # [N, 3(XYZ), H, W]
 
-    def add_score(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor = None,
-                  pred_cam_t_m2c: torch.Tensor = None, div_diameter: bool = True) -> torch.Tensor:
-        """
-        :param objects_eval: dict[int, ObjMesh]
-        :param pred_cam_R_m2c: [N, 3, 3]
-        :param pred_cam_t_m2c: [N, 3]
-        :param div_diameter: bool
-        :return: [N]
-        """
-        pred_cam_R_m2c = _get_param(pred_cam_R_m2c, self.pred_cam_R_m2c)
-        pred_cam_t_m2c = _get_param(pred_cam_t_m2c, self.pred_cam_t_m2c)
-        N = len(self.obj_id)
-        add = torch.empty(N, device=pred_cam_R_m2c.device)
-        for i in range(N):
-            obj = objects_eval[int(self.obj_id[i])]
-            add[i] = obj.average_distance(pred_cam_R_m2c[i], self.gt_cam_R_m2c[i], pred_cam_t_m2c[i],
-                                          self.gt_cam_t_m2c[i])
-            if div_diameter:
-                add[i] /= obj.diameter
-        return add
-
-    def proj_dist(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor = None,
-                  pred_cam_t_m2c: torch.Tensor = None) -> torch.Tensor:
-        """
-        :param objects_eval: dict[int, ObjMesh]
-        :param pred_cam_R_m2c: [N, 3, 3]
-        :param pred_cam_t_m2c: [N, 3]
-        :return: [N]
-        """
-        pred_cam_R_m2c = _get_param(pred_cam_R_m2c, self.pred_cam_R_m2c)
-        pred_cam_t_m2c = _get_param(pred_cam_t_m2c, self.pred_cam_t_m2c)
-        N = len(self.obj_id)
-        dist = torch.empty(N, device=pred_cam_R_m2c.device)
-        for i in range(N):
-            obj = objects_eval[int(self.obj_id[i])]
-            dist[i] = obj.average_projected_distance(self.cam_K[i], pred_cam_R_m2c[i], self.gt_cam_R_m2c[i],
-                                                     pred_cam_t_m2c[i], self.gt_cam_t_m2c[i])
-        return dist
-
-    def relative_angle(self, pred_cam_R_m2c: torch.Tensor = None, degree: bool =False) -> torch.Tensor:
-        """
-
-        :param pred_cam_R_m2c: [..., 3, 3]
-        :param degree: bool, use 360 degrees
-        :return: [...]
-        """
-        pred_cam_R_m2c = _get_param(pred_cam_R_m2c, self.pred_cam_R_m2c)
-        R_diff = pred_cam_R_m2c @ self.gt_cam_R_m2c.transpose(-2, -1)  # [..., 3, 3]
-        trace = R_diff[..., 0, 0] + R_diff[..., 1, 1] + R_diff[..., 2, 2]  # [...]
-        angle = ((trace.clamp(-1., 3.) - 1.) * .5).acos()  # [...]
-        if degree:
-            angle *= 180. / torch.pi  # 360 degrees
-        return angle  # [...]
-
-    def relative_dist(self, pred_cam_t_m2c: torch.Tensor = None, cm: bool =False) -> torch.Tensor:
-        """
-
-        :param pred_cam_t_m2c: [.., 3]
-        :param cm: bool, use cm instead of meter
-        :return:
-        """
-        pred_cam_t_m2c = _get_param(pred_cam_t_m2c, self.pred_cam_t_m2c, lambda: self.get_pred_cam_t_m2c(store=True))
-        dist = torch.linalg.vector_norm(pred_cam_t_m2c - self.gt_cam_t_m2c, ord=2, dim=-1)  # [...]
-        if cm:
-            dist *= 100.  # cm
-        return dist  # [...]
-
     def visualize(self, return_figs: bool = False, max_samples: int = None) -> Optional[list[Figure]]:
         figs = []
 
@@ -293,14 +212,15 @@ class Sample:
 
             draw_fields(axs[0, 0], [sf.img_roi], i, 'rendered image')
             draw_fields(axs[1, 0], [sf.coord_2d_roi], i, '2D coord (relative)', utils.image_2d.normalize_channel)
-            draw_fields(axs[0, 1], [sf.gt_coord_3d_roi, sf.obj_size], i, '3D coord (relative)', utils.transform_3d.normalize_coord_3d)
-            draw_fields(axs[1, 1], ['pred_coord_3d_roi_normalized'], i, 'pred 3D coord (relative)', lambda x: x.clamp(0., 1.))
+            draw_fields(axs[0, 1], [sf.gt_coord_3d_roi_normalized], i, '3D coord (relative)')
+            draw_fields(axs[1, 1], ['pred_coord_3d_roi_normalized'], i, 'pred 3D coord (relative)',
+                        lambda x: x.clamp(0., 1.))
             draw_fields(axs[0, 2], [sf.gt_mask_vis_roi], i, 'gt mask vis')
-            draw_fields(axs[1, 2], ['pred_mask_vis_roi'], i, 'pred mask vis', lambda x: x.clamp(0., 1.))
+            draw_fields(axs[1, 2], [sf.pred_mask_vis_roi], i, 'pred mask vis', lambda x: x.clamp(0., 1.))
             draw_fields(axs[0, 3], [sf.cam_K, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c, sf.obj_size, sf.bbox], i, 'gt pose',
                         fn_ax=utils.transform_3d.show_pose)
-            draw_fields(axs[1, 3], [sf.cam_K, 'pred_cam_R_m2c', 'pred_cam_t_m2c', sf.obj_size, sf.bbox], i, 'pred pose',
-                        fn_ax=utils.transform_3d.show_pose)
+            draw_fields(axs[1, 3], [sf.cam_K, sf.pred_cam_R_m2c, sf.pred_cam_t_m2c, sf.obj_size, sf.bbox], i,
+                        'pred pose', fn_ax=utils.transform_3d.show_pose)
 
             # if pred_coord_3d_roi is not None and self.gt_coord_3d_roi is not None:
             #     diff = torch.linalg.vector_norm(pred_coord_3d_roi[i] * self.gt_mask_vis_roi[i] - self.gt_coord_3d_roi[i], dim=-3)

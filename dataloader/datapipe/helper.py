@@ -81,7 +81,6 @@ class SampleMapperIDP(IterDataPipe[Sample]):
         self._delete_args: list[str] = delete_args if delete_args is not None else []
 
     def map_fn(self, sample: Sample, *other_data) -> Sample:
-        # assert len(set(self._request_args) - set(inspect.signature(self._fn).parameters)) == 0
         response = self._fn(*other_data, **{req_arg: getattr(sample, req_arg) for req_arg in self._request_args})
         if len(self._response_args) < 2:
             response = (response,)

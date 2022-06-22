@@ -46,7 +46,7 @@ def NCHW_to_NHWKC(x: torch.Tensor):
 
 
 class Scene:
-    texture_net: Callable[[ObjMesh], TexturesBase] = None
+    texture_net_v: Callable[[ObjMesh], TexturesBase] = None
 
     def __init__(self, cam_K: torch.Tensor, gt_cam_R_m2c: torch.Tensor, gt_cam_t_m2c: torch.Tensor,
                  obj_id: torch.Tensor = None, objects: dict[int, ObjMesh] = None, width: int = 512, height: int = 512):
@@ -101,7 +101,7 @@ class Scene:
         textures = []
         include_textures = True
         for uid in unique_ids:
-            t = self.objects[int(uid)].get_texture(Scene.texture_net if f is None else f)
+            t = self.objects[int(uid)].get_texture(Scene.texture_net_v if f is None else f)
             textures.append(t)
             if t is None:
                 include_textures = False

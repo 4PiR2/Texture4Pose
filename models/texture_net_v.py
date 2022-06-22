@@ -6,7 +6,7 @@ from dataloader.obj_mesh import ObjMesh
 import utils.transform_3d
 
 
-class TextureNet(nn.Module):
+class TextureNetV(nn.Module):
     def __init__(self, objects: dict[int, ObjMesh]):
         super().__init__()
         weights = {}

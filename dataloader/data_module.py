@@ -1,7 +1,6 @@
 import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader
-import torchvision.transforms as T
 
 from dataloader.pose_dataset import DatasetWrapper, random_pose_obj_dp, rendered_pose_bop_obj_dp
 from dataloader.sample import Sample
@@ -16,11 +15,12 @@ class LitDataModule(pl.LightningDataModule):
         self.train_epoch_len: int = self.cfg.dataloader.train_epoch_len
         self.val_epoch_len: int = self.cfg.dataloader.val_epoch_len
 
-        transform = T.Compose([T.ColorJitter(**self.cfg.augmentation)])
         self.dataset: torch.utils.data.IterableDataset = random_pose_obj_dp(
             dtype=self.cfg.dtype, device=self.cfg.device,
-            img_input_size=self.cfg.model.img_input_size,
-            pnp_input_size=self.cfg.model.pnp_input_size, **self.cfg.dataset
+            crop_out_size=self.cfg.model.img_input_size,
+            # img_input_size=self.cfg.model.img_input_size,
+            # pnp_input_size=self.cfg.model.pnp_input_size,
+            **self.cfg.dataset
         )
 
     def setup(self, stage: str = None):
@@ -41,5 +41,4 @@ class LitDataModule(pl.LightningDataModule):
         return self.val_dataloader()
 
     def teardown(self, stage: str = None):
-        # Used to clean-up when the run is finished
         pass

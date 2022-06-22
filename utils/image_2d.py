@@ -113,7 +113,7 @@ def get_dzi_bbox(bbox: torch.Tensor, dzi_ratio: torch.Tensor) -> torch.Tensor:
     return bbox
 
 
-def get_dzi_crop_size(bbox: torch.Tensor, dzi_bbox_zoom_out: Union[torch.Tensor, float] = 1.) -> torch.Tensor:
+def get_dzi_crop_size(bbox: torch.Tensor) -> torch.Tensor:
     """
     dynamic zoom in
 
@@ -121,6 +121,7 @@ def get_dzi_crop_size(bbox: torch.Tensor, dzi_bbox_zoom_out: Union[torch.Tensor,
     :param dzi_bbox_zoom_out: [...] or float
     :return: [...]
     """
+    dzi_bbox_zoom_out: Union[torch.Tensor, float] = 1.
     crop_size, _ = bbox[..., 2:].max(dim=-1)
     crop_size *= dzi_bbox_zoom_out
     return crop_size
