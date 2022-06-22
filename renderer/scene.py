@@ -1,143 +1,156 @@
-from typing import Any, Union, Callable
+from typing import Any, Callable, Optional, Union
 
-import torch
-from pytorch3d.renderer import PerspectiveCameras, RasterizationSettings, MeshRasterizer, MeshRenderer, \
-    DirectionalLights, Materials
+from pytorch3d.renderer import PerspectiveCameras, RasterizationSettings, MeshRasterizer, MeshRenderer, Materials, \
+    TensorProperties
 from pytorch3d.renderer.mesh import TexturesBase
-from pytorch3d.structures import join_meshes_as_batch, Meshes
+from pytorch3d.renderer.mesh.shading import _apply_lighting
+from pytorch3d.structures import join_meshes_as_batch
+import torch
+from torch.nn import functional as F
 
 from dataloader.obj_mesh import ObjMesh
 from renderer.gt_shader import GTHardPhongShader
-from utils.image_2d import get_bbox2d_from_mask
+from renderer.lighting import DirectionalLights
 from utils.transform_3d import normalize_cam_K
+
+
+def NHWKC_to_NCHW(x: torch.Tensor):
+    """
+
+    :param x: [N, H, W, 1(K), C] or [N, H, W, 1(K)]
+    :return: [N, C, H, W]
+    """
+    if x is None:
+        return None
+    N, H, W, K, *C = x.shape
+    assert K == 1
+    if C:
+        return x[..., 0, :].permute(0, 3, 1, 2)  # [N, C, H, W]
+    else:
+        return x[:, None, ..., 0]  # [N, 1(C), H, W]
+
+
+def NCHW_to_NHWKC(x: torch.Tensor):
+    """
+
+    :param x: [N, C, H, W]
+    :return: [N, H, W, 1(K), C] or [N, H, W, 1(K)]
+    """
+    if x is None:
+        return None
+    N, C, H, W = x.shape
+    if C > 1:
+        return x.permute(0, 2, 3, 1)[..., None, :]  # [N, H, W, 1(K), C]
+    else:
+        return x[:, 0, ..., None]  # [N, H, W, 1(K)]
 
 
 class Scene:
     texture_net: Callable[[ObjMesh], TexturesBase] = None
 
-    def __init__(self, objects: dict[int, ObjMesh], cam_K: torch.Tensor, obj_id: torch.Tensor,
-                 gt_cam_R_m2c: torch.Tensor, gt_cam_t_m2c: torch.Tensor, width: int = 512, height: int = 512, **kwargs):
-        self.kwargs: dict[str, Any] = kwargs
-        self.objects: dict[int, ObjMesh] = objects  # dict
+    def __init__(self, cam_K: torch.Tensor, gt_cam_R_m2c: torch.Tensor, gt_cam_t_m2c: torch.Tensor,
+                 obj_id: torch.Tensor = None, objects: dict[int, ObjMesh] = None, width: int = 512, height: int = 512):
         self.device: torch.device = gt_cam_R_m2c.device
         self.dtype: torch.dtype = gt_cam_R_m2c.dtype
-        self.cam_K: torch.Tensor = normalize_cam_K(cam_K)  # [N, 3, 3]
         self.obj_id: torch.Tensor = obj_id  # [N]
-        self.gt_cam_R_m2c: torch.Tensor = gt_cam_R_m2c  # [N, 3, 3]
-        self.gt_cam_t_m2c: torch.Tensor = gt_cam_t_m2c  # [N, 3]
+        self.objects: dict[int, ObjMesh] = objects  # dict
         self.width: int = width
         self.height: int = height
+        cam_K: torch.Tensor = normalize_cam_K(cam_K)  # [N, 3, 3]
 
-        self.cameras = self._get_cameras()
-        self.obj_meshes = self._get_obj_meshes()
-        self.rasterizer = self._get_rasterizer()
-
-        self.gt_coord_3d_vis, self.gt_coord_3d_obj = None, None
-        self.gt_mask, self.gt_mask_vis, self.gt_mask_obj = None, None, None
-        self.gt_vis_ratio = None
-        self.gt_bbox_vis, self.gt_bbox_obj = None, None
-
-    def _get_cameras(self) -> PerspectiveCameras:
         dtype = torch.float32
-        K = torch.zeros(len(self.cam_K), 4, 4, dtype=dtype, device=self.device)
-        K[:, :2, :3] = self.cam_K[:, :2]
+        K = torch.zeros(len(cam_K), 4, 4, dtype=dtype, device=self.device)
+        K[:, :2, :3] = cam_K[:, :2]
         K[:, 2, 3] = K[:, 3, 2] = 1.
         # ref: https://github.com/wangg12/pytorch3d_render_linemod
-        R = self.gt_cam_R_m2c.to(dtype=dtype).clone().transpose(-2, -1)
+        R = gt_cam_R_m2c.to(dtype=dtype).clone().transpose(-2, -1)
         R[..., :2] *= -1.
-        t = self.gt_cam_t_m2c.to(dtype=dtype).clone()
+        t = gt_cam_t_m2c.to(dtype=dtype).clone()
         t[..., :2] *= -1.
-        return PerspectiveCameras(R=R, T=t, K=K, image_size=((self.height, self.width),), device=self.device,
-                                  in_ndc=False)
+        self.cameras = PerspectiveCameras(R=R, T=t, K=K, image_size=((height, width),), device=self.device,
+                                          in_ndc=False)
 
-    def _get_obj_meshes(self) -> list[Meshes]:
+        self.lights: Optional[TensorProperties] = None
+        self.materials: Optional[Materials] = None
+
+    def render_scene(self, f: Callable[[ObjMesh], TexturesBase] = None):
         unique_ids, inverse_indices = self.obj_id.unique(return_inverse=True)
         meshes = [self.objects[int(uid)].mesh.clone() for uid in unique_ids]
-        return [meshes[idx] for idx in inverse_indices]
+        obj_meshes = [meshes[idx] for idx in inverse_indices]
 
-    def _set_obj_textures(self, func_get_texture: Callable[[ObjMesh], TexturesBase]) -> None:
-        unique_ids, inverse_indices = self.obj_id.unique(return_inverse=True)
-        textures = []
-        for uid in unique_ids:
-            textures.append(self.objects[int(uid)].get_texture(func_get_texture))
-        for m, i in zip(self.obj_meshes, inverse_indices):
-            m.textures = textures[i]
-
-    def _get_rasterizer(self) -> MeshRasterizer:
         rasterizer = MeshRasterizer(
             cameras=self.cameras,
             raster_settings=RasterizationSettings(
                 image_size=(self.height, self.width),
                 blur_radius=0.,
                 faces_per_pixel=1,
-                max_faces_per_bin=max([int(mesh.num_faces_per_mesh().max()) for mesh in self.obj_meshes]),
+                max_faces_per_bin=max([int(mesh.num_faces_per_mesh().max()) for mesh in obj_meshes]),
                 # bin_size=0,  # Noisy Renderings on LM: https://github.com/facebookresearch/pytorch3d/issues/867
             ),
         )
-        return rasterizer
-
-    def render_scene(self, f: Callable[[ObjMesh], TexturesBase] = None,
-                     ambient: Union[torch.Tensor, tuple[tuple[float, float, float]]] = ((1.,) * 3,),
-                     diffuse: Union[torch.Tensor, tuple[tuple[float, float, float]]] = ((0.,) * 3,),
-                     specular: Union[torch.Tensor, tuple[tuple[float, float, float]]] = ((0.,) * 3,),
-                     direction: Union[torch.Tensor, tuple[tuple[float, float, float]]] = ((0., 0., -1.),),
-                     shininess: Union[torch.Tensor, int] = 64) -> torch.Tensor:
-        lights = DirectionalLights(ambient_color=ambient, diffuse_color=diffuse, specular_color=specular,
-                                   direction=direction, device=self.device)
-        materials = Materials(shininess=shininess, device=self.device)
 
         renderer = MeshRenderer(
-            rasterizer=self.rasterizer,
+            rasterizer=rasterizer,
             shader=GTHardPhongShader(
                 device=self.device,
-                cameras=self.cameras,
-                lights=lights,
-                materials=materials,
-                # blend_params=None,
+                dtype=self.dtype,
             )
         )
 
-        self._set_obj_textures(Scene.texture_net if f is None else f)
+        unique_ids, inverse_indices = self.obj_id.unique(return_inverse=True)
+        textures = []
+        include_textures = True
+        for uid in unique_ids:
+            t = self.objects[int(uid)].get_texture(Scene.texture_net if f is None else f)
+            textures.append(t)
+            if t is None:
+                include_textures = False
+        for m, i in zip(obj_meshes, inverse_indices):
+            m.textures = textures[i]
 
-        scene_mesh = self._get_scene_meshes()
+        scene_mesh = join_meshes_as_batch(obj_meshes, include_textures=include_textures)
+        pixel_coords, pixel_normals, zbuf, texels = renderer(scene_mesh)
+        return pixel_coords, pixel_normals, zbuf, texels
 
-        images, texels, mask_obj, mask_vis, pixel_coords, pixel_normals = renderer(scene_mesh, include_textures=True)
-        images = images.to(dtype=self.dtype)
-        texels = texels.to(dtype=self.dtype)
-        pixel_coords = pixel_coords.to(dtype=self.dtype)
-        pixel_normals = pixel_normals.to(dtype=self.dtype)
+    def set_lights(self, direction: Union[torch.Tensor, tuple[tuple[float, float, float]]] = ((0., 0., -1.),),
+                         ambient: Union[torch.Tensor, tuple[tuple[float, float, float]]] = ((1.,) * 3,),
+                         diffuse: Union[torch.Tensor, tuple[tuple[float, float, float]]] = ((0.,) * 3,),
+                         specular: Union[torch.Tensor, tuple[tuple[float, float, float]]] = ((0.,) * 3,),
+                         shininess: Union[torch.Tensor, int] = 64) -> None:
+        """
 
-        self.images = images.clamp(min=0., max=1.)
-        self.gt_coord_3d_vis, self.gt_coord_3d_obj = pixel_coords * mask_vis, pixel_coords
-        self.gt_mask_vis, self.gt_mask_obj = mask_vis, mask_obj
-        self.gt_bbox_obj = get_bbox2d_from_mask(self.gt_mask_obj[:, 0]).to(dtype=self.dtype)  # [N, 4(XYWH)]
+        :param direction: [N, 3(XYZ)], un-normalized
+        :param ambient: [N, 3(RGB)]
+        :param diffuse: [N, 3(RGB)]
+        :param specular: [N, 3(RGB)]
+        :param shininess: [N] or int
+        """
+        direction = F.normalize(direction, p=2, dim=-1, eps=1e-6)
+        self.lights = DirectionalLights(ambient_color=ambient, diffuse_color=diffuse, specular_color=specular,
+                                        direction=direction, device=self.device)
 
-        self._post_process(texels, mask_obj, mask_vis, pixel_coords, pixel_normals)
-        return self.images
+        self.materials = Materials(shininess=shininess, device=self.device)
+        # multiple colors are not supported yet
+        # pytorch3d bug: material batch dimension will be broadcast to color faces (k) dimension
+        # pytorch3d/renderer/mesh/shading.py: _apply_lighting
+        self.materials.ambient_color = self.materials.ambient_color[:1]
+        self.materials.diffuse_color = self.materials.diffuse_color[:1]
+        self.materials.specular_color = self.materials.specular_color[:1]
 
-    def _get_scene_meshes(self) -> Meshes:
-        return join_meshes_as_batch(self.obj_meshes, include_textures=True)
+    def apply_lighting(self, pixel_coords: torch.Tensor, pixel_normals: torch.Tensor) \
+            -> tuple[torch.Tensor, torch.Tensor]:
+        """
 
-    def _post_process(self, texels, mask_obj, mask_vis, pixel_coords, pixel_normals):
-        self.images = (self.images * mask_vis).sum(dim=0)[None]
-        self.gt_mask = self.gt_mask_obj.any(dim=0)[None]  # [1, 1, H, W]
-        self.gt_vis_ratio = self.gt_mask_vis.sum(dim=(1, 2, 3)) / self.gt_mask_obj.sum(dim=(1, 2, 3))  # [N]
-        self.gt_bbox_vis = get_bbox2d_from_mask(self.gt_mask_vis[:, 0]).to(dtype=self.dtype)  # [N, 4(XYWH)]
-
-
-class SceneBatch(Scene):
-    def _post_process(self, texels, mask_obj, mask_vis, pixel_coords, pixel_normals):
-        self.gt_mask = self.gt_mask_vis = self.gt_mask_obj  # [N, 1, H, W]
-        self.gt_vis_ratio = torch.ones(len(self.gt_cam_R_m2c), dtype=self.dtype, device=self.device)
-        self.gt_bbox_vis = self.gt_bbox_obj  # [N, 4(XYWH)]
-
-
-class SceneBatchOne(SceneBatch):
-    def _get_obj_meshes(self) -> list[Meshes]:
-        return [self.objects[int(self.obj_id[0])].mesh.clone()]
-
-    def _set_obj_textures(self, func_get_texture: Callable[[ObjMesh], TexturesBase]) -> None:
-        self.obj_meshes[0].textures = self.objects[int(self.obj_id[0])].get_texture(func_get_texture)
-
-    def _get_scene_meshes(self) -> Meshes:
-        return self.obj_meshes[0].extend(len(self.gt_cam_R_m2c))
+        :param pixel_coords: [N, H, W, K, 3(XYZ)]
+        :param pixel_normals: [N, H, W, K, 3(XYZ)]
+        :param texels: [N, H, W, K, 3(RGB)]
+        :param ambient: [N, 3(RGB)]
+        :param diffuse: [N, 3(RGB)]
+        :param specular: [N, 3(RGB)]
+        :param direction: [N, 3(XYZ)], un-normalized
+        :param shininess: [N] or int
+        :return: [N, H, W, K, 3(RGB)]
+        """
+        ambient, diffuse, specular = \
+            _apply_lighting(pixel_coords, pixel_normals, self.lights, self.cameras, self.materials)
+        return ambient * pixel_normals.bool().any(dim=-1)[..., None] + diffuse, specular

@@ -71,7 +71,7 @@ class ObjMesh:
             if self.mesh.textures is not None:
                 return self.mesh.textures
             else:
-                return TexturesVertex(torch.ones_like(self.mesh.verts_packed())[None])
+                return None  # TexturesVertex(torch.ones_like(self.mesh.verts_packed())[None])
         else:
             return f(self)
 

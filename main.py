@@ -2,17 +2,16 @@ import pickle
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor, ModelCheckpoint
 
 import config.const as cc
-from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset
+# from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset
 from dataloader.sample import Sample
 from models.cdpn.cdpn import CDPN
 from utils.ckpt_io import CkptIO
 from dataloader.data_module import LitDataModule
-from models.gdr.gdrn import GDRN
+# from models.gdr.gdrn import GDRN
 from utils.config import Config
 
 
@@ -52,84 +51,21 @@ def main():
     )
 
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
-    # ckpt_path = 'outputs/lightning_logs/version_3/checkpoints/epoch=0008-val_metric=0.0511.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_5/checkpoints/last.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_7/checkpoints/last.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_9/checkpoints/epoch=0010-val_metric=0.0520.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_12/checkpoints/epoch=0003-val_metric=0.0483.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_13/checkpoints/epoch=0000-val_metric=0.0472.ckpt'
     # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_19/checkpoints/last.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_22/checkpoints/last.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)
 
-    model = CDPN(datamodule.dataset.objects, datamodule.dataset.objects_eval)
+    # model = CDPN(datamodule.dataset.objects, datamodule.dataset.objects_eval)
     # if cfg.model.pretrain is not None:
     #     model.load_pretrain(cfg.model.pretrain)
 
-    # model = CDPN.load_from_checkpoint(ckpt_path, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
+    model = CDPN.load_from_checkpoint(ckpt_path, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
 
     model = model.to(cfg.device, dtype=cfg.dtype)
-    trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
-    # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
-
-
-def data_loading_test(cfg):
-    # dataset = RandomPoseRegularObjDataset(obj_list=cc.regular_objects, scene_mode=True, device=cc.device, bg_img_path='/data/coco/train2017')
-    # dataset = RandomPoseBOPObjDataset(obj_list=cc.lmo_objects, path='data/BOP/lmo', scene_mode=False, device=cc.device, bg_img_path='/data/coco/train2017')
-    dataset = RenderedPoseBOPObjDataset(obj_list=cc.lmo_objects, path='data/BOP/lmo', scene_mode=True, device=cc.device)
-    # dataset = BOPObjDataset(obj_list=cc.lmo_objects, path='data/BOP/lmo', device=cc.device)
-    for s in dataset:
-        s.visualize()
-        a = 0
-
-
-def numerical_check(cfg, model):
-    dataset = BOPObjDataset(obj_list={1: 'ape'}, path='data/BOP/lm', device=cc.device)
-    dataloader = DataLoader(dataset, batch_size=1, collate_fn=Sample.collate)
-    with open('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/inference_/lm_13_test/a6-cPnP-lm13_lm_13_test_preds.pkl', 'rb') as f:
-        gdr_results = pickle.load(f)['ape']
-    with open('../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/inference_/lm_13_test/a6-cPnP-lm13_lm_13_test_errors.pkl', 'rb') as f:
-        gdr_errors = pickle.load(f)['ape']
-    pic_paths = list(gdr_results.keys())
-    results = []
-    model.eval()
-    with torch.no_grad():
-        i = 0
-        j = 0
-        for sample in dataloader:
-            pic_path = pic_paths[j]
-            id = int(pic_path.split('/')[-1].split('.')[0])
-            if i < id:
-                i += 1
-                continue
-            gdr_result = gdr_results[pic_path]
-            sample.img = torch.load(f'/data/x/data/{j}.pth').flip(dims=[1])
-            # R, t = sample.sanity_check()
-            sample = model(sample)
-            R, t = sample.pred_cam_R_m2c, sample.pred_cam_t_m2c
-            re, te = sample.relative_angle(degree=True), sample.relative_dist(cm=True)
-            ad = sample.add_score(dataset.objects_eval)
-            proj = sample.proj_dist(dataset.objects_eval)
-            gdr_R = torch.tensor(gdr_result['R'], device=cc.device)[None]
-            gdr_t = torch.tensor(gdr_result['t'], device=cc.device)[None]
-            gdr_re = sample.relative_angle(gdr_R, degree=True)
-            gdr_te = sample.relative_dist(gdr_t, cm=True)
-            gdr_ad = sample.add_score(dataset.objects_eval, gdr_R, gdr_t)
-            gdr_proj = sample.proj_dist(dataset.objects_eval, gdr_R, gdr_t)
-
-            result = [[float(re), float(te), float(ad), float(proj)],
-                      [float(gdr_re), float(gdr_te), float(gdr_ad), float(gdr_proj)],
-                      [gdr_errors['re'][j], gdr_errors['te'][j] * 100, gdr_errors['ad'][j] / dataset.objects_eval[1].diameter, gdr_errors['proj'][j]]]
-            result = np.array(result)
-            results.append(result)
-            i += 1
-            j += 1
-            # gc.collect()
-            # torch.cuda.empty_cache()
-    results = np.array(results)
-    return results
+    # trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
+    trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
 
 if __name__ == '__main__':

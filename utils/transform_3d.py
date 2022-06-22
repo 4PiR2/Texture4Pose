@@ -140,7 +140,7 @@ def solve_pnp(coord_3d: torch.Tensor, coord_2d: torch.Tensor, mask: torch.Tensor
 
 
 def show_pose(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, cam_t_m2c: torch.Tensor, obj_size: torch.Tensor,
-              bbox: torch.Tensor = None, bbox_zoom_out=1.5,  adjust_axis: bool = True, alpha: float = 1.) \
+              bbox: torch.Tensor = None, adjust_axis: bool = True, alpha: float = 1.) \
         -> Axes:
     """
 
@@ -181,7 +181,7 @@ def show_pose(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, cam_t_m2c:
     verts_proj = verts @ cam_K.T  # [8+1, 3]
     verts_proj = verts_proj[:, :-1] / verts_proj[:, -1:]  # [8+1, 2]
     if bbox is not None:
-        bbox_size = float(bbox[2:].max() * bbox_zoom_out)
+        bbox_size = float(bbox[2:].max())
         verts_proj -= bbox[:2] - bbox_size * .5
     verts_proj = verts_proj.detach().cpu().numpy()
     for (i0, i1), vote in zip(edges, votes):

@@ -1,9 +1,11 @@
 import copy
-from typing import Callable, Optional
+from collections import namedtuple
+from typing import Callable, Optional, Union
 
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 from dataloader.obj_mesh import ObjMesh
@@ -25,111 +27,181 @@ def _get_param(*elems):
     return None
 
 
-class Sample:
-    def __init__(self, obj_id=None, obj_size=None, cam_K=None, gt_cam_R_m2c=None, gt_cam_t_m2c=None,
-                 coord_2d_roi=None, gt_coord_3d_roi=None, gt_mask_vis_roi=None,
-                 gt_mask_obj_roi=None, img_roi=None, dbg_img=None, bbox=None, gt_bbox_vis=None, gt_bbox_obj=None,
-                 bbox_zoom_out_ratio=None):
-        self.obj_id: torch.Tensor = obj_id
-        self.obj_size: torch.Tensor = obj_size
-        self.cam_K: torch.Tensor = cam_K
-        self.gt_cam_R_m2c: torch.Tensor = gt_cam_R_m2c
-        self.gt_cam_t_m2c: torch.Tensor = gt_cam_t_m2c
-        self.coord_2d_roi: torch.Tensor = coord_2d_roi
-        self.gt_coord_3d_roi: torch.Tensor = gt_coord_3d_roi
-        self.gt_mask_vis_roi: torch.Tensor = gt_mask_vis_roi
-        self.gt_mask_obj_roi: torch.Tensor = gt_mask_obj_roi
-        self.img_roi: torch.Tensor = img_roi
-        self.dbg_img: torch.Tensor = dbg_img
-        self.bbox: torch.Tensor = bbox
-        self.gt_bbox_vis: torch.Tensor = gt_bbox_vis
-        self.gt_bbox_obj: torch.Tensor = gt_bbox_obj
-        self.bbox_zoom_out_ratio: float = bbox_zoom_out_ratio
+def not_none(l):
+    flag = True
+    if l is None:
+        flag = False
+    elif isinstance(l, list):
+        if len(l) == 0:
+            flag = False
+        else:
+            flag = sum([o is None for o in l]) == 0
+    return flag
 
-        self.pred_cam_R_m2c: Optional[torch.Tensor] = None
-        self.pred_cam_t_m2c: Optional[torch.Tensor] = None
-        self.pred_cam_t_m2c_site: Optional[torch.Tensor] = None
-        self.pred_coord_3d_roi: Optional[torch.Tensor] = None
-        self.pred_coord_3d_roi_normalized: Optional[torch.Tensor] = None
-        self.pred_mask_vis_roi: Optional[torch.Tensor] = None
-        self.pnp_cam_R_m2c: Optional[torch.Tensor] = None
-        self.pnp_cam_t_m2c: Optional[torch.Tensor] = None
-        self.pnp_inlier_roi: Optional[torch.Tensor] = None
+
+_fields_str = [
+    'N', 'gt_cam_t_m2c_site', 'gt_coord_3d_roi_normalized',
+    'o_scene', 'obj_id', 'obj_size', 'obj_diameter', 'cam_K', 'gt_cam_R_m2c', 'gt_cam_t_m2c', 'bbox',
+    'gt_bbox_vis', 'gt_vis_ratio',
+    'img', 'img_roi', 'coord_2d', 'coord_2d_roi', 'gt_coord_3d', 'gt_coord_3d_roi', 'gt_normal', 'gt_normal_roi',
+    'gt_mask_vis', 'gt_mask_vis_roi', 'gt_mask_obj', 'gt_light_texel', 'gt_texel_roi', 'gt_light_specular',
+    'gt_light_specular_roi', 'gt_zbuf', 'gt_texel', 'gt_light_texel_roi', 'gt_bg', 'gt_bg_roi',
+    'pred_cam_R_m2c', 'pred_cam_t_m2c', 'pred_cam_t_m2c_site', 'pred_coord_3d_roi', 'pred_coord_3d_roi_normalized',
+    'pred_mask_vis_roi', 'pnp_cam_R_m2c', 'pnp_cam_t_m2c', 'pnp_inlier_roi',
+]
+sf = SampleFields = namedtuple('SampleFields', _fields_str)(*_fields_str)
+
+
+class Sample:
+    def __init__(self, *samples, **kwargs):
+        if samples:
+            Sample.collate(samples, self)
+        else:
+            for key, value in kwargs.items():
+                setattr(self, key, value)
 
     @classmethod
-    def collate(cls, batch: list):
-        keys = [key for key in dir(batch[0]) if not key.startswith('__') and not callable(getattr(batch[0], key))]
-        out = cls()
-        for key in keys:
-            if not isinstance(getattr(batch[0], key), torch.Tensor) or key in []:
-                setattr(out, key, getattr(batch[0], key))
-            else:
+    def collate(cls, batch: Union[list, tuple], out=None):
+        assert len(batch)
+        if out is None:
+            out = cls()
+        for key, value in batch[0].__dict__.items():
+            if isinstance(value, torch.Tensor):
                 setattr(out, key, torch.cat([getattr(b, key) for b in batch], dim=0))
+            elif isinstance(value, list):
+                setattr(out, key, [v for b in batch for v in getattr(b, key)])
+            else:
+                assert len(set(getattr(b, key) for b in batch)) == 1
+                setattr(out, key, value)
         return out
+
+    def __iter__(self):
+        keys = self.__dict__.keys()
+        values = self.__dict__.values()
+        for value in zip(*values):
+            out = Sample()
+            for key, v in zip(keys, value):
+                if isinstance(v, torch.Tensor):
+                    setattr(out, key, v[None])
+                elif isinstance(v, list):
+                    setattr(out, key, [v])
+                else:
+                    setattr(out, key, v)
+            yield out
+
+    def __len__(self) -> int:
+        l = []
+        for value in self.__dict__.values():
+            if isinstance(value, torch.Tensor) or isinstance(value, list):
+                l.append(len(value))
+        return min(l) if l else 0
+
+    @property
+    def N(self):
+        return len(self)
+
+    def __repr__(self) -> str:
+        return f'{len(self)}'
+
+    # def __getattr__(self, attribute_name):
+    #     return None
+
+    def clone(self, detach: bool = False):
+        out = Sample()
+        for key in [key for key in dir(self) if not key.startswith('__') and not callable(getattr(self, key))]:
+            value = getattr(self, key)
+            if isinstance(value, torch.Tensor):
+                if detach:
+                    setattr(out, key, value.detach())
+                else:
+                    setattr(out, key, value.clone())
+            else:
+                setattr(out, key, copy.deepcopy(value))
+        return out
+
+    def get(self, keys: Union[list[str], str], assertion: bool = True):
+        if isinstance(keys, str):
+            return self.get([keys], assertion)[0]
+        values = []
+        for key in keys:
+            value = None
+            try:
+                value = getattr(self, key)
+            except AttributeError:
+                pass
+            except AssertionError as e:
+                if assertion:
+                    raise e
+            values.append(value)
+        if assertion:
+            assert not_none(values)
+        return values
+
+    def set(self, keys: Union[list[str], str], values: Union[list, object]):
+        if isinstance(keys, str):
+            return self.set([keys], [values])
+        for key, value in zip(keys, values):
+            setattr(self, key, value)
 
     def compute_pnp(self, sanity_check_mode: bool = False, store: bool = True, ransac: bool = True,
                 erode_min: float = 0., erode_max: float = torch.inf) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        gt_coord_3d_roi, coord_2d_roi, gt_mask_vis_roi = self.get(
+            [sf.gt_coord_3d_roi, sf.coord_2d_roi, sf.gt_mask_vis_roi])
         if sanity_check_mode:
-            pnp_cam_R_m2c, pnp_cam_t_m2c, pnp_inliers_roi = utils.transform_3d.solve_pnp(self.gt_coord_3d_roi,
-                self.coord_2d_roi, utils.image_2d.erode_mask(self.gt_mask_vis_roi, erode_min, erode_max), ransac)
+            pnp_cam_R_m2c, pnp_cam_t_m2c, pnp_inliers_roi = utils.transform_3d.solve_pnp(gt_coord_3d_roi,
+                coord_2d_roi, utils.image_2d.erode_mask(gt_mask_vis_roi, erode_min, erode_max), ransac)
         else:
-            pnp_cam_R_m2c, pnp_cam_t_m2c, pnp_inliers_roi = utils.transform_3d.solve_pnp(self.pred_coord_3d_roi,
-                self.coord_2d_roi, utils.image_2d.erode_mask(self.pred_mask_vis_roi, erode_min, erode_max), ransac)
+            pred_coord_3d_roi, pred_mask_vis_roi = self.get([sf.pred_coord_3d_roi, sf.pred_mask_vis_roi])
+            pnp_cam_R_m2c, pnp_cam_t_m2c, pnp_inliers_roi = utils.transform_3d.solve_pnp(pred_coord_3d_roi,
+                coord_2d_roi, utils.image_2d.erode_mask(pred_mask_vis_roi, erode_min, erode_max), ransac)
         if store:
-            self.pnp_cam_R_m2c, self.pnp_cam_t_m2c, self.pnp_inlier_roi \
-                = pnp_cam_R_m2c, pnp_cam_t_m2c, pnp_inliers_roi
+            self.set([sf.pnp_cam_R_m2c, sf.pnp_cam_t_m2c, sf.pnp_inlier_roi],
+                     [pnp_cam_R_m2c, pnp_cam_t_m2c, pnp_inliers_roi])
         return pnp_cam_R_m2c, pnp_cam_t_m2c, pnp_inliers_roi
 
-    def _get_roi_zoom_in_ratio(self) -> torch.Tensor:
-        pnp_input_size = max(self.gt_coord_3d_roi.shape[-2:])
-        crop_size = utils.image_2d.get_dzi_crop_size(self.bbox, self.bbox_zoom_out_ratio)
-        return pnp_input_size / crop_size  # [N]
+    @property
+    def roi_zoom_in_ratio(self) -> torch.Tensor:
+        feature_roi, bbox = self.get([sf.img_roi, sf.bbox])
+        feature_roi_size = max(feature_roi.shape[-2:])
+        crop_size = utils.image_2d.get_dzi_crop_size(bbox)
+        return feature_roi_size / crop_size  # [N]
 
     def _get_cam_t_m2c_site(self, cam_t_m2c: torch.Tensor) -> torch.Tensor:
-        return utils.transform_3d.t_to_t_site(cam_t_m2c, self.bbox, self._get_roi_zoom_in_ratio(), self.cam_K)  # [N, 3]
+        bbox, cam_K = self.get([sf.bbox, sf.cam_K])
+        return utils.transform_3d.t_to_t_site(cam_t_m2c, bbox, self.roi_zoom_in_ratio, cam_K)  # [N, 3]
 
     def _get_cam_t_m2c(self, cam_t_m2c_site: torch.Tensor) -> torch.Tensor:
-        return utils.transform_3d.t_site_to_t(cam_t_m2c_site, self.bbox, self._get_roi_zoom_in_ratio(), self.cam_K)
+        bbox, cam_K = self.get([sf.bbox, sf.cam_K])
+        return utils.transform_3d.t_site_to_t(cam_t_m2c_site, bbox, self.roi_zoom_in_ratio, cam_K)
         # [N, 3]
 
+    @property
     def gt_cam_t_m2c_site(self) -> torch.Tensor:
-        return self._get_cam_t_m2c_site(self.gt_cam_t_m2c)  # [N, 3]
+        gt_cam_t_m2c = self.get(sf.gt_cam_t_m2c)
+        return self._get_cam_t_m2c_site(gt_cam_t_m2c)  # [N, 3]
 
-    def get_pred_cam_t_m2c(self, store: bool = True) -> torch.Tensor:
-        pred_cam_t_m2c = self._get_cam_t_m2c(self.pred_cam_t_m2c_site)
-        if store:
-            self.pred_cam_t_m2c = pred_cam_t_m2c
-        return pred_cam_t_m2c  # [N, 3]
+    @property
+    def pred_cam_t_m2c(self) -> torch.Tensor:
+        pred_cam_t_m2c_site = self.get(sf.pred_cam_t_m2c_site)
+        return self._get_cam_t_m2c(pred_cam_t_m2c_site)  # [N, 3]
 
     def _get_coord_3d_roi_normalized(self, coord_3d_roi: torch.Tensor) -> torch.Tensor:
-        return utils.transform_3d.normalize_coord_3d(coord_3d_roi, self.obj_size)  # [N, 3(XYZ), H, W]
+        obj_size = self.get(sf.obj_size)
+        return utils.transform_3d.normalize_coord_3d(coord_3d_roi, obj_size)  # [N, 3(XYZ), H, W]
 
     def _get_coord_3d_roi(self, coord_3d_roi_normalized: torch.Tensor) -> torch.Tensor:
-        return utils.transform_3d.denormalize_coord_3d(coord_3d_roi_normalized, self.obj_size)  # [N, 3(XYZ), H, W]
+        obj_size = self.get(sf.obj_size)
+        return utils.transform_3d.denormalize_coord_3d(coord_3d_roi_normalized, obj_size)  # [N, 3(XYZ), H, W]
 
-    def get_pred_coord_3d_roi(self, store: bool = True) -> torch.Tensor:
-        pred_coord_3d_roi = self._get_coord_3d_roi(self.pred_coord_3d_roi_normalized)
-        if store:
-            self.pred_coord_3d_roi = pred_coord_3d_roi
-        return pred_coord_3d_roi  # [N, 3(XYZ), H, W]
+    @property
+    def gt_coord_3d_roi_normalized(self) -> torch.Tensor:
+        gt_coord_3d_roi = self.get(sf.gt_coord_3d_roi)
+        return self._get_coord_3d_roi_normalized(gt_coord_3d_roi)  # [N, 3(XYZ), H, W]
 
-    def pm_loss(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor = None, div_diameter: bool = True
-                ) -> torch.Tensor:
-        """
-        :param objects_eval: dict[int, ObjMesh]
-        :param pred_cam_R_m2c: [N, 3, 3]
-        :param div_diameter: bool
-        :return: [N]
-        """
-        pred_cam_R_m2c = _get_param(pred_cam_R_m2c, self.pred_cam_R_m2c)
-        N = len(self.obj_id)
-        loss = torch.empty(N, device=pred_cam_R_m2c.device)
-        for i in range(N):
-            obj = objects_eval[int(self.obj_id[i])]
-            loss[i] = obj.average_distance(pred_cam_R_m2c[i], self.gt_cam_R_m2c[i], p=1)
-            if div_diameter:
-                loss[i] /= obj.diameter
-        return loss
+    @property
+    def pred_coord_3d_roi(self) -> torch.Tensor:
+        pred_coord_3d_roi_normalized = self.get(sf.pred_coord_3d_roi_normalized)
+        return self._get_coord_3d_roi(pred_coord_3d_roi_normalized)  # [N, 3(XYZ), H, W]
 
     def add_score(self, objects_eval: dict[int, ObjMesh], pred_cam_R_m2c: torch.Tensor = None,
                   pred_cam_t_m2c: torch.Tensor = None, div_diameter: bool = True) -> torch.Tensor:
@@ -170,53 +242,6 @@ class Sample:
                                                      pred_cam_t_m2c[i], self.gt_cam_t_m2c[i])
         return dist
 
-    def t_site_center_loss(self, pred_cam_t_m2c_site: torch.Tensor = None) -> torch.Tensor:
-        """
-        :param pred_cam_t_m2c_site: [N, 3]
-        :return: [N]
-        """
-        pred_cam_t_m2c_site = _get_param(pred_cam_t_m2c_site, self.pred_cam_t_m2c_site)
-        return torch.linalg.vector_norm(self.gt_cam_t_m2c_site()[:, :2] - pred_cam_t_m2c_site[:, :2], ord=1, dim=-1)
-
-    def t_site_depth_loss(self, pred_cam_t_m2c_site: torch.Tensor = None) -> torch.Tensor:
-        """
-        :param pred_cam_t_m2c_site: [N, 3]
-        :return: [N]
-        """
-        pred_cam_t_m2c_site = _get_param(pred_cam_t_m2c_site, self.pred_cam_t_m2c_site)
-        return torch.abs(self.gt_cam_t_m2c_site()[:, 2] - pred_cam_t_m2c_site[:, 2])
-
-    def coord_3d_loss(self, pred_coord_3d_roi_normalized: torch.Tensor = None) -> torch.Tensor:
-        """
-        :param pred_coord_3d_roi_normalized: [..., 3(XYZ), H, W]
-        :return: [...]
-        """
-        pred_coord_3d_roi_normalized = _get_param(pred_coord_3d_roi_normalized, self.pred_coord_3d_roi_normalized,
-                                                  lambda: self._get_coord_3d_roi_normalized(self.pred_coord_3d_roi))
-        gt_coord_3d_roi_normalized = utils.transform_3d.normalize_coord_3d(self.gt_coord_3d_roi, self.obj_size)
-        loss = utils.image_2d.lp_loss(
-            (pred_coord_3d_roi_normalized - gt_coord_3d_roi_normalized) * self.gt_mask_vis_roi, p=1, reduction='sum')
-        loss /= self.gt_mask_vis_roi.sum(dim=[-3, -2, -1])
-        return loss
-
-    def mask_loss(self, pred_mask_vis_roi: torch.Tensor = None, loss_mode: str = 'BCE') -> torch.Tensor:
-        """
-        :param pred_mask_vis_roi: [..., 1, H, W]
-        :param loss_mode: 'BCE', 'L1'
-        :return: [...]
-        """
-        pred_mask_vis_roi = _get_param(pred_mask_vis_roi, self.pred_mask_vis_roi)
-        if loss_mode == 'BCE':
-            loss = F.binary_cross_entropy(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype),
-                                          reduction='none')
-            return loss.mean(dim=[-3, -2, -1])
-        elif loss_mode == 'L1':
-            pred_mask_vis_roi = utils.image_2d.conditional_clamp(pred_mask_vis_roi, self.gt_mask_vis_roi, l0=0., u1=1.)
-            return utils.image_2d.lp_loss(pred_mask_vis_roi, self.gt_mask_vis_roi.to(dtype=pred_mask_vis_roi.dtype),
-                                          p=1)
-        else:
-            raise NotImplementedError
-
     def relative_angle(self, pred_cam_R_m2c: torch.Tensor = None, degree: bool =False) -> torch.Tensor:
         """
 
@@ -245,100 +270,64 @@ class Sample:
             dist *= 100.  # cm
         return dist  # [...]
 
-    def visualize(self, return_figs: bool = False, pred_coord_3d_roi: torch.Tensor = None,
-                  pred_mask_vis_roi: torch.Tensor = None, pred_cam_R_m2c: torch.Tensor = None,
-                  pred_cam_t_m2c: torch.Tensor = None, max_samples: int = None) -> Optional[list[Figure]]:
-        pred_coord_3d_roi_normalized = _get_param(
-            (pred_coord_3d_roi, lambda x: self._get_coord_3d_roi_normalized(x)),
-            self.pred_coord_3d_roi_normalized,
-            (self.pred_coord_3d_roi, lambda x: self._get_coord_3d_roi_normalized(x))
-        )
-        pred_coord_3d_roi = _get_param(
-            pred_coord_3d_roi, self.pred_coord_3d_roi,
-            (self.pred_coord_3d_roi_normalized, lambda x: self._get_coord_3d_roi(x))
-        )
-        pred_mask_vis_roi = _get_param(pred_mask_vis_roi, self.pred_mask_vis_roi)
-        pred_cam_R_m2c = _get_param(pred_cam_R_m2c, self.pred_cam_R_m2c)
-        pred_cam_t_m2c = _get_param(pred_cam_t_m2c, self.pred_cam_t_m2c,
-                                    (self.pred_cam_t_m2c_site, lambda: self.get_pred_cam_t_m2c(store=True)))
+    def visualize(self, return_figs: bool = False, max_samples: int = None) -> Optional[list[Figure]]:
         figs = []
-        for i in range(min(max_samples, len(self.obj_id)) if max_samples is not None else len(self.obj_id)):
+
+        def draw_fields(ax: Axes, keys: Union[list[str], str], i: int, title: str = '', fn: Callable = lambda *x: x,
+                        fn_ax: Callable = utils.image_2d.draw_ax):
+            ax.set_title(title)
+            values = self.get(keys, False)
+            if not_none(values):
+                tensors = fn(*[value[i] for value in values])
+                if isinstance(tensors, torch.Tensor):
+                    fn_ax(ax, tensors)
+                else:
+                    fn_ax(ax, *tensors)
+            else:
+                ax.set_aspect('equal')
+
+        sf = SampleFields
+        obj_id = self.get([sf.obj_id])[0]
+        for i in range(min(max_samples, len(obj_id)) if max_samples is not None else len(obj_id)):
             fig, axs = plt.subplots(3, 4, figsize=(12, 9))
 
-            utils.image_2d.draw_ax(axs[0, 0], self.img_roi[i])
-            axs[0, 0].set_title('rendered image')
+            draw_fields(axs[0, 0], [sf.img_roi], i, 'rendered image')
+            draw_fields(axs[1, 0], [sf.coord_2d_roi], i, '2D coord (relative)', utils.image_2d.normalize_channel)
+            draw_fields(axs[0, 1], [sf.gt_coord_3d_roi, sf.obj_size], i, '3D coord (relative)', utils.transform_3d.normalize_coord_3d)
+            draw_fields(axs[1, 1], ['pred_coord_3d_roi_normalized'], i, 'pred 3D coord (relative)', lambda x: x.clamp(0., 1.))
+            draw_fields(axs[0, 2], [sf.gt_mask_vis_roi], i, 'gt mask vis')
+            draw_fields(axs[1, 2], ['pred_mask_vis_roi'], i, 'pred mask vis', lambda x: x.clamp(0., 1.))
+            draw_fields(axs[0, 3], [sf.cam_K, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c, sf.obj_size, sf.bbox], i, 'gt pose',
+                        fn_ax=utils.transform_3d.show_pose)
+            draw_fields(axs[1, 3], [sf.cam_K, 'pred_cam_R_m2c', 'pred_cam_t_m2c', sf.obj_size, sf.bbox], i, 'pred pose',
+                        fn_ax=utils.transform_3d.show_pose)
 
-            if self.coord_2d_roi is not None:
-                utils.image_2d.draw_ax(axs[1, 0], utils.image_2d.normalize_channel(self.coord_2d_roi[i]))
-            else:
-                axs[1, 0].set_aspect('equal')
-            axs[1, 0].set_title('2D coord (relative)')
-
-            if self.gt_coord_3d_roi is not None and self.obj_size is not None:
-                utils.image_2d.draw_ax(axs[0, 1],
-                    utils.transform_3d.normalize_coord_3d(self.gt_coord_3d_roi[i], self.obj_size[i]))
-            else:
-                axs[0, 1].set_aspect('equal')
-            axs[0, 1].set_title('gt 3D coord (relative)')
-
-            if pred_coord_3d_roi_normalized is not None:
-                utils.image_2d.draw_ax(axs[1, 1], pred_coord_3d_roi_normalized[i].clamp(0., 1.))
-            else:
-                axs[1, 1].set_aspect('equal')
-            axs[1, 1].set_title('pred 3D coord (relative)')
-
-            if self.gt_mask_vis_roi is not None:
-                if self.gt_mask_obj_roi is not None:
-                    gt_mask_roi = torch.cat([self.gt_mask_obj_roi[i], self.gt_mask_vis_roi[i]], dim=-3)
-                else:
-                    gt_mask_roi = self.gt_mask_vis_roi[i].expand(2, -1, -1)
-                utils.image_2d.draw_ax(axs[0, 2], gt_mask_roi)
-            else:
-                axs[0, 2].set_aspect('equal')
-            axs[0, 2].set_title('gt mask (r-obj, g-vis)')
-
-            if pred_mask_vis_roi is not None:
-                utils.image_2d.draw_ax(axs[1, 2], pred_mask_vis_roi[i].clamp(0., 1.).expand(2, -1, -1))
-            else:
-                axs[1, 2].set_aspect('equal')
-            axs[1, 2].set_title('pred mask vis')
-
-            utils.transform_3d.show_pose(axs[0, 3], self.cam_K[i], self.gt_cam_R_m2c[i], self.gt_cam_t_m2c[i],
-                                         self.obj_size[i], self.bbox[i], self.bbox_zoom_out_ratio, True)
-            axs[0, 3].set_title('gt pose')
-            if pred_cam_R_m2c is not None and pred_cam_t_m2c is not None:
-                utils.transform_3d.show_pose(axs[1, 3], self.cam_K[i], pred_cam_R_m2c[i], pred_cam_t_m2c[i],
-                                             self.obj_size[i], self.bbox[i], self.bbox_zoom_out_ratio, True)
-            else:
-                axs[1, 3].set_aspect('equal')
-            axs[1, 3].set_title('pred pose')
-
-            if pred_coord_3d_roi is not None and self.gt_coord_3d_roi is not None:
-                diff = torch.linalg.vector_norm(pred_coord_3d_roi[i] * self.gt_mask_vis_roi[i] - self.gt_coord_3d_roi[i], dim=-3)
-                utils.image_2d.draw_ax_diff(axs[2, 1], diff, thresh_min=0., thresh_max=1e-2, log_mode=False)
-            else:
-                axs[2, 1].set_aspect('equal')
-            axs[2, 1].set_title('diff 3D coord (L2)')
-
-            if pred_mask_vis_roi is not None and self.gt_mask_vis_roi is not None:
-                diff = pred_mask_vis_roi[i] - self.gt_mask_vis_roi[i].to(dtype=pred_mask_vis_roi.dtype)
-                utils.image_2d.draw_ax_diff(axs[2, 2], diff.abs(), thresh_min=1e-4, thresh_max=1., log_mode=True)
-            else:
-                axs[2, 2].set_aspect('equal')
-            axs[2, 2].set_title('diff mask (abs)')
-
-            if self.pnp_inlier_roi is not None:
-                utils.image_2d.draw_ax(axs[2, 0], self.pnp_inlier_roi[i].expand(3, -1, -1))
-            else:
-                axs[2, 0].set_aspect('equal')
-            axs[2, 0].set_title('pnp inlier')
-
-            if self.pnp_cam_R_m2c is not None and self.pnp_cam_t_m2c is not None:
-                utils.transform_3d.show_pose(axs[2, 3], self.cam_K[i], self.pnp_cam_R_m2c[i], self.pnp_cam_t_m2c[i],
-                                             self.obj_size[i], self.bbox[i], self.bbox_zoom_out_ratio, True)
-            else:
-                axs[2, 3].set_aspect('equal')
-            axs[2, 3].set_title('pnp pose')
+            # if pred_coord_3d_roi is not None and self.gt_coord_3d_roi is not None:
+            #     diff = torch.linalg.vector_norm(pred_coord_3d_roi[i] * self.gt_mask_vis_roi[i] - self.gt_coord_3d_roi[i], dim=-3)
+            #     utils.image_2d.draw_ax_diff(axs[2, 1], diff, thresh_min=0., thresh_max=1e-2, log_mode=False)
+            # else:
+            #     axs[2, 1].set_aspect('equal')
+            # axs[2, 1].set_title('diff 3D coord (L2)')
+            #
+            # if pred_mask_vis_roi is not None and self.gt_mask_vis_roi is not None:
+            #     diff = pred_mask_vis_roi[i] - self.gt_mask_vis_roi[i].to(dtype=pred_mask_vis_roi.dtype)
+            #     utils.image_2d.draw_ax_diff(axs[2, 2], diff.abs(), thresh_min=1e-4, thresh_max=1., log_mode=True)
+            # else:
+            #     axs[2, 2].set_aspect('equal')
+            # axs[2, 2].set_title('diff mask (abs)')
+            #
+            # if self.pnp_inlier_roi is not None:
+            #     utils.image_2d.draw_ax(axs[2, 0], self.pnp_inlier_roi[i].expand(3, -1, -1))
+            # else:
+            #     axs[2, 0].set_aspect('equal')
+            # axs[2, 0].set_title('pnp inlier')
+            #
+            # if self.pnp_cam_R_m2c is not None and self.pnp_cam_t_m2c is not None:
+            #     utils.transform_3d.show_pose(axs[2, 3], self.cam_K[i], self.pnp_cam_R_m2c[i], self.pnp_cam_t_m2c[i],
+            #                                  self.obj_size[i], self.bbox[i], True)
+            # else:
+            #     axs[2, 3].set_aspect('equal')
+            # axs[2, 3].set_title('pnp pose')
 
             fig.tight_layout()
             if return_figs:
@@ -346,30 +335,4 @@ class Sample:
             else:
                 plt.show()
 
-        if self.dbg_img is not None:
-            fig = plt.figure()
-            ax = plt.Axes(fig, [0., 0., 1., 1.])
-            fig.add_axes(ax)
-            utils.image_2d.draw_ax(ax, self.dbg_img[0], bboxes=self.bbox)
-            for i in range(len(self.obj_id)):
-                utils.transform_3d.show_pose(
-                    ax, self.cam_K[i], self.gt_cam_R_m2c[i], self.gt_cam_t_m2c[i], self.obj_size[i])
-            fig.tight_layout()
-            if return_figs:
-                figs.append(fig)
-            else:
-                plt.show()
         return figs if return_figs else None
-
-    def clone(self, detach: bool = False):
-        out = Sample()
-        for key in [key for key in dir(self) if not key.startswith('__') and not callable(getattr(self, key))]:
-            value = getattr(self, key)
-            if isinstance(value, torch.Tensor):
-                if detach:
-                    setattr(out, key, value.detach())
-                else:
-                    setattr(out, key, value.clone())
-            else:
-                setattr(out, key, copy.deepcopy(value))
-        return out

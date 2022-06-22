@@ -43,14 +43,15 @@ def get_bbox2d_from_mask(mask: torch.Tensor) -> torch.Tensor:
 
 
 def crop_roi(img: Union[list[torch.Tensor], torch.Tensor], bbox: torch.Tensor,
-             in_size: Union[torch.Tensor, float] = None, out_size: Union[list[int], int] = None) \
-        -> Union[list[torch.Tensor], torch.Tensor]:
+             in_size: Union[torch.Tensor, float] = None, out_size: Union[list[int], int] = None,
+             mode: str = 'bilinear') -> Union[list[torch.Tensor], torch.Tensor]:
     """
 
     :param img: list of ([N, C, H, W] or [C, H, W])
     :param bbox: [N, 4(XYWH)]
     :param in_size: [N, 2] or [N, 1] or [N] or float
     :param out_size: [int, int] or [int] or int
+    :param mode: 'bilinear' or 'nearest' or 'bicubic',
     :return: list of [N, C, H, W]
     """
     N = len(bbox)
@@ -67,6 +68,10 @@ def crop_roi(img: Union[list[torch.Tensor], torch.Tensor], bbox: torch.Tensor,
     if isinstance(out_size, int):
         out_size = [out_size]
 
+    if mode is None:
+        mode = 'bilinear'
+    assert mode in ['bilinear', 'nearest', 'bicubic']
+
     if isinstance(img, torch.Tensor):
         img = [img]
         flag = True
@@ -74,7 +79,8 @@ def crop_roi(img: Union[list[torch.Tensor], torch.Tensor], bbox: torch.Tensor,
         flag = False
 
     C = [i.shape[-3] for i in img]
-    cat_img = torch.cat([i.expand(N, -1, -1, -1) for i in img], dim=1)
+    orig_dtype = [i.dtype for i in img]
+    cat_img = torch.cat([i.to(dtype=dtype).expand(N, -1, -1, -1) for i in img], dim=1)
     H, W = cat_img.shape[-2:]
     wh = torch.tensor([W, H], dtype=dtype, device=device)
 
@@ -84,7 +90,8 @@ def crop_roi(img: Union[list[torch.Tensor], torch.Tensor], bbox: torch.Tensor,
 
     grid = F.affine_grid(theta, [N, sum(C), out_size[-1], out_size[0]], align_corners=False)
 
-    crop_img = F.grid_sample(cat_img, grid, align_corners=False).split(C, dim=1)
+    crop_img = F.grid_sample(cat_img, grid, mode=mode, align_corners=False).split(C, dim=1)
+    crop_img = [c_img.to(dtype=o_dtype) for c_img, o_dtype in zip(crop_img, orig_dtype)]
 
     if flag:
         crop_img = crop_img[0]
@@ -178,8 +185,8 @@ def erode_mask(mask: torch.Tensor, radius_min: float = 0., radius_max: float = t
         mask_min = (cdist > radius_min).all(dim=-1)
         mask_max = (cdist < radius_max).any(dim=-1)
         eroded_mask[i, 0] = (mask_min & mask_max).reshape(H, W)
-    eroded_mask[..., :int(radius_min)] = eroded_mask[..., -int(radius_min):] = 0
-    eroded_mask[..., :int(radius_min), :] = eroded_mask[..., -int(radius_min):, :] = 0
+    eroded_mask[..., :int(radius_min)] = eroded_mask[..., W - int(radius_min):] = 0
+    eroded_mask[..., :int(radius_min), :] = eroded_mask[..., H - int(radius_min):, :] = 0
     return eroded_mask
 
 

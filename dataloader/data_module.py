@@ -3,8 +3,7 @@ import torch
 from torch.utils.data import DataLoader
 import torchvision.transforms as T
 
-from dataloader.pose_dataset import DatasetWrapper, BOPObjDataset, RenderedPoseBOPObjDataset, RandomPoseBOPObjDataset, \
-    RandomPoseRegularObjDataset
+from dataloader.pose_dataset import DatasetWrapper, random_pose_obj_dp, rendered_pose_bop_obj_dp
 from dataloader.sample import Sample
 from utils.config import Config
 
@@ -18,9 +17,9 @@ class LitDataModule(pl.LightningDataModule):
         self.val_epoch_len: int = self.cfg.dataloader.val_epoch_len
 
         transform = T.Compose([T.ColorJitter(**self.cfg.augmentation)])
-        self.dataset: torch.utils.data.IterableDataset = RandomPoseRegularObjDataset(
+        self.dataset: torch.utils.data.IterableDataset = random_pose_obj_dp(
             dtype=self.cfg.dtype, device=self.cfg.device,
-            transform=transform, img_input_size=self.cfg.model.img_input_size,
+            img_input_size=self.cfg.model.img_input_size,
             pnp_input_size=self.cfg.model.pnp_input_size, **self.cfg.dataset
         )
 
