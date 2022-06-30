@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
-from dataloader.obj_mesh import ObjMesh
 import utils.image_2d
 import utils.transform_3d
 
@@ -222,32 +221,21 @@ class Sample:
             draw_fields(axs[1, 3], [sf.cam_K, sf.pred_cam_R_m2c, sf.pred_cam_t_m2c, sf.obj_size, sf.bbox], i,
                         'pred pose', fn_ax=utils.transform_3d.show_pose)
 
-            # if pred_coord_3d_roi is not None and self.gt_coord_3d_roi is not None:
-            #     diff = torch.linalg.vector_norm(pred_coord_3d_roi[i] * self.gt_mask_vis_roi[i] - self.gt_coord_3d_roi[i], dim=-3)
-            #     utils.image_2d.draw_ax_diff(axs[2, 1], diff, thresh_min=0., thresh_max=1e-2, log_mode=False)
-            # else:
-            #     axs[2, 1].set_aspect('equal')
-            # axs[2, 1].set_title('diff 3D coord (L2)')
-            #
-            # if pred_mask_vis_roi is not None and self.gt_mask_vis_roi is not None:
-            #     diff = pred_mask_vis_roi[i] - self.gt_mask_vis_roi[i].to(dtype=pred_mask_vis_roi.dtype)
-            #     utils.image_2d.draw_ax_diff(axs[2, 2], diff.abs(), thresh_min=1e-4, thresh_max=1., log_mode=True)
-            # else:
-            #     axs[2, 2].set_aspect('equal')
-            # axs[2, 2].set_title('diff mask (abs)')
-            #
-            # if self.pnp_inlier_roi is not None:
-            #     utils.image_2d.draw_ax(axs[2, 0], self.pnp_inlier_roi[i].expand(3, -1, -1))
-            # else:
-            #     axs[2, 0].set_aspect('equal')
-            # axs[2, 0].set_title('pnp inlier')
-            #
-            # if self.pnp_cam_R_m2c is not None and self.pnp_cam_t_m2c is not None:
-            #     utils.transform_3d.show_pose(axs[2, 3], self.cam_K[i], self.pnp_cam_R_m2c[i], self.pnp_cam_t_m2c[i],
-            #                                  self.obj_size[i], self.bbox[i], True)
-            # else:
-            #     axs[2, 3].set_aspect('equal')
-            # axs[2, 3].set_title('pnp pose')
+            draw_fields(
+                axs[2, 1], [sf.gt_coord_3d_roi, sf.gt_mask_vis_roi, sf.pred_coord_3d_roi], i, 'diff 3D coord (L2)',
+                lambda gc, gm, pc: torch.linalg.vector_norm(pc * gm - gc, dim=-3),
+                lambda ax, diff: utils.image_2d.draw_ax_diff(ax, diff, thresh_min=0., thresh_max=1e-2, log_mode=False)
+            )
+
+            draw_fields(
+                axs[2, 2], [sf.gt_mask_vis_roi, sf.pred_mask_vis_roi], i, 'diff mask (abs)',
+                lambda gm, pm: (pm - gm.to(dtype=pm.dtype)).abs(),
+                lambda ax, diff: utils.image_2d.draw_ax_diff(ax, diff, thresh_min=1e-4, thresh_max=1., log_mode=True)
+            )
+
+            draw_fields(axs[2, 0], [sf.pnp_inlier_roi], i, 'pnp inlier', lambda x: x.expand(3, -1, -1))
+            draw_fields(axs[2, 3], [sf.cam_K, sf.pnp_cam_R_m2c, sf.pnp_cam_t_m2c, sf.obj_size, sf.bbox], i,
+                        'pnp pose', fn_ax=utils.transform_3d.show_pose)
 
             fig.tight_layout()
             if return_figs:

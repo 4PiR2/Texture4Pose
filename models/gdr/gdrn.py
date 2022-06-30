@@ -1,6 +1,5 @@
 from typing import Optional
 
-from pytorch3d.renderer.mesh import TexturesBase, TexturesVertex
 import pytorch3d.transforms
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT, STEP_OUTPUT
@@ -29,7 +28,7 @@ class GDRN(pl.LightningModule):
     def __init__(self, cfg, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
         self.transform = T.Compose([T.ColorJitter(**cfg.augmentation)])
-        self.texture_net_v = None  # TextureNet(objects)
+        self.texture_net_v = None  # TextureNetV(objects)
         self.texture_net_p = TextureNetP(in_channels=6, out_channels=3, n_layers=3, hidden_size=128)
         self.backbone = ResnetBackbone(in_channels=3)
         self.rot_head_net = RotWithRegionHead(512, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
@@ -61,12 +60,12 @@ class GDRN(pl.LightningModule):
                 sample.coord_2d_roi, sample.pred_mask_vis_roi.round()
             )
         pred_cam_R_m2c_allo = pytorch3d.transforms.rotation_6d_to_matrix(pred_cam_R_m2c_6d)
-        # pred_cam_R_m2c_allo = pred_cam_R_m2c_allo.transpose(-2, -1)  # use GDR's pre-trained weights
         if self.training:
             sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.gt_cam_t_m2c) @ pred_cam_R_m2c_allo
         else:
             sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c) @ pred_cam_R_m2c_allo
-        # sample.compute_pnp(erode_min=5.)
+        if not self.training:
+            sample.compute_pnp(erode_min=5.)
         # sample.visualize()
         return sample
 
@@ -124,6 +123,7 @@ class GDRN(pl.LightningModule):
         writer.add_text('rot_head_net', str(self.rot_head_net), global_step=0)
         writer.add_text('pnp_net', str(self.pnp_net), global_step=0)
         writer.add_text('texture_net_p', str(self.texture_net_p), global_step=0)
+        # writer.add_text('texture_net_v', str(self.texture_net_v), global_step=0)
         self.on_validation_start()
 
     def on_validation_start(self):
