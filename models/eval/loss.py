@@ -9,24 +9,49 @@ import utils.transform_3d
 
 
 class Loss(nn.Module):
-    def __init__(self, objects_eval: dict[int, ObjMesh]):
+    def __init__(self, objects_eval: dict[int, ObjMesh], pose: bool = True, geo: bool = True, mean: bool = True):
         super().__init__()
         self.objects_eval: dict[int, ObjMesh] = objects_eval
+        self.pose: bool = pose
+        self.geo: bool = geo
+        self.mean: bool = mean
 
-    def forward(self, sample: Sample, pred_cam_R_m2c: torch.Tensor = None, pred_cam_t_m2c_site: torch.Tensor = None):
-        obj_id = sample.get(sf.obj_id)
-        gt_cam_R_m2c = sample.get(sf.gt_cam_R_m2c)
-        gt_cam_t_m2c_site = sample.get(sf.gt_cam_t_m2c_site)
+    def forward(self, sample: Sample, pred_cam_R_m2c: torch.Tensor = None, pred_cam_t_m2c_site: torch.Tensor = None,
+                pred_coord_3d_roi: torch.Tensor = None, pred_mask_vis_roi: torch.Tensor = None):
+        losses = []
+        if self.pose:
+            obj_id = sample.get(sf.obj_id)
+            gt_cam_R_m2c = sample.get(sf.gt_cam_R_m2c)
+            gt_cam_t_m2c_site = sample.get(sf.gt_cam_t_m2c_site)
 
-        if pred_cam_R_m2c is None:
-            pred_cam_R_m2c = sample.get(sf.pred_cam_R_m2c)
-        if pred_cam_t_m2c_site is None:
-            pred_cam_t_m2c_site = sample.get(sf.pred_cam_t_m2c_site)
+            if pred_cam_R_m2c is None:
+                pred_cam_R_m2c = sample.get(sf.pred_cam_R_m2c)
+            if pred_cam_t_m2c_site is None:
+                pred_cam_t_m2c_site = sample.get(sf.pred_cam_t_m2c_site)
 
-        pm_loss = self.pm_loss(obj_id, gt_cam_R_m2c, pred_cam_R_m2c, div_diameter=True)
-        t_site_center_loss = self.t_site_center_loss(gt_cam_t_m2c_site, pred_cam_t_m2c_site)
-        t_site_depth_loss = self.t_site_depth_loss(gt_cam_t_m2c_site, pred_cam_t_m2c_site)
-        return pm_loss, t_site_center_loss, t_site_depth_loss
+            pm_loss = self.pm_loss(obj_id, gt_cam_R_m2c, pred_cam_R_m2c, div_diameter=True)
+            t_site_center_loss = self.t_site_center_loss(gt_cam_t_m2c_site, pred_cam_t_m2c_site)
+            t_site_depth_loss = self.t_site_depth_loss(gt_cam_t_m2c_site, pred_cam_t_m2c_site)
+            losses += [pm_loss, t_site_center_loss, t_site_depth_loss]
+
+        if self.geo:
+            gt_coord_3d_roi_normalized = sample.get(sf.gt_coord_3d_roi_normalized)
+            gt_mask_vis_roi = sample.get(sf.gt_mask_vis_roi)
+
+            if pred_coord_3d_roi is None:
+                pred_coord_3d_roi_normalized = sample.get(sf.pred_coord_3d_roi_normalized)
+            else:
+                obj_size = sample.get(sf.obj_size)
+                pred_coord_3d_roi_normalized = utils.transform_3d.normalize_coord_3d(pred_coord_3d_roi, obj_size)
+            if pred_mask_vis_roi is None:
+                pred_mask_vis_roi = sample.get(sf.pred_mask_vis_roi)
+
+            coord_3d_loss = self.coord_3d_loss(gt_coord_3d_roi_normalized, gt_mask_vis_roi, pred_coord_3d_roi_normalized)
+            mask_loss = self.mask_loss(gt_mask_vis_roi, pred_mask_vis_roi)
+            losses += [coord_3d_loss, mask_loss]
+        if self.mean:
+            losses = [loss.mean() for loss in losses]
+        return losses
 
     def pm_loss(self, obj_id: torch.Tensor, gt_cam_R_m2c: torch.Tensor, pred_cam_R_m2c: torch.Tensor = None,
                 div_diameter: bool = True) -> torch.Tensor:

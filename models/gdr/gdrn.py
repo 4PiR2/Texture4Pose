@@ -8,52 +8,71 @@ import torch
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
+import torchvision.transforms as T
+import torchvision.transforms.functional as vF
 
 from dataloader.obj_mesh import ObjMesh
 from dataloader.sample import Sample
+from models.eval.loss import Loss
+from models.eval.score import Score
+from models.gdr.backbone import ResnetBackbone
 from models.gdr.conv_pnp_net import ConvPnPNet
 from models.gdr.rot_head import RotWithRegionHead
-from models.texture_net_v import TextureNet
+from models.texture_net_p import TextureNetP
+from models.texture_net_v import TextureNetV
 from renderer.scene import Scene
 import utils.image_2d
 import utils.transform_3d
 
 
 class GDRN(pl.LightningModule):
-    def __init__(self, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
+    def __init__(self, cfg, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
-        self.texture_net = TextureNet(objects)
-        self.backbone: torchvision.models.ResNet = torchvision.models.resnet34(num_classes=6+3)
-        self.backbone.avgpool = nn.Sequential()
-        self.backbone.fc = nn.Sequential()
+        self.transform = T.Compose([T.ColorJitter(**cfg.augmentation)])
+        self.texture_net_v = None  # TextureNet(objects)
+        self.texture_net_p = TextureNetP(in_channels=6, out_channels=3, n_layers=3, hidden_size=128)
+        self.backbone = ResnetBackbone(in_channels=3)
         self.rot_head_net = RotWithRegionHead(512, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
         self.pnp_net = ConvPnPNet(in_channels=6)
         self.objects_eval = objects_eval if objects_eval is not None else objects
+        self.loss = Loss(objects_eval if objects_eval is not None else objects)
+        self.score = Score(objects_eval if objects_eval is not None else objects)
 
     def forward(self, sample: Sample):
+        gt_texel_roi = self.texture_net_p(torch.cat([sample.gt_coord_3d_roi, sample.gt_normal_roi], dim=1))
+        sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
+        sample.img_roi = self.transform(sample.img_roi)
+        sample.gt_coord_3d_roi = vF.resize(sample.gt_coord_3d_roi, [64])
+        sample.coord_2d_roi = vF.resize(sample.coord_2d_roi, [64])
+        sample.gt_mask_vis_roi = vF.resize(sample.gt_mask_vis_roi, [64])
+
         features = self.backbone(sample.img_roi)
         features = features.view(-1, 512, 8, 8)
         pred_mask_vis_roi, sample.pred_coord_3d_roi_normalized = self.rot_head_net(features)
         sample.pred_mask_vis_roi = pred_mask_vis_roi.sigmoid()
-        sample.get_pred_coord_3d_roi(store=True)
-        pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(
-            sample.pred_coord_3d_roi * sample.pred_mask_vis_roi.round(), sample.coord_2d_roi, sample.pred_mask_vis_roi.round())
+
+        if self.training:
+            pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(
+                sample.gt_coord_3d_roi, sample.coord_2d_roi, sample.gt_mask_vis_roi
+            )
+        else:
+            pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(
+                sample.pred_coord_3d_roi * sample.pred_mask_vis_roi.round(),
+                sample.coord_2d_roi, sample.pred_mask_vis_roi.round()
+            )
         pred_cam_R_m2c_allo = pytorch3d.transforms.rotation_6d_to_matrix(pred_cam_R_m2c_6d)
-        pred_cam_R_m2c_allo = pred_cam_R_m2c_allo.transpose(-2, -1)  # use GDR's pre-trained weights
-        sample.pred_cam_t_m2c = sample.get_pred_cam_t_m2c(store=True)
-        sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c) @ pred_cam_R_m2c_allo
-        # coord_3d_roi = sample.pred_coord_3d_roi / torch.linalg.vector_norm(sample.pred_coord_3d_roi, dim=1)[:, None] * (.1 * .5)
-        sample.compute_pnp(erode_min=5.)
+        # pred_cam_R_m2c_allo = pred_cam_R_m2c_allo.transpose(-2, -1)  # use GDR's pre-trained weights
+        if self.training:
+            sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.gt_cam_t_m2c) @ pred_cam_R_m2c_allo
+        else:
+            sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c) @ pred_cam_R_m2c_allo
+        # sample.compute_pnp(erode_min=5.)
         # sample.visualize()
         return sample
 
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:
         sample = self.forward(sample)
-        loss_coord_3d = sample.coord_3d_loss().mean()
-        loss_mask = sample.mask_loss().mean()
-        loss_pm = sample.pm_loss(self.objects_eval, div_diameter=False).mean()
-        loss_t_site_center = sample.t_site_center_loss().mean()
-        loss_t_site_depth = sample.t_site_depth_loss().mean()
+        loss_pm, loss_t_site_center, loss_t_site_depth, loss_coord_3d, loss_mask = self.loss(sample)
         loss = loss_coord_3d + loss_mask + loss_pm + loss_t_site_center + loss_t_site_depth
         self.log('loss', {'total': loss, 'coord_3d': loss_coord_3d, 'mask': loss_mask, 'pm': loss_pm,
                           'ts_center': loss_t_site_center, 'ts_depth': loss_t_site_depth})
@@ -63,22 +82,11 @@ class GDRN(pl.LightningModule):
         sample: Sample = self.forward(sample)
         if (batch_idx + 1) % (self.trainer.log_every_n_steps * 999) == 1:
             self._log_sample_visualizations(sample)
-        re = sample.relative_angle(degree=True)
-        te = sample.relative_dist(cm=True)
-        add = sample.add_score(self.objects_eval, div_diameter=True)
-        proj = sample.proj_dist(self.objects_eval)
+        re, te, add, proj = self.score(sample)
         metric_dict = {'re(deg)': re, 'te(cm)': te, 'ad(d)': add, 'proj': proj}
-        if sample.pnp_cam_R_m2c is not None and sample.pnp_cam_t_m2c is not None:
-            pnp_re = sample.relative_angle(sample.pnp_cam_R_m2c, degree=True)
-            pnp_te = sample.relative_dist(sample.pnp_cam_t_m2c, cm=True)
-            pnp_add = sample.add_score(self.objects_eval, sample.pnp_cam_R_m2c, sample.pnp_cam_t_m2c, div_diameter=True)
-            pnp_proj = sample.proj_dist(self.objects_eval, sample.pnp_cam_R_m2c, sample.pnp_cam_t_m2c)
-            metric_dict.update(
-                {'pnp_re(deg)': pnp_re, 'pnp_te(cm)': pnp_te, 'pnp_ad(d)': pnp_add, 'pnp_proj': pnp_proj})
         return metric_dict
 
     def validation_epoch_end(self, outputs: EPOCH_OUTPUT) -> None:
-        # self._log_meshes()
         keys = list(outputs[0].keys())
         outputs = {key: torch.cat([output[key] for output in outputs], dim=0) for key in keys}
         metrics = torch.stack([outputs[key] for key in keys], dim=0)
@@ -93,39 +101,11 @@ class GDRN(pl.LightningModule):
             {'params': self.backbone.parameters(), 'lr': 1e-5, 'name': 'backbone'},
             {'params': self.rot_head_net.parameters(), 'lr': 1e-5, 'name': 'rot_head'},
             {'params': self.pnp_net.parameters(), 'lr': 1e-5, 'name': 'pnp'},
-            {'params': self.texture_net.parameters(), 'lr': 1e-3, 'name': 'texture'},
+            {'params': self.texture_net_p.parameters(), 'lr': 1e-5, 'name': 'texture_p'},
         ]
         optimizer = torch.optim.Adam(params)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=.1)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=.1)
         return [optimizer], [scheduler]
-
-    def load_pretrain(self, gdr_pth_path: str):
-        state_dict = torch.load(gdr_pth_path)['model']
-        state_dict['rot_head_net.features.23.weight'] = state_dict['rot_head_net.features.23.weight'][:4]
-        state_dict['rot_head_net.features.23.bias'] = state_dict['rot_head_net.features.23.bias'][:4]
-        self.load_state_dict(state_dict, strict=False)
-        self.backbone.conv1.weight = nn.Parameter(self.backbone.conv1.weight.flip(dims=[1]))
-        self.pnp_net.load_pretrain(gdr_pth_path)
-
-    def _log_meshes(self) -> None:
-        for obj_id in self.objects_eval:
-            obj = self.objects_eval[obj_id]
-            verts = obj.mesh.verts_packed()  # [V, 3(XYZ)]
-            faces = obj.mesh.faces_packed()  # [F, 3]
-            texture: TexturesBase = self.texture_net(obj)
-            if isinstance(texture, TexturesVertex):
-                v_texture = texture.verts_features_packed()
-            else:
-                fv_texture = texture.faces_verts_textures_packed()  # [F, 3, 3(RGB)]
-                v_texture = torch.empty_like(verts)  # [V, 3(RGB)]
-                for i in range(len(verts)):
-                    v_texture[i] = fv_texture[faces == i].mean(dim=0)
-            v_texture = (v_texture * 255.).to(dtype=torch.uint8)
-            config_dict = {'lights': [{'cls': 'AmbientLight', 'color': 0xffffff, 'intensity': 1.}]}
-            # ref: https://www.tensorflow.org/graphics/tensorboard#scene_configuration
-            writer: SummaryWriter = self.logger.experiment
-            writer.add_mesh(f'{obj_id}-{obj.name}', vertices=verts[None], colors=v_texture[None], faces=faces[None],
-                            config_dict=config_dict, global_step=self.global_step)
 
     def _log_sample_visualizations(self, sample: Sample) -> None:
         writer: SummaryWriter = self.logger.experiment
@@ -143,11 +123,11 @@ class GDRN(pl.LightningModule):
         writer.add_text('backbone', str(self.backbone), global_step=0)
         writer.add_text('rot_head_net', str(self.rot_head_net), global_step=0)
         writer.add_text('pnp_net', str(self.pnp_net), global_step=0)
-        writer.add_text('texture_net', str(self.texture_net), global_step=0)
+        writer.add_text('texture_net_p', str(self.texture_net_p), global_step=0)
         self.on_validation_start()
 
     def on_validation_start(self):
-        Scene.texture_net_v = self.texture_net
+        Scene.texture_net_v = self.texture_net_v
 
     def on_test_start(self):
         self.on_validation_start()
