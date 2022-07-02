@@ -234,6 +234,29 @@ class _(SampleMapperIDP):
         return gt_mask_vis_roi, gt_coord_3d_roi, gt_normal_roi, gt_texel_roi
 
 
+@functional_datapipe('rand_occlude')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP, size_min: float = .125, size_max: float = .5):
+        super().__init__(src_dp, [sf.gt_mask_vis_roi], [sf.gt_mask_vis_roi])
+        # rectangular occlusion
+        self._size_min: float = size_min
+        self._size_max: float = size_max
+
+    def main(self, gt_mask_vis_roi: torch.Tensor):
+        N, _, H, W = gt_mask_vis_roi.shape
+        gt_mask_vis_roi_occ = gt_mask_vis_roi.clone()
+        while True:
+            wh = torch.rand(N, 2) * (self._size_max - self._size_min) + self._size_min
+            x0y0 = torch.rand(N, 2) * (1. - wh)
+            x0y0wh = (torch.cat([x0y0, wh], dim=-1) * torch.tensor([W, H] * 2)).round().int()
+            for i in range(N):
+                x0, y0, w, h = x0y0wh[i]
+                gt_mask_vis_roi_occ[i, :, y0:y0 + h, x0:x0 + w] = 0
+            if gt_mask_vis_roi_occ.sum(dim=[-3, -2, -1]).bool().all():
+                break
+        return gt_mask_vis_roi_occ
+
+
 @functional_datapipe('rand_lights')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, light_color_range=(0., 1.), light_ambient_range=(.5, 1.),

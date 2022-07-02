@@ -116,15 +116,19 @@ def solve_pnp(coord_3d: torch.Tensor, coord_2d: torch.Tensor, mask: torch.Tensor
     else:
         mask = mask.to(dtype=dtype).round().bool()
     if ransac:
-        mask_inlier = torch.empty_like(mask)
+        mask_inlier = torch.zeros_like(mask)
     else:
         mask_inlier = mask
     for i in range(N):
+        if mask[i, 0].sum() < 4:
+            continue
         x = coord_3d[i].permute(1, 2, 0)[mask[i, 0]].detach().cpu().numpy()
         y = coord_2d[i].permute(1, 2, 0)[mask[i, 0]].detach().cpu().numpy()
         if ransac:
-            _, pred_R_exp, pred_t, inliers = cv2.solvePnPRansac(x, y, np.eye(3), None, iterationsCount=10000,
+            ret, pred_R_exp, pred_t, inliers = cv2.solvePnPRansac(x, y, np.eye(3), None, iterationsCount=10000,
                                                                 reprojectionError=1e-3, flags=cv2.SOLVEPNP_ITERATIVE)
+            if not ret:
+                continue
             inliers = inliers.flatten()
             m = mask[i, 0].detach().cpu().numpy()
             m_i, m_j = np.where(m)
@@ -132,7 +136,9 @@ def solve_pnp(coord_3d: torch.Tensor, coord_2d: torch.Tensor, mask: torch.Tensor
             m_inlier[m_i[inliers], m_j[inliers]] = 2
             mask_inlier[i, 0] = torch.tensor(m_inlier)
         else:
-            _, pred_R_exp, pred_t = cv2.solvePnP(x, y, np.eye(3), None, flags=cv2.SOLVEPNP_ITERATIVE)
+            ret, pred_R_exp, pred_t = cv2.solvePnP(x, y, np.eye(3), None, flags=cv2.SOLVEPNP_ITERATIVE)
+            if not ret:
+                continue
         pred_R, _ = cv2.Rodrigues(pred_R_exp)
         pnp_cam_R_m2c[i] = torch.tensor(pred_R)
         pnp_cam_t_m2c[i] = torch.tensor(pred_t.flatten())

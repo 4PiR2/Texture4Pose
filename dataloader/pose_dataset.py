@@ -41,6 +41,7 @@ def random_pose_obj_dp(
     dp = dp.gen_bbox()
     dp = dp.dzi_bbox(max_dzi_ratio=max_dzi_ratio, bbox_zoom_out_ratio=bbox_zoom_out_ratio)
     dp = dp.crop_roi_basic(out_size=crop_out_size)
+    dp = dp.rand_occlude(size_min=.125, size_max=.5)
     dp = dp.rand_lights(light_color_range=light_color_range, light_ambient_range=light_ambient_range,
                         light_diffuse_range=light_diffuse_range,
                         light_specular_range=light_specular_range, light_shininess_range=light_shininess_range)

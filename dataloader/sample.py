@@ -223,7 +223,7 @@ class Sample:
 
             draw_fields(
                 axs[2, 1], [sf.gt_coord_3d_roi, sf.gt_mask_vis_roi, sf.pred_coord_3d_roi], i, 'diff 3D coord (L2)',
-                lambda gc, gm, pc: torch.linalg.vector_norm(pc * gm - gc, dim=-3),
+                lambda gc, gm, pc: torch.linalg.vector_norm((pc - gc) * gm, dim=-3),
                 lambda ax, diff: utils.image_2d.draw_ax_diff(ax, diff, thresh_min=0., thresh_max=1e-2, log_mode=False)
             )
 

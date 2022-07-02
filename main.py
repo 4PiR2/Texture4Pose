@@ -7,13 +7,12 @@ from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor, Mo
 
 import config.const as cc
 # from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset
+from dataloader.data_module import LitDataModule
 from dataloader.sample import Sample
 from models.cdpn.cdpn import CDPN
 from models.cdpn.cdpn2 import CDPN2
 from models.gdr.gdrn import GDRN
 from utils.ckpt_io import CkptIO
-from dataloader.data_module import LitDataModule
-# from models.gdr.gdrn import GDRN
 from utils.config import Config
 
 
@@ -54,7 +53,8 @@ def main():
 
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_26/checkpoints/epoch=0048-val_metric=0.0550.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_26/checkpoints/epoch=0048-val_metric=0.0550.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_30/checkpoints/epoch=0012-val_metric=0.1288.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)
@@ -63,12 +63,12 @@ def main():
     # if cfg.model.pretrain is not None:
     #     model.load_pretrain(cfg.model.pretrain)
 
-    # model = CDPN.load_from_checkpoint(
+    # model = GDRN.load_from_checkpoint(
     #     ckpt_path, cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
 
     model = model.to(cfg.device, dtype=cfg.dtype)
-    # trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
-    trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
+    trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
+    # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
 
 if __name__ == '__main__':
