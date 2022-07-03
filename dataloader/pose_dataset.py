@@ -26,7 +26,8 @@ def random_pose_obj_dp(
     random_t_depth_range=(.5, 1.2), vis_ratio_filter_threshold=.5, max_dzi_ratio=.25,
     bbox_zoom_out_ratio=1.5, light_color_range=(1., 1.), light_ambient_range=(.5, 1.),
     light_diffuse_range=(0., .3), light_specular_range=(0., .2), light_shininess_range=(40, 80),
-    num_obj=None, repeated_sample_obj=False, **kwargs,
+    num_obj=None, repeated_sample_obj=False, occlusion_size_min=.125, occlusion_size_max=.5,
+    min_occlusion_vis_ratio=.5, **kwargs,
 ):
     dp = SampleSource(dtype=dtype, device=device, scene_mode=scene_mode, img_render_size=img_render_size)
     dp = dataloader.datapipe.functional_bop.init_objects(dp, obj_list=obj_list, path=path)
@@ -41,7 +42,8 @@ def random_pose_obj_dp(
     dp = dp.gen_bbox()
     dp = dp.dzi_bbox(max_dzi_ratio=max_dzi_ratio, bbox_zoom_out_ratio=bbox_zoom_out_ratio)
     dp = dp.crop_roi_basic(out_size=crop_out_size)
-    dp = dp.rand_occlude(size_min=.125, size_max=.5)
+    dp = dp.rand_occlude(occlusion_size_min=occlusion_size_min, occlusion_size_max=occlusion_size_max,
+                         min_occlusion_vis_ratio=min_occlusion_vis_ratio)
     dp = dp.rand_lights(light_color_range=light_color_range, light_ambient_range=light_ambient_range,
                         light_diffuse_range=light_diffuse_range,
                         light_specular_range=light_specular_range, light_shininess_range=light_shininess_range)

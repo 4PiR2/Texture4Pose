@@ -3,11 +3,11 @@
 _base_ = './pipeline.py'
 
 dataset = dict(
-    obj_list={101: 'sphere'},
+    obj_list={101: 'sphere', 102: 'cube', 103: 'tetrahedron'},
     # cam_K=cc.lm_cam_K,
     scene_mode=False,
-    num_obj=2,
-    repeated_sample_obj=True,
+    num_obj=3,
+    # repeated_sample_obj=True,
 )
 
 dataloader = dict(

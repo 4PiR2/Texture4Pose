@@ -148,13 +148,21 @@ class RegularMesh(ObjMesh):
         size = torch.full([3], scale * 2.)
         center = torch.zeros(3)
         if name == 'sphere':
-            radius = scale
-            mesh = pytorch3d.utils.ico_sphere(level=level).scale_verts_(scale)
+            mesh = pytorch3d.utils.ico_sphere(level=level)
+            radius = 1.
+            diameter = radius * 2.
         elif name == 'cube':
-            radius = scale * 3. ** .5
-            mesh = renderer.cube_mesh.cube(level=level).scale_verts_(scale)
+            mesh = renderer.cube_mesh.cube(level=level)
+            radius = 3. ** .5
+            diameter = radius * 2.
+        elif name == 'tetrahedron':
+            mesh = renderer.cube_mesh.tetrahedron(level=level)
+            radius = 3. ** .5
+            diameter = 2. ** .5 * 2.
         else:
             raise NotImplementedError
-        diameter = radius * 2.
+        mesh.scale_verts_(scale)
+        radius *= scale
+        diameter *= scale
         super().__init__(mesh=mesh, name=name, diameter=diameter, min=min, size=size, radius=radius, center=center,
                          **kwargs)

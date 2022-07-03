@@ -16,6 +16,9 @@ dataset = dict(
     num_obj=None,
     repeated_sample_obj=False,
     path=None,
+    occlusion_size_min=.125,
+    occlusion_size_max=.5,
+    min_occlusion_vis_ratio=.5
 )
 
 augmentation = dict(  # torchvision.transforms.ColorJitter

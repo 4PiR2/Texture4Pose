@@ -47,7 +47,7 @@ class Loss(nn.Module):
                 pred_mask_vis_roi = sample.get(sf.pred_mask_vis_roi)
 
             coord_3d_loss = self.coord_3d_loss(gt_coord_3d_roi_normalized, gt_mask_vis_roi, pred_coord_3d_roi_normalized)
-            mask_loss = self.mask_loss(gt_mask_vis_roi, pred_mask_vis_roi)
+            mask_loss = self.mask_loss(gt_mask_vis_roi, pred_mask_vis_roi, loss_mode='L1')
             losses += [coord_3d_loss, mask_loss]
         if self.mean:
             losses = [loss.mean() for loss in losses]

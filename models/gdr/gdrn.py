@@ -29,7 +29,7 @@ class GDRN(pl.LightningModule):
         super().__init__()
         self.transform = T.Compose([T.ColorJitter(**cfg.augmentation)])
         self.texture_net_v = None  # TextureNetV(objects)
-        self.texture_net_p = TextureNetP(in_channels=6, out_channels=3, n_layers=3, hidden_size=128)
+        self.texture_net_p = TextureNetP(in_channels=42, out_channels=3, n_layers=3, hidden_size=128)
         self.backbone = ResnetBackbone(in_channels=3)
         self.rot_head_net = RotWithRegionHead(512, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
         self.pnp_net = ConvPnPNet(in_channels=6)
@@ -38,7 +38,13 @@ class GDRN(pl.LightningModule):
         self.score = Score(objects_eval if objects_eval is not None else objects)
 
     def forward(self, sample: Sample):
-        gt_texel_roi = self.texture_net_p(torch.cat([sample.gt_coord_3d_roi, sample.gt_normal_roi], dim=1))
+        gt_position_info_roi = torch.cat([
+            sample.gt_coord_3d_roi,
+            sample.gt_normal_roi,
+        ], dim=1)
+        gt_position_info_roi = torch.cat([gt_position_info_roi] +
+            [(gt_position_info_roi * i).sin() for i in [1, 2, 4, 8, 16, 32]], dim=1)
+        gt_texel_roi = self.texture_net_p(gt_position_info_roi)
         sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
         sample.img_roi = self.transform(sample.img_roi)
         sample.gt_coord_3d_roi = vF.resize(sample.gt_coord_3d_roi * sample.gt_mask_vis_roi, [64])
@@ -48,7 +54,7 @@ class GDRN(pl.LightningModule):
         features = self.backbone(sample.img_roi)
         features = features.view(-1, 512, 8, 8)
         pred_mask_vis_roi, sample.pred_coord_3d_roi_normalized = self.rot_head_net(features)
-        sample.pred_mask_vis_roi = pred_mask_vis_roi.sigmoid()
+        sample.pred_mask_vis_roi = pred_mask_vis_roi  #.sigmoid()
 
         if self.training:
             pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(
@@ -56,8 +62,8 @@ class GDRN(pl.LightningModule):
             )
         else:
             pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(
-                sample.pred_coord_3d_roi * sample.pred_mask_vis_roi.round(),
-                sample.coord_2d_roi, sample.pred_mask_vis_roi.round()
+                sample.pred_coord_3d_roi * (sample.pred_mask_vis_roi > .5),
+                sample.coord_2d_roi, (sample.pred_mask_vis_roi > .5).to(dtype=sample.pred_mask_vis_roi.dtype)
             )
         pred_cam_R_m2c_allo = pytorch3d.transforms.rotation_6d_to_matrix(pred_cam_R_m2c_6d)
         if self.training:
@@ -103,7 +109,7 @@ class GDRN(pl.LightningModule):
             {'params': self.texture_net_p.parameters(), 'lr': 1e-5, 'name': 'texture_p'},
         ]
         optimizer = torch.optim.Adam(params)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=.1)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=.1)
         return [optimizer], [scheduler]
 
     def _log_sample_visualizations(self, sample: Sample) -> None:
