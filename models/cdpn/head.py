@@ -19,7 +19,7 @@ class Head(nn.Module):
         self.conv = nn.Sequential(*conv)
 
         self.fc = nn.Sequential(
-            nn.Linear(256 * 8 * 8, 4096),
+            nn.Linear(num_filters * 8 * 8, 4096),
             nn.LeakyReLU(.1, inplace=True),
             nn.Linear(4096, 4096),
             nn.LeakyReLU(.1, inplace=True),
@@ -41,6 +41,6 @@ class Head(nn.Module):
 
     def forward(self, x):
         x = self.conv(x)
-        x = x.view(-1, 256 * 8 * 8)
+        x = x.flatten(1)
         x = self.fc(x)
         return x

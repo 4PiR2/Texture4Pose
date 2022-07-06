@@ -4,9 +4,7 @@ import pytorch3d.transforms
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT, STEP_OUTPUT
 import torch
-from torch import nn
 from torch.utils.tensorboard import SummaryWriter
-import torchvision
 import torchvision.transforms as T
 import torchvision.transforms.functional as vF
 
@@ -14,11 +12,10 @@ from dataloader.obj_mesh import ObjMesh
 from dataloader.sample import Sample
 from models.eval.loss import Loss
 from models.eval.score import Score
-from models.gdr.backbone import ResnetBackbone
+from models.resnet_backbone import ResnetBackbone
 from models.gdr.conv_pnp_net import ConvPnPNet
 from models.gdr.rot_head import RotWithRegionHead
 from models.texture_net_p import TextureNetP
-from models.texture_net_v import TextureNetV
 from renderer.scene import Scene
 import utils.image_2d
 import utils.transform_3d

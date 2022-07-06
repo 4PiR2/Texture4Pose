@@ -3,6 +3,11 @@ from pytorch3d.ops.subdivide_meshes import SubdivideMeshes
 from pytorch3d.structures.meshes import Meshes
 
 
+# sphere: #verts[i] = 10 * 4 ** i + 2, #faces[i] = 5 * 4 ** (i + 1)
+# cube: #verts[i] = 6 * 4 ** i + 2, #faces[i] = 3 * 4 ** (i + 1)
+# tetrahedron: #verts[i] = 2 * 4 ** i + 2, #faces[i] = 4 ** (i + 1)
+
+
 def _get_mesh(verts0, faces0, level: int = 0, device: torch.device = None):
     if level < 0:
         raise ValueError('level must be >= 0.')

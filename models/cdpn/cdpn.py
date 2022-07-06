@@ -9,10 +9,10 @@ import torchvision.transforms as T
 
 from dataloader.obj_mesh import ObjMesh
 from dataloader.sample import Sample
-from models.cdpn.backbone import ResnetBackbone
 from models.cdpn.head import Head
 from models.eval.loss import Loss
 from models.eval.score import Score
+from models.resnet_backbone import ResnetBackbone
 from models.texture_net_v import TextureNetV
 from models.texture_net_p import TextureNetP
 from renderer.scene import Scene
@@ -25,24 +25,30 @@ class CDPN(pl.LightningModule):
         super().__init__()
         self.transform = T.Compose([T.ColorJitter(**cfg.augmentation)])
         self.texture_net_v = None  # TextureNet(objects)
-        self.texture_net_p = TextureNetP(in_channels=6, out_channels=3, n_layers=3, hidden_size=128)
-        self.rotation_backbone = ResnetBackbone(in_channels=3+2)
-        # self.translation_backbone = ResnetBackbone(in_channels=3+2)
-        self.rotation_head = Head(512, num_layers=3, num_filters=256, kernel_size=3, output_dim=6+3)
-        # self.translation_head = Head(512, num_layers=3, num_filters=256, kernel_size=3, output_dim=3)
-        self.loss = Loss(objects_eval if objects_eval is not None else objects)
+        # self.texture_net_p = TextureNetP(in_channels=6, out_channels=3, n_layers=3, hidden_size=128)
+        self.rotation_backbone = ResnetBackbone(in_channels=45)
+        self.rotation_head = Head(512, num_layers=0, num_filters=512, kernel_size=3, output_dim=6+3)
+        self.loss = Loss(objects_eval if objects_eval is not None else objects, geo=False)
         self.score = Score(objects_eval if objects_eval is not None else objects)
 
     def forward(self, sample: Sample):
-        gt_texel_roi = self.texture_net_p(torch.cat([sample.gt_coord_3d_roi, sample.gt_normal_roi], dim=1))
-        sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
-        sample.img_roi = self.transform(sample.img_roi)
-        input_features = torch.cat([sample.img_roi, sample.coord_2d_roi], dim=1)
+        gt_position_info_roi = torch.cat([
+            sample.gt_coord_3d_roi,
+            sample.gt_normal_roi,
+        ], dim=1)
+        gt_position_info_roi = torch.cat([sample.gt_mask_vis_roi, sample.coord_2d_roi, gt_position_info_roi] +
+            [(gt_position_info_roi * i).sin() for i in [1, 2, 4, 8, 16, 32]], dim=1)
+        sample.img_roi = gt_position_info_roi[:, -6:-3]
+
+        # gt_texel_roi = self.texture_net_p(torch.cat([sample.gt_coord_3d_roi, sample.gt_normal_roi], dim=1))
+        # sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
+        # sample.img_roi = self.transform(sample.img_roi)
+        # input_features = torch.cat([sample.img_roi, sample.coord_2d_roi], dim=1)
 
         # translation_features = self.translation_backbone(input_features)
         # sample.pred_cam_t_m2c_site = self.translation_head(translation_features)
 
-        rotation_features = self.rotation_backbone(input_features)
+        rotation_features = self.rotation_backbone(gt_position_info_roi)
         pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.rotation_head(rotation_features).split([6, 3], dim=1)
         pred_cam_R_m2c_allo = pytorch3d.transforms.rotation_6d_to_matrix(pred_cam_R_m2c_6d)
         if self.training:
@@ -50,7 +56,6 @@ class CDPN(pl.LightningModule):
         else:
             rot_allo2ego = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c)
         sample.pred_cam_R_m2c = rot_allo2ego @ pred_cam_R_m2c_allo
-
         # sample.visualize(max_samples=4)
         return sample
 
@@ -87,9 +92,9 @@ class CDPN(pl.LightningModule):
             {'params': self.rotation_head.parameters(), 'lr': 1e-4, 'name': 'rotation_head'},
             # {'params': self.translation_head.parameters(), 'lr': 1e-4, 'name': 'translation_head'},
             # {'params': self.texture_net_v.parameters(), 'lr': 1e-4, 'name': 'texture_net_v'},
-            {'params': self.texture_net_p.parameters(), 'lr': 1e-4, 'name': 'texture_net_p'},
+            # {'params': self.texture_net_p.parameters(), 'lr': 1e-4, 'name': 'texture_net_p'},
         ]
-        optimizer = torch.optim.RMSprop(params)
+        optimizer = torch.optim.Adam(params)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=.1)
         return [optimizer], [scheduler]
 
@@ -110,8 +115,8 @@ class CDPN(pl.LightningModule):
         # writer.add_text('translation_backbone', str(self.translation_backbone), global_step=0)
         writer.add_text('rotation_head', str(self.rotation_head), global_step=0)
         # writer.add_text('translation_head', str(self.translation_head), global_step=0)
-        writer.add_text('texture_net_v', str(self.texture_net_v), global_step=0)
-        writer.add_text('texture_net_p', str(self.texture_net_p), global_step=0)
+        # writer.add_text('texture_net_v', str(self.texture_net_v), global_step=0)
+        # writer.add_text('texture_net_p', str(self.texture_net_p), global_step=0)
         self.on_validation_start()
 
     def on_validation_start(self):

@@ -19,4 +19,6 @@ class ResnetBackbone(nn.Module):
         self.backbone.fc = nn.Sequential()
 
     def forward(self, x):
-        return self.backbone.forward(x).view(-1, 512, 8, 8)
+        x = self.backbone(x)
+        size = int((x.shape[-1] // 512) ** .5)
+        return x.view(-1, 512, size, size)
