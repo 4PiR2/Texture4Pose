@@ -9,7 +9,7 @@ dataset = dict(
     scene_mode=False,
     num_obj=2,
     repeated_sample_obj=True,
-    occlusion_size_max=-1.,
+    occlusion_size_max=.5,
 )
 
 dataloader = dict(

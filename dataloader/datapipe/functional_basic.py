@@ -239,29 +239,36 @@ class _(SampleMapperIDP):
 @functional_datapipe('rand_occlude')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, occlusion_size_min: float = .125, occlusion_size_max: float = .5,
-                 min_occlusion_vis_ratio: float = .5):
+                 num_occlusion_per_obj: int = 2, min_occlusion_vis_ratio: float = .5, batch_occlusion: int = None):
         super().__init__(src_dp, [sf.gt_mask_vis_roi], [sf.gt_mask_vis_roi])
         # rectangular occlusion
         self._occlusion_size_min: float = occlusion_size_min
         self._occlusion_size_max: float = occlusion_size_max
+        self._num_occlusion_per_obj: int = num_occlusion_per_obj
         self._min_occlusion_vis_ratio: float = min_occlusion_vis_ratio
+        self._B: int = batch_occlusion
 
     def main(self, gt_mask_vis_roi: torch.Tensor):
         if self._occlusion_size_max <= 0.:
             return gt_mask_vis_roi
         N, _, H, W = gt_mask_vis_roi.shape
-        vis_count = gt_mask_vis_roi.sum(dim=[-3, -2, -1])
-        while True:
-            gt_mask_vis_roi_occ = gt_mask_vis_roi.clone()
-            wh = torch.rand(N, 2) * (self._occlusion_size_max - self._occlusion_size_min) + self._occlusion_size_min
-            x0y0 = torch.rand(N, 2) * (1. - wh)
-            x0y0wh = (torch.cat([x0y0, wh], dim=-1) * torch.tensor([W, H] * 2)).round().int()
-            for i in range(N):
-                x0, y0, w, h = x0y0wh[i]
-                gt_mask_vis_roi_occ[i, :, y0:y0 + h, x0:x0 + w] = 0
-            vis_ratio = gt_mask_vis_roi_occ.sum(dim=[-3, -2, -1]) / vis_count
-            if (vis_ratio > self._min_occlusion_vis_ratio).all():
-                break
+        vis_count = gt_mask_vis_roi.bool().sum(dim=[-3, -2, -1])
+        gt_mask_vis_roi_occ = torch.empty_like(gt_mask_vis_roi)
+        B = self._B if self._B else N
+        for i in range(0, N, B):
+            while True:
+                gt_mask_vis_roi_occ[i:i + B] = gt_mask_vis_roi[i:i + B]
+                for _ in range(self._num_occlusion_per_obj):
+                    wh = torch.rand(B, 2) * (self._occlusion_size_max - self._occlusion_size_min) \
+                         + self._occlusion_size_min
+                    x0y0 = torch.rand(B, 2) * (1. - wh)
+                    x0y0wh = (torch.cat([x0y0, wh], dim=-1) * torch.tensor([W, H] * 2)).round().int()
+                    for j in range(B):
+                        x0, y0, w, h = x0y0wh[j]
+                        gt_mask_vis_roi_occ[i + j, :, y0:y0 + h, x0:x0 + w] = 0
+                vis_ratio = gt_mask_vis_roi_occ[i:i + B].bool().sum(dim=[-3, -2, -1]) / vis_count[i:i + B]
+                if (vis_ratio > self._min_occlusion_vis_ratio).all():
+                    break
         return gt_mask_vis_roi_occ
 
 

@@ -27,7 +27,7 @@ class GDRN(pl.LightningModule):
         super().__init__()
         self.transform = T.Compose([T.ColorJitter(**cfg.augmentation)])
         self.texture_net_v = None  # TextureNetV(objects)
-        self.texture_net_p = TextureNetP(in_channels=42, out_channels=3, n_layers=3, hidden_size=128)
+        self.texture_net_p = TextureNetP(in_channels=6+36+36, out_channels=3, n_layers=3, hidden_size=128)
         self.backbone = ResnetBackbone(in_channels=3)
         self.rot_head_net = RotWithRegionHead(512, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
         self.pnp_net = ConvPnPNet(in_channels=6)
@@ -35,13 +35,26 @@ class GDRN(pl.LightningModule):
         self.loss = Loss(objects_eval if objects_eval is not None else objects)
         self.score = Score(objects_eval if objects_eval is not None else objects)
 
+    def configure_optimizers(self):
+        params = [
+            {'params': self.backbone.parameters(), 'lr': 1e-5, 'name': 'backbone'},
+            {'params': self.rot_head_net.parameters(), 'lr': 1e-5, 'name': 'rot_head'},
+            {'params': self.pnp_net.parameters(), 'lr': 1e-5, 'name': 'pnp'},
+            {'params': self.texture_net_p.parameters(), 'lr': 1e-6, 'name': 'texture_p'},
+        ]
+        optimizer = torch.optim.Adam(params)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=.1)
+        return [optimizer], [scheduler]
+
     def forward(self, sample: Sample):
         gt_position_info_roi = torch.cat([
-            sample.gt_coord_3d_roi,
+            sample.gt_coord_3d_roi_normalized,
             sample.gt_normal_roi,
         ], dim=1)
-        gt_position_info_roi = torch.cat([gt_position_info_roi] +
-            [(gt_position_info_roi * i).sin() for i in [1, 2, 4, 8, 16, 32]], dim=1)
+        gt_position_info_roi = torch.cat([gt_position_info_roi] \
+            + [x.sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32]]] \
+            + [x.cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32]]],
+        dim=1)
         gt_texel_roi = self.texture_net_p(gt_position_info_roi)
         sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
         sample.img_roi = self.transform(sample.img_roi)
@@ -97,17 +110,6 @@ class GDRN(pl.LightningModule):
         for i in range(len(keys)):
             self.log(keys[i], {f'%{int((q[j] * 100.).round())}': float(quantiles[i, j]) for j in range(len(q))})
         self.log('val_metric', metrics[2].mean())  # mean add score, for model selection
-
-    def configure_optimizers(self):
-        params = [
-            {'params': self.backbone.parameters(), 'lr': 1e-5, 'name': 'backbone'},
-            {'params': self.rot_head_net.parameters(), 'lr': 1e-5, 'name': 'rot_head'},
-            {'params': self.pnp_net.parameters(), 'lr': 1e-5, 'name': 'pnp'},
-            {'params': self.texture_net_p.parameters(), 'lr': 1e-6, 'name': 'texture_p'},
-        ]
-        optimizer = torch.optim.Adam(params)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=.1)
-        return [optimizer], [scheduler]
 
     def _log_sample_visualizations(self, sample: Sample) -> None:
         writer: SummaryWriter = self.logger.experiment
