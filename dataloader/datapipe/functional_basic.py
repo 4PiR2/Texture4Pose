@@ -13,6 +13,7 @@ from dataloader.obj_mesh import ObjMesh, RegularMesh
 from dataloader.datapipe.helper import SampleMapperIDP, SampleFiltererIDP
 from dataloader.sample import SampleFields as sf
 from renderer.scene import Scene, NHWKC_to_NCHW, NCHW_to_NHWKC
+import utils.color
 import utils.io
 import utils.image_2d
 import utils.transform_3d
@@ -266,11 +267,11 @@ class _(SampleMapperIDP):
 
 @functional_datapipe('rand_lights')
 class _(SampleMapperIDP):
-    def __init__(self, src_dp: SampleMapperIDP, light_color_range=(0., 1.), light_ambient_range=(.5, 1.),
+    def __init__(self, src_dp: SampleMapperIDP, light_max_saturation=1., light_ambient_range=(.5, 1.),
                  light_diffuse_range=(0., .3), light_specular_range=(0., .2), light_shininess_range=(40, 80), ):
         super().__init__(src_dp, [sf.cam_K, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c], [sf.o_scene],
                          required_attributes=['scene_mode'])
-        self._light_color_range: tuple[float, float] = light_color_range  # \in [0., 1.]
+        self._light_max_saturation: float = light_max_saturation  # \in [0., 1.]
         self._light_ambient_range: tuple[float, float] = light_ambient_range  # \in [0., 1.]
         self._light_diffuse_range: tuple[float, float] = light_diffuse_range  # \in [0., 1.]
         self._light_specular_range: tuple[float, float] = light_specular_range  # \in [0., 1.]
@@ -280,8 +281,7 @@ class _(SampleMapperIDP):
         o_scene = Scene(cam_K, gt_cam_R_m2c, gt_cam_t_m2c)
         N = len(gt_cam_R_m2c)
         B = 1 if self.scene_mode else N
-        light_color = torch.rand(B, 3) * (self._light_color_range[1] - self._light_color_range[0]) \
-                      + self._light_color_range[0]
+        light_color = utils.color.random_color_v_eq_1(B, self._light_max_saturation)
 
         def get_light(intensity_range) -> torch.Tensor:
             light_intensity = torch.rand(B, 1) * (intensity_range[1] - intensity_range[0]) + intensity_range[0]

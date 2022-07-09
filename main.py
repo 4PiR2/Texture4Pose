@@ -60,7 +60,7 @@ def main():
 
     datamodule = LitDataModule(cfg)
 
-    model = DRN(cfg, datamodule.dataset.objects, datamodule.dataset.objects_eval)
+    model = GDRN(cfg, datamodule.dataset.objects, datamodule.dataset.objects_eval)
 
     # state_dict = torch.load('outputs/lightning_logs/version_34/checkpoints/epoch=0037-val_metric=0.0432.ckpt')['state_dict']
     # state_dict2 = {}
@@ -78,8 +78,8 @@ def main():
     #     ckpt_path, cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
 
     model = model.to(cfg.device, dtype=cfg.dtype)
-    # trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
-    trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
+    trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
+    # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
 
 if __name__ == '__main__':

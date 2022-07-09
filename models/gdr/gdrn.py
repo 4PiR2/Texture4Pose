@@ -4,6 +4,7 @@ import pytorch3d.transforms
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT, STEP_OUTPUT
 import torch
+from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as T
 import torchvision.transforms.functional as vF
@@ -49,7 +50,6 @@ class GDRN(pl.LightningModule):
         sample.gt_mask_vis_roi = vF.resize(sample.gt_mask_vis_roi, [64])
 
         features = self.backbone(sample.img_roi)
-        features = features.view(-1, 512, 8, 8)
         pred_mask_vis_roi, sample.pred_coord_3d_roi_normalized = self.rot_head_net(features)
         sample.pred_mask_vis_roi = pred_mask_vis_roi  #.sigmoid()
 
@@ -103,10 +103,10 @@ class GDRN(pl.LightningModule):
             {'params': self.backbone.parameters(), 'lr': 1e-5, 'name': 'backbone'},
             {'params': self.rot_head_net.parameters(), 'lr': 1e-5, 'name': 'rot_head'},
             {'params': self.pnp_net.parameters(), 'lr': 1e-5, 'name': 'pnp'},
-            {'params': self.texture_net_p.parameters(), 'lr': 1e-5, 'name': 'texture_p'},
+            {'params': self.texture_net_p.parameters(), 'lr': 1e-6, 'name': 'texture_p'},
         ]
         optimizer = torch.optim.Adam(params)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=.1)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=.1)
         return [optimizer], [scheduler]
 
     def _log_sample_visualizations(self, sample: Sample) -> None:
@@ -122,11 +122,12 @@ class GDRN(pl.LightningModule):
 
     def on_train_start(self):
         writer: SummaryWriter = self.logger.experiment
-        writer.add_text('backbone', str(self.backbone), global_step=0)
-        writer.add_text('rot_head_net', str(self.rot_head_net), global_step=0)
-        writer.add_text('pnp_net', str(self.pnp_net), global_step=0)
-        writer.add_text('texture_net_p', str(self.texture_net_p), global_step=0)
-        # writer.add_text('texture_net_v', str(self.texture_net_v), global_step=0)
+        for key in dir(self):
+            if key.startswith('_'):
+                continue
+            value = getattr(self, key)
+            if isinstance(value, nn.Module):
+                writer.add_text(key, str(value), global_step=0)
         self.on_validation_start()
 
     def on_validation_start(self):

@@ -24,7 +24,7 @@ def random_pose_obj_dp(
     path=None, obj_list=None, dtype=cc.dtype, device=cc.device, scene_mode=True,
     bg_img_path=None, img_render_size=512, crop_out_size=256, cam_K=cc.lm_cam_K,
     random_t_depth_range=(.5, 1.2), vis_ratio_filter_threshold=.5, max_dzi_ratio=.25,
-    bbox_zoom_out_ratio=1.5, light_color_range=(1., 1.), light_ambient_range=(.5, 1.),
+    bbox_zoom_out_ratio=1.5, light_max_saturation=1., light_ambient_range=(.5, 1.),
     light_diffuse_range=(0., .3), light_specular_range=(0., .2), light_shininess_range=(40, 80),
     num_obj=None, repeated_sample_obj=False, occlusion_size_min=.125, occlusion_size_max=.5,
     min_occlusion_vis_ratio=.5, **kwargs,
@@ -44,7 +44,7 @@ def random_pose_obj_dp(
     dp = dp.crop_roi_basic(out_size=crop_out_size)
     dp = dp.rand_occlude(occlusion_size_min=occlusion_size_min, occlusion_size_max=occlusion_size_max,
                          min_occlusion_vis_ratio=min_occlusion_vis_ratio)
-    dp = dp.rand_lights(light_color_range=light_color_range, light_ambient_range=light_ambient_range,
+    dp = dp.rand_lights(light_max_saturation=light_max_saturation, light_ambient_range=light_ambient_range,
                         light_diffuse_range=light_diffuse_range,
                         light_specular_range=light_specular_range, light_shininess_range=light_shininess_range)
     dp = dp.apply_lighting(batch_lighting=1)
@@ -62,7 +62,7 @@ def rendered_pose_bop_obj_dp(
     path=None, obj_list=None, transform=None, dtype=cc.dtype, device=cc.device, scene_mode=True,
     crop_out_size=64,
     vis_ratio_filter_threshold=.5, max_dzi_ratio=.25,
-    bbox_zoom_out_ratio=1.5, light_color_range=(1., 1.), light_ambient_range=(.5, 1.),
+    bbox_zoom_out_ratio=1.5, light_max_saturation=1., light_ambient_range=(.5, 1.),
     light_diffuse_range=(0., .3), light_specular_range=(0., .2), light_shininess_range=(40, 80), **kwargs,
 ):
     dp = SampleSource(dtype=dtype, device=device, scene_mode=scene_mode, img_render_size=640)
@@ -76,7 +76,7 @@ def rendered_pose_bop_obj_dp(
     dp = dp.gen_bbox()
     dp = dp.dzi_bbox(max_dzi_ratio=max_dzi_ratio, bbox_zoom_out_ratio=bbox_zoom_out_ratio)
     dp = dp.crop_roi_basic(out_size=crop_out_size)
-    dp = dp.rand_lights(light_color_range=light_color_range, light_ambient_range=light_ambient_range,
+    dp = dp.rand_lights(light_color_range=light_max_saturation, light_ambient_range=light_ambient_range,
                         light_diffuse_range=light_diffuse_range,
                         light_specular_range=light_specular_range, light_shininess_range=light_shininess_range)
     dp = dp.apply_lighting(batch_lighting=1)
