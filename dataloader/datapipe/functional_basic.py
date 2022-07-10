@@ -72,10 +72,10 @@ class _(SampleFiltererIDP):
         return selected
 
 
-@functional_datapipe('rand_gt_poses')
+@functional_datapipe('rand_gt_translation')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, random_t_depth_range: tuple[int, int] = (.5, 1.2), cuboid: bool = True):
-        super().__init__(src_dp, [sf.obj_id, sf.cam_K], [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c],
+        super().__init__(src_dp, [sf.obj_id, sf.cam_K], [sf.gt_cam_t_m2c],
                          required_attributes=['objects', 'scene_mode', 'img_render_size'])
         self._random_t_depth_range: tuple[int, int] = random_t_depth_range
         self._cuboid: bool = cuboid
@@ -85,26 +85,50 @@ class _(SampleMapperIDP):
         dtype = cam_K.dtype
         device = cam_K.device
         radii = torch.tensor([self.objects[int(oid)].radius for oid in obj_id], dtype=dtype, device=device)  # [N]
-        centers = torch.stack([self.objects[int(oid)].center for oid in obj_id], dim=0)  # [N, 3(XYZ)]
-        box2d_min = torch.linalg.inv(cam_K)[..., -1]  # [N, 3(XY1)], inv(K) @ [0., 0., 1.].T
-        box2d_max = torch.linalg.solve(cam_K, torch.tensor([[self.img_render_size], [self.img_render_size], [1.]],
-                                                           dtype=dtype, device=device))[
-            ..., 0]  # [N, 3(XY1)], inv(K) @ [W, H, 1.].T
-        t_depth_min, t_depth_max = self._random_t_depth_range
-        box3d_size = (box2d_max - box2d_min) * t_depth_min - radii[:, None] * 2.  # [N, 3(XYZ)]
-        box3d_size[..., -1] += t_depth_max - t_depth_min
-        box3d_min = box2d_min * t_depth_min - centers + radii[:, None]  # [N, 3(XYZ)]
 
         if self.scene_mode:
             triu_indices = torch.triu_indices(N, N, 1)
             mdist = (radii + radii[..., None])[triu_indices[0], triu_indices[1]]
 
-        while True:
-            gt_cam_t_m2c = torch.rand((N, 3), dtype=dtype, device=device) * box3d_size + box3d_min
-            if not self.scene_mode or (F.pdist(gt_cam_t_m2c) >= mdist).all():
-                break
-        gt_cam_R_m2c = pytorch3d.transforms.random_rotations(N, dtype=dtype, device=device)  # [N, 3, 3]
-        return gt_cam_R_m2c, gt_cam_t_m2c
+        box2d_min = torch.linalg.inv(cam_K)[..., -1]  # [N, 3(XY1)], inv(K) @ [0., 0., 1.].T
+        box2d_max = torch.linalg.solve(cam_K, torch.tensor([[self.img_render_size], [self.img_render_size], [1.]],
+            dtype=dtype, device=device))[..., 0]  # [N, 3(XY1)], inv(K) @ [W, H, 1.].T
+        t_depth_min, t_depth_max = self._random_t_depth_range
+        if self._cuboid:
+            centers = torch.stack([self.objects[int(oid)].center for oid in obj_id], dim=0)  # [N, 3(XYZ)]
+            box3d_size = (box2d_max - box2d_min) * t_depth_min - radii[..., None] * 2.  # [N, 3(XYZ)]
+            box3d_size[..., -1] += t_depth_max - t_depth_min
+            box3d_min = box2d_min * t_depth_min - centers + radii[..., None]  # [N, 3(XYZ)]
+            while True:
+                gt_cam_t_m2c = torch.rand((N, 3), dtype=dtype, device=device) * box3d_size + box3d_min
+                if not self.scene_mode or (F.pdist(gt_cam_t_m2c) >= mdist).all():
+                    break
+        else:
+            box2d = torch.cat([box2d_min[..., :-1], box2d_max[..., :-1]], dim=-1)
+            while True:
+                tz = torch.rand(N, 1, dtype=dtype, device=device)  # [N, 1]
+                tz = (tz * t_depth_max ** 3 + (1. - tz) * t_depth_min ** 3) ** (1. / 3.)  # uniform
+                dist_depth = torch.stack([tz[..., -1] - t_depth_min, t_depth_max - tz[..., -1]], dim=-1)  # [N, 2]
+                if (dist_depth < radii[..., None]).any():
+                    continue
+                txy = torch.rand(N, 2, dtype=dtype, device=device) * self.img_render_size  # [N, 2]
+                gt_cam_t_m2c = torch.linalg.solve(cam_K,
+                    torch.cat([txy, torch.ones_like(txy[..., :1])], dim=-1)[..., None])[..., 0] * tz  # [N, 3]
+                dist_box2d = (box2d * gt_cam_t_m2c[..., -1:] - gt_cam_t_m2c[..., :-1].repeat(1, 2)).abs() \
+                             / (box2d ** 2 + 1.) ** .5  # [N, 4]
+                if (dist_box2d >= radii[..., None]).all() and \
+                        (not self.scene_mode or (F.pdist(gt_cam_t_m2c) >= mdist).all()):
+                    break
+        return gt_cam_t_m2c
+
+
+@functional_datapipe('rand_gt_rotation')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP):
+        super().__init__(src_dp, [sf.N], [sf.gt_cam_R_m2c], required_attributes=['dtype', 'device'])
+
+    def main(self, N: int):
+        return pytorch3d.transforms.random_rotations(N, dtype=self.dtype, device=self.device)  # [N, 3, 3]
 
 
 @functional_datapipe('render_scene')

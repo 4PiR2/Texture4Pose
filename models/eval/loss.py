@@ -82,6 +82,7 @@ class Loss(nn.Module):
         :param pred_cam_t_m2c_site: [N, 3]
         :return: [N]
         """
+        # TODO https://pytorch.org/docs/stable/generated/torch.nn.SmoothL1Loss.html https://pytorch.org/docs/stable/generated/torch.nn.HuberLoss.html
         return torch.abs(gt_cam_t_m2c_site[:, 2] - pred_cam_t_m2c_site[:, 2])
 
     def coord_3d_loss(self, gt_coord_3d_roi_normalized: torch.Tensor, gt_mask_vis_roi:torch.Tensor,
