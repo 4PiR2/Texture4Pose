@@ -6,8 +6,8 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor, ModelCheckpoint
 
 import config.const as cc
-# from dataloader.pose_dataset import BOPObjDataset, RenderedPoseBOPObjDataset
 from dataloader.data_module import LitDataModule
+from dataloader.pose_dataset import rendered_pose_bop_obj_dp
 from dataloader.sample import Sample
 from models.cdpn.cdpn import CDPN
 from models.cdpn.cdpn2 import CDPN2

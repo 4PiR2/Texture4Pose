@@ -164,7 +164,7 @@ class _(SampleMapperIDP):
 @functional_datapipe('compute_vis_ratio')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
-        super().__init__(src_dp, [sf.gt_mask_vis, sf.gt_mask_obj], [sf.gt_vis_ratio], [sf.gt_mask_obj],
+        super().__init__(src_dp, [sf.gt_mask_vis, sf.gt_mask_obj], [sf.gt_vis_ratio],  # [sf.gt_mask_obj],
                          required_attributes=['dtype', 'scene_mode'])
 
     def main(self, gt_mask_vis: torch.Tensor, gt_mask_obj: torch.Tensor):
@@ -234,13 +234,13 @@ class _(SampleMapperIDP):
 @functional_datapipe('crop_roi_basic')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, out_size: Union[list[int], int], delete_original: bool = True):
-        fields = [sf.gt_mask_vis, sf.gt_coord_3d, sf.gt_normal, sf.gt_texel]
+        fields = [sf.gt_mask_vis, sf.gt_coord_3d, sf.gt_normal, sf.gt_texel, sf.gt_mask_obj]
         super().__init__(src_dp, [sf.bbox] + fields, [f'{field}_roi' for field in fields],
                          fields if delete_original else [], required_attributes=['scene_mode'])
         self._out_size: Union[list[int], int] = out_size
 
     def main(self, bbox: torch.Tensor, gt_mask_vis: torch.Tensor, gt_coord_3d: torch.Tensor, gt_normal: torch.Tensor,
-             gt_texel: torch.Tensor):
+             gt_texel: torch.Tensor, gt_mask_obj: torch.Tensor):
         crop_size = utils.image_2d.get_dzi_crop_size(bbox)
         crop = lambda img, mode: utils.image_2d.crop_roi(img, bbox, crop_size, self._out_size, mode)
 
@@ -251,13 +251,11 @@ class _(SampleMapperIDP):
             gt_mask_vis = (gt_mask_vis * torch.arange(1, len(gt_mask_vis) + 1, dtype=torch.uint8,
                                                       device=gt_mask_vis.device)[:, None, None, None]).sum(dim=0)[None]
 
-        if gt_texel is not None:
-            gt_coord_3d_roi, gt_normal_roi, gt_texel_roi = crop([gt_coord_3d, gt_normal, gt_texel], 'bilinear')
-        else:
-            gt_coord_3d_roi, gt_normal_roi = crop([gt_coord_3d, gt_normal], 'bilinear')
-            gt_texel_roi = None
         gt_mask_vis_roi = crop(gt_mask_vis, 'nearest')
-        return gt_mask_vis_roi, gt_coord_3d_roi, gt_normal_roi, gt_texel_roi
+        gt_coord_3d_roi, gt_normal_roi = crop([gt_coord_3d, gt_normal], 'bilinear')
+        gt_texel_roi = crop(gt_texel, 'bilinear') if gt_texel is not None else None
+        gt_mask_obj_roi = crop(gt_mask_obj, 'nearest') if gt_mask_obj is not None else None
+        return gt_mask_vis_roi, gt_coord_3d_roi, gt_normal_roi, gt_texel_roi, gt_mask_obj_roi
 
 
 @functional_datapipe('rand_occlude')

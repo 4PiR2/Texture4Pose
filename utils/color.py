@@ -120,29 +120,29 @@ def random_color_v_eq_1(N: int, max_saturation: float = 1.) -> torch.Tensor:
     return hsv2rgb_torch(hsv[..., None, None])[..., 0, 0]  # [N, 3]
 
 
-if __name__ == '__main__':
-    import cv2
-    import matplotlib.pyplot as plt
-    from torchvision.transforms import ToTensor
-
-    im_size = 16
-    for r in torch.linspace(0., 1., 5 + 1):
-        im = random_color_v_eq_1(im_size ** 2, r).reshape(im_size, im_size, 3)
-        plt.imshow(im)
-        plt.title(f'{r}')
-        plt.show()
-
-    img = cv2.imread('data/BOP/lm/test/000001/rgb/000001.png')
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img_tensor = ToTensor()(img).unsqueeze(0)
-    assert img_tensor.dim() == 4 and img_tensor.shape[1] == 3, 'tensor shape should be like B x 3 x H x W'
-    hsv_tensor = rgb2hsv_torch(img_tensor)
-    hsvback = hsv2rgb_torch(hsv_tensor)
-    hsl_tensor = rgb2hsl_torch(img_tensor)
-    hslback = hsl2rgb_torch(hsl_tensor)
-
-    fig, axes = plt.subplots(1, 3)
-    axes[0].imshow(img_tensor[0].permute(1, 2, 0).numpy())
-    axes[1].imshow(hsvback[0].permute(1, 2, 0).numpy())
-    axes[2].imshow(hslback[0].permute(1, 2, 0).numpy())
-    plt.show()
+# if __name__ == '__main__':
+#     import cv2
+#     import matplotlib.pyplot as plt
+#     from torchvision.transforms import ToTensor
+#
+#     im_size = 16
+#     for r in torch.linspace(0., 1., 5 + 1):
+#         im = random_color_v_eq_1(im_size ** 2, r).reshape(im_size, im_size, 3)
+#         plt.imshow(im)
+#         plt.title(f'{r}')
+#         plt.show()
+#
+#     img = cv2.imread('data/BOP/lm/test/000001/rgb/000001.png')
+#     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+#     img_tensor = ToTensor()(img).unsqueeze(0)
+#     assert img_tensor.dim() == 4 and img_tensor.shape[1] == 3, 'tensor shape should be like B x 3 x H x W'
+#     hsv_tensor = rgb2hsv_torch(img_tensor)
+#     hsvback = hsv2rgb_torch(hsv_tensor)
+#     hsl_tensor = rgb2hsl_torch(img_tensor)
+#     hslback = hsl2rgb_torch(hsl_tensor)
+#
+#     fig, axes = plt.subplots(1, 3)
+#     axes[0].imshow(img_tensor[0].permute(1, 2, 0).numpy())
+#     axes[1].imshow(hsvback[0].permute(1, 2, 0).numpy())
+#     axes[2].imshow(hslback[0].permute(1, 2, 0).numpy())
+#     plt.show()

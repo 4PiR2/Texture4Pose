@@ -58,9 +58,9 @@ class GDRN(pl.LightningModule):
         gt_texel_roi = self.texture_net_p(gt_position_info_roi)
         sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
         sample.img_roi = self.transform(sample.img_roi)
-        sample.gt_coord_3d_roi = vF.resize(sample.gt_coord_3d_roi * sample.gt_mask_vis_roi, [64])
+        sample.gt_mask_vis_roi = vF.resize(sample.gt_mask_obj_roi, [64])  # mask: vis changed to obj
+        sample.gt_coord_3d_roi = vF.resize(sample.gt_coord_3d_roi, [64]) * sample.gt_mask_vis_roi
         sample.coord_2d_roi = vF.resize(sample.coord_2d_roi, [64])
-        sample.gt_mask_vis_roi = vF.resize(sample.gt_mask_vis_roi, [64])
 
         features = self.backbone(sample.img_roi)
         pred_mask_vis_roi, sample.pred_coord_3d_roi_normalized = self.rot_head_net(features)

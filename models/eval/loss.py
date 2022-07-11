@@ -30,8 +30,9 @@ class Loss(nn.Module):
                 pred_cam_t_m2c_site = sample.get(sf.pred_cam_t_m2c_site)
 
             pm_loss = self.pm_loss(obj_id, gt_cam_R_m2c, pred_cam_R_m2c, div_diameter=True)
-            t_site_center_loss = self.t_site_center_loss(gt_cam_t_m2c_site, pred_cam_t_m2c_site)
-            t_site_depth_loss = self.t_site_depth_loss(gt_cam_t_m2c_site, pred_cam_t_m2c_site)
+            t_site_center_loss = self.t_site_center_loss(gt_cam_t_m2c_site, pred_cam_t_m2c_site, loss_mode='L1')
+            t_site_depth_loss = self.t_site_depth_loss(gt_cam_t_m2c_site, pred_cam_t_m2c_site, loss_mode='L1',
+                                                       div_diameter=False, obj_id=obj_id)
             losses += [pm_loss, t_site_center_loss, t_site_depth_loss]
 
         if self.geo:
@@ -70,20 +71,44 @@ class Loss(nn.Module):
                 loss[i] /= obj.diameter
         return loss
 
-    def t_site_center_loss(self, gt_cam_t_m2c_site: torch.Tensor, pred_cam_t_m2c_site: torch.Tensor) -> torch.Tensor:
+    def t_site_center_loss(self, gt_cam_t_m2c_site: torch.Tensor, pred_cam_t_m2c_site: torch.Tensor,
+                           loss_mode: str = 'L1') -> torch.Tensor:
         """
         :param pred_cam_t_m2c_site: [N, 3]
         :return: [N]
         """
-        return torch.linalg.vector_norm(gt_cam_t_m2c_site[:, :2] - pred_cam_t_m2c_site[:, :2], ord=1, dim=-1)
+        loss = torch.linalg.vector_norm(pred_cam_t_m2c_site[:, :2] - gt_cam_t_m2c_site[:, :2], ord=1, dim=-1)
+        if loss_mode == 'L1':
+            pass
+        elif loss_mode == 'SL1':
+            loss = F.smooth_l1_loss(loss, torch.zeros_like(loss), reduction='none', beta=1e-2)
+        elif loss_mode == 'Huber':
+            loss = F.huber_loss(loss, torch.zeros_like(loss), reduction='none', delta=1.)
+        else:
+            raise NotImplementedError
+        return loss
 
-    def t_site_depth_loss(self, gt_cam_t_m2c_site: torch.Tensor, pred_cam_t_m2c_site: torch.Tensor) -> torch.Tensor:
+    def t_site_depth_loss(self, gt_cam_t_m2c_site: torch.Tensor, pred_cam_t_m2c_site: torch.Tensor,
+                          loss_mode: str = 'L1', div_diameter: bool = True, obj_id: torch.Tensor = None) \
+            -> torch.Tensor:
         """
         :param pred_cam_t_m2c_site: [N, 3]
         :return: [N]
         """
-        # TODO https://pytorch.org/docs/stable/generated/torch.nn.SmoothL1Loss.html https://pytorch.org/docs/stable/generated/torch.nn.HuberLoss.html
-        return torch.abs(gt_cam_t_m2c_site[:, 2] - pred_cam_t_m2c_site[:, 2])
+        loss = torch.abs(pred_cam_t_m2c_site[:, 2] - gt_cam_t_m2c_site[:, 2])
+        if div_diameter:
+            for i in range(len(loss)):
+                obj = self.objects_eval[int(obj_id[i])]
+                loss[i] /= obj.diameter
+        if loss_mode == 'L1':
+            pass
+        elif loss_mode == 'SL1':
+            loss = F.smooth_l1_loss(loss, torch.zeros_like(loss), reduction='none', beta=1e-2)
+        elif loss_mode == 'Huber':
+            loss = F.huber_loss(loss, torch.zeros_like(loss), reduction='none', delta=1.)
+        else:
+            raise NotImplementedError
+        return loss
 
     def coord_3d_loss(self, gt_coord_3d_roi_normalized: torch.Tensor, gt_mask_vis_roi:torch.Tensor,
                       pred_coord_3d_roi_normalized: torch.Tensor) -> torch.Tensor:
