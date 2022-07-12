@@ -61,7 +61,7 @@ def random_scene_any_obj_dp(
 
 
 def rendered_scene_bop_obj_dp(
-    path=None, obj_list=None, transform=None, dtype=cc.dtype, device=cc.device, scene_mode=True,
+    path=None, obj_list=None, dtype=cc.dtype, device=cc.device, scene_mode=True,
     crop_out_size=64,
     vis_ratio_filter_threshold=.5, max_dzi_ratio=.25,
     bbox_zoom_out_ratio=1.5, light_max_saturation=1., light_ambient_range=(.5, 1.),
@@ -74,12 +74,12 @@ def rendered_scene_bop_obj_dp(
     dp = dp.set_camera()
     dp = dp.set_bg()
     dp = dp.set_mesh_info()
-    dp = dp.remove_item_id()
     dp = dp.render_scene()
     dp = dp.gen_mask()
-    dp = dp.compute_vis_ratio()
+    dp = dp.set_mask(bitwise_and_with_existing=True)
+    dp = dp.set_bbox()
+    dp = dp.remove_item_id()
     dp = dp.filter_vis_ratio(vis_ratio_filter_threshold=vis_ratio_filter_threshold)
-    dp = dp.gen_bbox()
     dp = dp.dzi_bbox(max_dzi_ratio=0., bbox_zoom_out_ratio=bbox_zoom_out_ratio)
     dp = dp.crop_roi_basic(out_size=crop_out_size)
     dp = dp.rand_lights(light_max_saturation=0., light_ambient_range=(1., 1.),
@@ -96,7 +96,7 @@ def rendered_scene_bop_obj_dp(
 
 
 def bop_scene_bop_obj_dp(
-    path=None, obj_list=None, transform=None, dtype=cc.dtype, device=cc.device, scene_mode=True,
+    path=None, obj_list=None, dtype=cc.dtype, device=cc.device, scene_mode=True,
     crop_out_size=64,
     vis_ratio_filter_threshold=.5, max_dzi_ratio=.25,
     bbox_zoom_out_ratio=1.5, **kwargs,
@@ -111,11 +111,11 @@ def bop_scene_bop_obj_dp(
     dp = dp.set_depth()
     dp = dp.set_mask()
     dp = dp.set_bbox()
-    dp = dp.dzi_bbox(max_dzi_ratio=0., bbox_zoom_out_ratio=bbox_zoom_out_ratio)
     dp = dp.remove_item_id()
+    dp = dp.filter_vis_ratio(vis_ratio_filter_threshold=vis_ratio_filter_threshold)
+    dp = dp.dzi_bbox(max_dzi_ratio=0., bbox_zoom_out_ratio=bbox_zoom_out_ratio)
     dp = dp.gen_coord_2d(width=640, height=480)
     dp = dp.crop_roi_bop(out_size=crop_out_size)
-    dp = dp.filter_vis_ratio(vis_ratio_filter_threshold=vis_ratio_filter_threshold)
     dp = dp.set_coord_3d()
     # dp = dp.augment_img(transform=transform)
     return dp

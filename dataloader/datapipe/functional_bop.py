@@ -69,7 +69,7 @@ def init_objects(src_dp: IterDataPipe[Sample], obj_list: Union[dict[int, str], l
 @functional_datapipe('load_bop_scene')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
-        super().__init__(src_dp, [], ['item'], required_attributes=['objects', 'path'])
+        super().__init__(src_dp, [], [sf.o_item], required_attributes=['objects', 'path'])
         lmo_mode = 'lmo' in self.path
         path = os.path.join(self.path, 'test_all')
         self.scene_camera: list[dict[str, Any]] = []
@@ -104,11 +104,11 @@ class _(SampleMapperIDP):
 @functional_datapipe('set_pose')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
-        super().__init__(src_dp, ['item'], [sf.obj_id, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c],
+        super().__init__(src_dp, [sf.o_item], [sf.obj_id, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c],
                          required_attributes=['dtype', 'device', 'scene_gt'])
 
-    def main(self, item: int):
-        scene_gt = torch.utils.data.dataloader.default_collate(self.scene_gt[item])
+    def main(self, o_item: int):
+        scene_gt = torch.utils.data.dataloader.default_collate(self.scene_gt[o_item])
         obj_id = scene_gt['obj_id'].to(self.device, dtype=torch.uint8)
         gt_cam_R_m2c = torch.stack(scene_gt['cam_R_m2c'], dim=-1).to(self.device, dtype=self.dtype).reshape(-1, 3, 3)
         gt_cam_t_m2c = torch.stack(scene_gt['cam_t_m2c'], dim=-1).to(self.device, dtype=self.dtype) * BOPMesh.scale
@@ -118,10 +118,10 @@ class _(SampleMapperIDP):
 @functional_datapipe('set_camera')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
-        super().__init__(src_dp, ['item', sf.N], [sf.cam_K], required_attributes=['scene_camera'])
+        super().__init__(src_dp, [sf.N, sf.o_item], [sf.cam_K], required_attributes=['scene_camera'])
 
-    def main(self, item: int, N: int):
-        cam_K = torch.tensor(self.scene_camera[item]['cam_K'], device=self.device)
+    def main(self, N: int, o_item: int):
+        cam_K = torch.tensor(self.scene_camera[o_item]['cam_K'], device=self.device)
         cam_K = utils.transform_3d.normalize_cam_K(cam_K.reshape(3, 3)).expand(N, -1, -1)
         return cam_K
 
@@ -129,11 +129,11 @@ class _(SampleMapperIDP):
 @functional_datapipe('set_bg')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
-        super().__init__(src_dp, ['item', sf.N], [sf.gt_bg],
+        super().__init__(src_dp, [sf.N, sf.o_item], [sf.gt_bg],
                          required_attributes=['dtype', 'device', 'data_path', 'scene_id'])
 
-    def main(self, item: int, N: int):
-        img_path = os.path.join(self.data_path[item], 'rgb/{:0>6d}.png'.format(self.scene_id[item]))
+    def main(self, N: int, o_item: int):
+        img_path = os.path.join(self.data_path[o_item], 'rgb/{:0>6d}.png'.format(self.scene_id[o_item]))
         gt_bg = utils.io.read_img_file(img_path, dtype=self.dtype, device=self.device).expand(N, -1, -1, -1)
         return gt_bg
 
@@ -141,57 +141,63 @@ class _(SampleMapperIDP):
 @functional_datapipe('remove_item_id')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
-        super().__init__(src_dp, [], ['item'])
+        super().__init__(src_dp, [], [sf.o_item])
 
 
 @functional_datapipe('set_depth')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
-        super().__init__(src_dp, ['item', sf.N], [sf.gt_coord_3d],
+        super().__init__(src_dp, [sf.N, sf.o_item], [sf.gt_coord_3d],
                          required_attributes=['dtype', 'device', 'data_path', 'scene_id', 'scene_camera'])
 
-    def main(self, item: int, N: int):
-        depth_path = os.path.join(self.data_path[item], 'depth/{:0>6d}.png'.format(self.scene_id[item]))
+    def main(self, N: int, o_item: int):
+        depth_path = os.path.join(self.data_path[o_item], 'depth/{:0>6d}.png'.format(self.scene_id[o_item]))
         gt_depth = utils.io.read_depth_img_file(depth_path, dtype=self.dtype, device=self.device)  # [1, 1, H, W]
-        gt_depth *= self.scene_camera[item]['depth_scale'] * BOPMesh.scale
+        gt_depth *= self.scene_camera[o_item]['depth_scale'] * BOPMesh.scale
         return gt_depth.expand(N, -1, -1, -1)
 
 
 @functional_datapipe('set_mask')
 class _(SampleMapperIDP):
-    def __init__(self, src_dp: SampleMapperIDP):
-        super().__init__(src_dp, ['item', sf.N], [sf.gt_mask_vis, sf.gt_mask_obj],
+    def __init__(self, src_dp: SampleMapperIDP, bitwise_and_with_existing: bool = False):
+        super().__init__(src_dp, [sf.N, sf.o_item, sf.gt_mask_vis, sf.gt_mask_obj] if bitwise_and_with_existing else
+                         [sf.N, sf.o_item], [sf.gt_mask_vis, sf.gt_mask_obj],
                          required_attributes=['dtype', 'device', 'data_path', 'scene_id'])
 
-    def main(self, item: int, N: int):
-        data_path = self.data_path[item]
-        scene_id = self.scene_id[item]
-        gt_mask_vis = []
-        gt_mask_obj = []
+    def main(self, N: int, o_item: int, gt_mask_vis: torch.Tensor = None, gt_mask_obj: torch.Tensor = None):
+        data_path = self.data_path[o_item]
+        scene_id = self.scene_id[o_item]
+        gt_mask_vis_list = []
+        gt_mask_obj_list = []
         for i in range(N):
             mask_vis_path = os.path.join(data_path, 'mask_visib/{:0>6d}_{:0>6d}.png'.format(scene_id, i))
-            gt_mask_vis.append(utils.io.read_depth_img_file(mask_vis_path, dtype=self.dtype, device=self.device))
+            gt_mask_vis_list.append(utils.io.read_depth_img_file(mask_vis_path, dtype=self.dtype, device=self.device))
             mask_obj_path = os.path.join(data_path, 'mask/{:0>6d}_{:0>6d}.png'.format(scene_id, i))
-            gt_mask_obj.append(utils.io.read_depth_img_file(mask_obj_path, dtype=self.dtype, device=self.device))
-        gt_mask_vis = torch.cat(gt_mask_vis, dim=0).bool()
-        gt_mask_obj = torch.cat(gt_mask_obj, dim=0).bool()
-        # gt_mask = gt_mask_obj.any(dim=0)[None]
-        return gt_mask_vis, gt_mask_obj
+            gt_mask_obj_list.append(utils.io.read_depth_img_file(mask_obj_path, dtype=self.dtype, device=self.device))
+        gt_mask_vis_bop = torch.cat(gt_mask_vis_list, dim=0).bool()
+        gt_mask_obj_bop = torch.cat(gt_mask_obj_list, dim=0).bool()
+        H, W = gt_mask_vis_bop.shape[-2:]
+        if gt_mask_vis is not None:
+            gt_mask_vis_bop &= gt_mask_vis[..., :H, :W]
+        if gt_mask_obj is not None:
+            gt_mask_obj_bop &= gt_mask_obj[..., :H, :W]
+        # gt_mask = gt_mask_obj_bop.any(dim=0)[None]
+        return gt_mask_vis_bop, gt_mask_obj_bop
 
 
 @functional_datapipe('set_bbox')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
-        super().__init__(src_dp, ['item', sf.N], [sf.gt_bbox_vis, sf.gt_vis_ratio],
+        super().__init__(src_dp, [sf.N, sf.o_item], [sf.gt_bbox_vis, sf.gt_vis_ratio],
                          required_attributes=['dtype', 'device', 'scene_gt_info'])
 
-    def main(self, item: int, N: int):
+    def main(self, N: int, o_item: int):
         def cvt_bbox(tensor_list_4):
             bbox = torch.stack(tensor_list_4, dim=-1).to(self.device, dtype=self.dtype)
             bbox[:, :2] += bbox[:, 2:] * .5
             return bbox
 
-        scene_gt_info = torch.utils.data.dataloader.default_collate(self.scene_gt_info[item])
+        scene_gt_info = torch.utils.data.dataloader.default_collate(self.scene_gt_info[o_item])
         gt_bbox_vis = cvt_bbox(scene_gt_info['bbox_visib'])
         # gt_bbox_obj = cvt_bbox(scene_gt_info['bbox_obj'])
         gt_vis_ratio = scene_gt_info['visib_fract'].to(self.device, dtype=self.dtype)
@@ -233,5 +239,4 @@ class _(SampleMapperIDP):
         depth_img = torch.cat([coord_2d_roi * gt_coord_3d_roi, gt_coord_3d_roi], dim=1)  # [N, 3(XYZ), H, W]
         gt_coord_3d_roi = (gt_cam_R_m2c.transpose(-2, -1) @ (depth_img.reshape(N, 3, -1) - gt_cam_t_m2c[..., None])) \
                               .reshape(-1, 3, H, W) * depth_mask
-
         return gt_coord_3d_roi
