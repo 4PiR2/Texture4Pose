@@ -15,11 +15,12 @@ dataset = dict(
     light_shininess_range=(40, 80),
     num_obj=None,
     repeated_sample_obj=False,
-    path=None,
+    path='data/BOP/lm',
     occlusion_size_min=.125,
     occlusion_size_max=.5,
     num_occlusion_per_obj=4,
-    min_occlusion_vis_ratio=.25
+    min_occlusion_vis_ratio=.25,
+    bop_scene=False,
 )
 
 augmentation = dict(  # torchvision.transforms.ColorJitter

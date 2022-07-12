@@ -27,6 +27,7 @@ class GDRN(pl.LightningModule):
         super().__init__()
         self.transform = T.Compose([T.ColorJitter(**cfg.augmentation)])
         self.texture_net_v = None  # TextureNetV(objects)
+        # self.texture_net_p = None
         self.texture_net_p = TextureNetP(in_channels=6+36+36, out_channels=3, n_layers=3, hidden_size=128)
         self.backbone = ResnetBackbone(in_channels=3)
         self.rot_head_net = RotWithRegionHead(512, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
@@ -43,7 +44,7 @@ class GDRN(pl.LightningModule):
             {'params': self.texture_net_p.parameters(), 'lr': 1e-6, 'name': 'texture_p'},
         ]
         optimizer = torch.optim.Adam(params)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=.1)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=.1)
         return [optimizer], [scheduler]
 
     def forward(self, sample: Sample):
@@ -55,7 +56,7 @@ class GDRN(pl.LightningModule):
             + [x.sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32]]] \
             + [x.cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32]]],
         dim=1)
-        gt_texel_roi = self.texture_net_p(gt_position_info_roi)
+        gt_texel_roi = self.texture_net_p(gt_position_info_roi) if self.texture_net_p is not None else 1.
         sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
         sample.img_roi = self.transform(sample.img_roi)
         sample.gt_mask_vis_roi = vF.resize(sample.gt_mask_obj_roi, [64])  # mask: vis changed to obj
@@ -134,6 +135,7 @@ class GDRN(pl.LightningModule):
 
     def on_validation_start(self):
         Scene.texture_net_v = self.texture_net_v
+        Scene.texture_net_p = self.texture_net_p
 
     def on_test_start(self):
         self.on_validation_start()

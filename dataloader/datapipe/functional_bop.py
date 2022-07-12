@@ -60,7 +60,8 @@ def init_objects(src_dp: IterDataPipe[Sample], obj_list: Union[dict[int, str], l
             else:
                 obj_list_regular.append(k)
     dp = src_dp.init_regular_objects(obj_list_regular)
-    if path is not None:
+    if obj_list_bop:
+        assert path is not None
         dp = dp.init_bop_objects(obj_list_bop, path)
     return dp
 
@@ -91,7 +92,7 @@ class _(SampleMapperIDP):
             self._data_path += [dir_path] * len(dir_scene_gt)
             dir_scene_gt_info = utils.io.read_json_file(os.path.join(dir_path, 'scene_gt_info.json'))
             self._scene_gt_info += [dir_scene_gt_info[key] for key in dir_scene_gt_info]
-        self._iterator = iter(range(len(self._scene_id)))
+        self._iterator = iter(range(self.len))
 
     def main(self):
         item = next(self._iterator)
@@ -104,3 +105,7 @@ class _(SampleMapperIDP):
         img_path = os.path.join(self._data_path[item], 'rgb/{:0>6d}.png'.format(self._scene_id[item]))
         gt_bg = utils.io.read_img_file(img_path, dtype=self.dtype, device=self.device).expand(len(obj_id), -1, -1, -1)
         return cam_K, obj_id, gt_cam_R_m2c, gt_cam_t_m2c, gt_bg
+
+    @property
+    def len(self) -> int:
+        return len(self._scene_id)

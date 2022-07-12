@@ -55,7 +55,7 @@ def main():
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
     # ckpt_path = 'outputs/lightning_logs/version_26/checkpoints/epoch=0048-val_metric=0.0550.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_38/checkpoints/epoch=0057-val_metric=0.1678.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_48/checkpoints/epoch=0081-val_metric=0.1408.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)
@@ -78,8 +78,8 @@ def main():
     #     ckpt_path, cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
 
     model = model.to(cfg.device, dtype=cfg.dtype)
-    trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
-    # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
+    # trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
+    trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
 
 if __name__ == '__main__':

@@ -76,11 +76,11 @@ def rendered_pose_bop_obj_dp(
     dp = dp.compute_vis_ratio()
     dp = dp.filter_vis_ratio(vis_ratio_filter_threshold=vis_ratio_filter_threshold)
     dp = dp.gen_bbox()
-    dp = dp.dzi_bbox(max_dzi_ratio=max_dzi_ratio, bbox_zoom_out_ratio=bbox_zoom_out_ratio)
+    dp = dp.dzi_bbox(max_dzi_ratio=0., bbox_zoom_out_ratio=bbox_zoom_out_ratio)
     dp = dp.crop_roi_basic(out_size=crop_out_size)
-    dp = dp.rand_lights(light_max_saturation=light_max_saturation, light_ambient_range=light_ambient_range,
-                        light_diffuse_range=light_diffuse_range,
-                        light_specular_range=light_specular_range, light_shininess_range=light_shininess_range)
+    dp = dp.rand_lights(light_max_saturation=0., light_ambient_range=(1., 1.),
+                        light_diffuse_range=(0., 0.),
+                        light_specular_range=(0., 0.), light_shininess_range=(40, 40))
     dp = dp.apply_lighting(batch_lighting=1)
     dp = dp.crop_roi_bg(out_size=crop_out_size)
     dp = dp.apply_bg()  # convert mask_vis back to bool

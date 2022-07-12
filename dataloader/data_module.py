@@ -12,16 +12,22 @@ class LitDataModule(pl.LightningDataModule):
         super().__init__()
         self.cfg: Config = cfg
         self.batch_size: int = self.cfg.dataloader.batch_size
-        self.train_epoch_len: int = self.cfg.dataloader.train_epoch_len
-        self.val_epoch_len: int = self.cfg.dataloader.val_epoch_len
-
-        self.dataset: torch.utils.data.IterableDataset = random_pose_obj_dp(
-            dtype=self.cfg.dtype, device=self.cfg.device,
-            crop_out_size=self.cfg.model.img_input_size,
-            # img_input_size=self.cfg.model.img_input_size,
-            # pnp_input_size=self.cfg.model.pnp_input_size,
-            **self.cfg.dataset
-        )
+        if not cfg.dataset.bop_scene:
+            self.dataset: torch.utils.data.IterableDataset = random_pose_obj_dp(
+                dtype=self.cfg.dtype, device=self.cfg.device,
+                crop_out_size=self.cfg.model.img_input_size,
+                **self.cfg.dataset
+            )
+            self.train_epoch_len: int = self.cfg.dataloader.train_epoch_len
+            self.val_epoch_len: int = self.cfg.dataloader.val_epoch_len
+        else:
+            self.dataset: torch.utils.data.IterableDataset = rendered_pose_bop_obj_dp(
+                dtype=self.cfg.dtype, device=self.cfg.device,
+                crop_out_size=self.cfg.model.img_input_size,
+                **self.cfg.dataset
+            )
+            self.train_epoch_len: int = getattr(self.dataset, 'len')
+            self.val_epoch_len: int = self.train_epoch_len
 
     def setup(self, stage: str = None):
         pass
