@@ -2,7 +2,8 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader
 
-from dataloader.pose_dataset import DatasetWrapper, random_pose_obj_dp, rendered_pose_bop_obj_dp
+from dataloader.pose_dataset import DatasetWrapper, random_scene_any_obj_dp, rendered_scene_bop_obj_dp, \
+    bop_scene_bop_obj_dp
 from dataloader.sample import Sample
 from utils.config import Config
 
@@ -13,7 +14,7 @@ class LitDataModule(pl.LightningDataModule):
         self.cfg: Config = cfg
         self.batch_size: int = self.cfg.dataloader.batch_size
         if not cfg.dataset.bop_scene:
-            self.dataset: torch.utils.data.IterableDataset = random_pose_obj_dp(
+            self.dataset: torch.utils.data.IterableDataset = random_scene_any_obj_dp(
                 dtype=self.cfg.dtype, device=self.cfg.device,
                 crop_out_size=self.cfg.model.img_input_size,
                 **self.cfg.dataset
@@ -21,7 +22,7 @@ class LitDataModule(pl.LightningDataModule):
             self.train_epoch_len: int = self.cfg.dataloader.train_epoch_len
             self.val_epoch_len: int = self.cfg.dataloader.val_epoch_len
         else:
-            self.dataset: torch.utils.data.IterableDataset = rendered_pose_bop_obj_dp(
+            self.dataset: torch.utils.data.IterableDataset = rendered_scene_bop_obj_dp(
                 dtype=self.cfg.dtype, device=self.cfg.device,
                 crop_out_size=self.cfg.model.img_input_size,
                 **self.cfg.dataset

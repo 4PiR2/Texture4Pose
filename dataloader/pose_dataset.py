@@ -20,7 +20,7 @@ class DatasetWrapper(torch.utils.data.Dataset):
         return self.dataset_iter.__next__()
 
 
-def random_pose_obj_dp(
+def random_scene_any_obj_dp(
     path=None, obj_list=None, dtype=cc.dtype, device=cc.device, scene_mode=True,
     bg_img_path=None, img_render_size=512, crop_out_size=256, cam_K=cc.lm_cam_K,
     random_t_depth_range=(.5, 1.2), vis_ratio_filter_threshold=.5, max_dzi_ratio=.25,
@@ -31,8 +31,8 @@ def random_pose_obj_dp(
 ):
     dp = SampleSource(dtype=dtype, device=device, scene_mode=scene_mode, img_render_size=img_render_size)
     dp = dataloader.datapipe.functional_bop.init_objects(dp, obj_list=obj_list, path=path)
-    dp = dp.set_mesh_infos()
-    dp = dp.set_static_cameras(cam_K=cam_K)
+    dp = dp.set_mesh_info()
+    dp = dp.set_static_camera(cam_K=cam_K)
     dp = dp.rand_select_objs(num_obj=num_obj, repeated_sample_obj=repeated_sample_obj)
     dp = dp.rand_gt_translation(random_t_depth_range=random_t_depth_range, cuboid=False)
     dp = dp.rand_gt_rotation()
@@ -60,7 +60,7 @@ def random_pose_obj_dp(
     return dp
 
 
-def rendered_pose_bop_obj_dp(
+def rendered_scene_bop_obj_dp(
     path=None, obj_list=None, transform=None, dtype=cc.dtype, device=cc.device, scene_mode=True,
     crop_out_size=64,
     vis_ratio_filter_threshold=.5, max_dzi_ratio=.25,
@@ -69,8 +69,12 @@ def rendered_pose_bop_obj_dp(
 ):
     dp = SampleSource(dtype=dtype, device=device, scene_mode=scene_mode, img_render_size=640)
     dp = dataloader.datapipe.functional_bop.init_objects(dp, obj_list=obj_list, path=path)
-    dp = dp.bop_scene()
-    dp = dp.set_mesh_infos()
+    dp = dp.load_bop_scene()
+    dp = dp.set_pose()
+    dp = dp.set_camera()
+    dp = dp.set_bg()
+    dp = dp.set_mesh_info()
+    dp = dp.remove_item_id()
     dp = dp.render_scene()
     dp = dp.gen_mask()
     dp = dp.compute_vis_ratio()
@@ -87,5 +91,31 @@ def rendered_pose_bop_obj_dp(
     dp = dp.gen_coord_2d(width=640, height=480)
     dp = dp.crop_coord_2d(out_size=crop_out_size)
     # dp = dp.render_img()
+    # dp = dp.augment_img(transform=transform)
+    return dp
+
+
+def bop_scene_bop_obj_dp(
+    path=None, obj_list=None, transform=None, dtype=cc.dtype, device=cc.device, scene_mode=True,
+    crop_out_size=64,
+    vis_ratio_filter_threshold=.5, max_dzi_ratio=.25,
+    bbox_zoom_out_ratio=1.5, **kwargs,
+):
+    dp = SampleSource(dtype=dtype, device=device, scene_mode=scene_mode, img_render_size=640)
+    dp = dataloader.datapipe.functional_bop.init_objects(dp, obj_list=obj_list, path=path)
+    dp = dp.load_bop_scene()
+    dp = dp.set_pose()
+    dp = dp.set_camera()
+    dp = dp.set_bg()
+    dp = dp.set_mesh_info()
+    dp = dp.set_depth()
+    dp = dp.set_mask()
+    dp = dp.set_bbox()
+    dp = dp.dzi_bbox(max_dzi_ratio=0., bbox_zoom_out_ratio=bbox_zoom_out_ratio)
+    dp = dp.remove_item_id()
+    dp = dp.gen_coord_2d(width=640, height=480)
+    dp = dp.crop_roi_bop(out_size=crop_out_size)
+    dp = dp.filter_vis_ratio(vis_ratio_filter_threshold=vis_ratio_filter_threshold)
+    dp = dp.set_coord_3d()
     # dp = dp.augment_img(transform=transform)
     return dp

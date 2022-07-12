@@ -82,7 +82,7 @@ class SampleMapperIDP(IterDataPipe[Sample]):
 
     def map_fn(self, sample: Sample, *other_data) -> Sample:
         response = self._fn(*other_data, **{req_arg: getattr(sample, req_arg) for req_arg in self._request_args})
-        if len(self._response_args) < 2:
+        if len(self._response_args) == 1:
             response = (response,)
         assert len(self._response_args) == len(response)
         for resp_arg, resp in zip(self._response_args, response):
@@ -95,7 +95,9 @@ class SampleMapperIDP(IterDataPipe[Sample]):
         return sample
 
     def main(self, *args, **kwargs) -> Union[Sequence[torch.Tensor], torch.Tensor, Any]:
-        raise NotImplementedError
+        if args or kwargs:
+            raise NotImplementedError
+        return None
 
     @property
     def valid_args(self) -> set[str]:

@@ -38,7 +38,7 @@ class _(SampleMapperIDP):
         return obj_id
 
 
-@functional_datapipe('set_mesh_infos')
+@functional_datapipe('set_mesh_info')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
         super().__init__(src_dp, [sf.obj_id], [sf.obj_size, sf.obj_diameter], required_attributes=['objects'])
@@ -49,7 +49,7 @@ class _(SampleMapperIDP):
         return obj_size, obj_diameter
 
 
-@functional_datapipe('set_static_cameras')
+@functional_datapipe('set_static_camera')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, cam_K: torch.Tensor = cc.lm_cam_K):
         super().__init__(src_dp, [sf.N], [sf.cam_K], required_attributes=['dtype', 'device'])
@@ -234,15 +234,16 @@ class _(SampleMapperIDP):
 @functional_datapipe('crop_roi_basic')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, out_size: Union[list[int], int], delete_original: bool = True):
-        fields = [sf.gt_mask_vis, sf.gt_coord_3d, sf.gt_normal, sf.gt_texel, sf.gt_mask_obj]
+        fields = [sf.gt_mask_vis, sf.gt_mask_obj, sf.gt_coord_3d, sf.gt_normal, sf.gt_texel]
         super().__init__(src_dp, [sf.bbox] + fields, [f'{field}_roi' for field in fields],
                          fields if delete_original else [], required_attributes=['scene_mode'])
         self._out_size: Union[list[int], int] = out_size
 
-    def main(self, bbox: torch.Tensor, gt_mask_vis: torch.Tensor, gt_coord_3d: torch.Tensor, gt_normal: torch.Tensor,
-             gt_texel: torch.Tensor, gt_mask_obj: torch.Tensor):
+    def main(self, bbox: torch.Tensor, gt_mask_vis: torch.Tensor, gt_mask_obj: torch.Tensor, gt_coord_3d: torch.Tensor,
+             gt_normal: torch.Tensor, gt_texel: torch.Tensor):
         crop_size = utils.image_2d.get_dzi_crop_size(bbox)
-        crop = lambda img, mode: utils.image_2d.crop_roi(img, bbox, crop_size, self._out_size, mode)
+        crop = lambda img, mode: utils.image_2d.crop_roi(img, bbox, crop_size, self._out_size, mode) \
+            if img is not None else None
 
         if self.scene_mode:
             gt_coord_3d = (gt_coord_3d * gt_mask_vis).sum(dim=0)[None]
@@ -252,10 +253,11 @@ class _(SampleMapperIDP):
                                                       device=gt_mask_vis.device)[:, None, None, None]).sum(dim=0)[None]
 
         gt_mask_vis_roi = crop(gt_mask_vis, 'nearest')
-        gt_coord_3d_roi, gt_normal_roi = crop([gt_coord_3d, gt_normal], 'bilinear')
-        gt_texel_roi = crop(gt_texel, 'bilinear') if gt_texel is not None else None
-        gt_mask_obj_roi = crop(gt_mask_obj, 'nearest') if gt_mask_obj is not None else None
-        return gt_mask_vis_roi, gt_coord_3d_roi, gt_normal_roi, gt_texel_roi, gt_mask_obj_roi
+        gt_mask_obj_roi = crop(gt_mask_obj, 'nearest')
+        gt_coord_3d_roi = crop(gt_coord_3d, 'bilinear')
+        gt_normal_roi = crop(gt_normal, 'bilinear')
+        gt_texel_roi = crop(gt_texel, 'bilinear')
+        return gt_mask_vis_roi, gt_mask_obj_roi, gt_coord_3d_roi, gt_normal_roi, gt_texel_roi
 
 
 @functional_datapipe('rand_occlude')
@@ -457,22 +459,23 @@ class _(SampleMapperIDP):
         return crop(coord_2d, 'bilinear')
 
 
-# @functional_datapipe('render_img')
-# class _(SampleMapperIDP):
-#     def __init__(self, src_dp):
-#         super().__init__(src_dp, [sf.gt_light_texel_roi, sf.gt_light_specular_roi], [sf.img_roi])
-#
-#     def main(self, gt_light_texel_roi: torch.Tensor, gt_light_specular_roi: torch.Tensor) -> torch.Tensor:
-#         img = gt_light_texel_roi + gt_light_specular_roi  # [N, 3(RGB), H, W]
-#         return img.clamp(min=0., max=1.)
-#
-# @functional_datapipe('augment_img')
-# class _(SampleMapperIDP):
-#     def __init__(self, src_dp, transform=None):
-#         super().__init__(src_dp, [sf.img_roi], [sf.img_roi])
-#         self._transform = transform
-#
-#     def main(self, img_roi: torch.Tensor) -> torch.Tensor:
-#         if self._transform is not None:
-#             img_roi = self._transform(img_roi)
-#         return img_roi
+@functional_datapipe('render_img')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp):
+        super().__init__(src_dp, [sf.gt_light_texel_roi, sf.gt_light_specular_roi], [sf.img_roi])
+
+    def main(self, gt_light_texel_roi: torch.Tensor, gt_light_specular_roi: torch.Tensor) -> torch.Tensor:
+        img = gt_light_texel_roi + gt_light_specular_roi  # [N, 3(RGB), H, W]
+        return img.clamp(min=0., max=1.)
+
+
+@functional_datapipe('augment_img')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp, transform=None):
+        super().__init__(src_dp, [sf.img_roi], [sf.img_roi])
+        self._transform = transform
+
+    def main(self, img_roi: torch.Tensor) -> torch.Tensor:
+        if self._transform is not None:
+            img_roi = self._transform(img_roi)
+        return img_roi
