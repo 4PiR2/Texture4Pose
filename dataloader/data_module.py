@@ -13,7 +13,7 @@ class LitDataModule(pl.LightningDataModule):
         super().__init__()
         self.cfg: Config = cfg
         self.batch_size: int = self.cfg.dataloader.batch_size
-        if not cfg.dataset.bop_scene:
+        if cfg.dataset.bop_scene == 0:
             self.dataset: torch.utils.data.IterableDataset = random_scene_any_obj_dp(
                 dtype=self.cfg.dtype, device=self.cfg.device,
                 crop_out_size=self.cfg.model.img_input_size,
@@ -22,7 +22,11 @@ class LitDataModule(pl.LightningDataModule):
             self.train_epoch_len: int = self.cfg.dataloader.train_epoch_len
             self.val_epoch_len: int = self.cfg.dataloader.val_epoch_len
         else:
-            self.dataset: torch.utils.data.IterableDataset = rendered_scene_bop_obj_dp(
+            if cfg.dataset.bop_scene == 1:
+                dp = rendered_scene_bop_obj_dp
+            else:
+                dp = bop_scene_bop_obj_dp
+            self.dataset: torch.utils.data.IterableDataset = dp(
                 dtype=self.cfg.dtype, device=self.cfg.device,
                 crop_out_size=self.cfg.model.img_input_size,
                 **self.cfg.dataset

@@ -230,7 +230,7 @@ class Sample:
 
             draw_fields(
                 axs[2, 2], [sf.gt_mask_vis_roi, sf.pred_mask_vis_roi], i, 'diff mask (abs)',
-                lambda gm, pm: (pm - gm.to(dtype=pm.dtype)).abs(),
+                lambda gm, pm: (pm.clamp(0., 1.) - gm.to(dtype=pm.dtype)).abs(),
                 lambda ax, diff: utils.image_2d.draw_ax_diff(ax, diff, thresh_min=1e-4, thresh_max=1., log_mode=True)
             )
 

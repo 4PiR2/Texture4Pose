@@ -465,8 +465,8 @@ class _(SampleMapperIDP):
         super().__init__(src_dp, [sf.gt_light_texel_roi, sf.gt_light_specular_roi], [sf.img_roi])
 
     def main(self, gt_light_texel_roi: torch.Tensor, gt_light_specular_roi: torch.Tensor) -> torch.Tensor:
-        img = gt_light_texel_roi + gt_light_specular_roi  # [N, 3(RGB), H, W]
-        return img.clamp(min=0., max=1.)
+        img_roi = gt_light_texel_roi + gt_light_specular_roi  # [N, 3(RGB), H, W]
+        return img_roi.clamp(min=0., max=1.)
 
 
 @functional_datapipe('augment_img')

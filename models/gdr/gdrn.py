@@ -25,10 +25,15 @@ import utils.transform_3d
 class GDRN(pl.LightningModule):
     def __init__(self, cfg, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
-        self.transform = T.Compose([T.ColorJitter(**cfg.augmentation)])
+        # sigma = .1
+        self.transform = T.Compose([
+            T.ColorJitter(**cfg.augmentation),
+            # T.GaussianBlur(kernel_size=int(3.5 * 4.) * 2 + 1, sigma=(2., 4.)),
+            # T.Lambda(lambda x: (x + sigma * torch.randn_like(x)).clamp(0., 1.)),
+        ])
         self.texture_net_v = None  # TextureNetV(objects)
-        # self.texture_net_p = None
-        self.texture_net_p = TextureNetP(in_channels=6+36+36, out_channels=3, n_layers=3, hidden_size=128)
+        self.texture_net_p = None
+        # self.texture_net_p = TextureNetP(in_channels=6+36+36, out_channels=3, n_layers=3, hidden_size=128)
         self.backbone = ResnetBackbone(in_channels=3)
         self.rot_head_net = RotWithRegionHead(512, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
         self.pnp_net = ConvPnPNet(in_channels=6)
@@ -41,23 +46,24 @@ class GDRN(pl.LightningModule):
             {'params': self.backbone.parameters(), 'lr': 1e-5, 'name': 'backbone'},
             {'params': self.rot_head_net.parameters(), 'lr': 1e-5, 'name': 'rot_head'},
             {'params': self.pnp_net.parameters(), 'lr': 1e-5, 'name': 'pnp'},
-            {'params': self.texture_net_p.parameters(), 'lr': 1e-6, 'name': 'texture_p'},
+            # {'params': self.texture_net_p.parameters(), 'lr': 1e-6, 'name': 'texture_p'},
         ]
         optimizer = torch.optim.Adam(params)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=.1)
         return [optimizer], [scheduler]
 
     def forward(self, sample: Sample):
-        gt_position_info_roi = torch.cat([
-            sample.gt_coord_3d_roi_normalized,
-            sample.gt_normal_roi,
-        ], dim=1)
-        gt_position_info_roi = torch.cat([gt_position_info_roi] \
-            + [x.sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32]]] \
-            + [x.cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32]]],
-        dim=1)
-        gt_texel_roi = self.texture_net_p(gt_position_info_roi) if self.texture_net_p is not None else 1.
-        sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
+        if self.texture_net_p is not None:
+            gt_position_info_roi = torch.cat([
+                sample.gt_coord_3d_roi_normalized,
+                sample.gt_normal_roi,
+            ], dim=1)
+            gt_position_info_roi = torch.cat([gt_position_info_roi] \
+                + [x.sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32]]] \
+                + [x.cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32]]],
+            dim=1)
+            gt_texel_roi = self.texture_net_p(gt_position_info_roi)
+            sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
         sample.img_roi = self.transform(sample.img_roi)
         sample.gt_mask_vis_roi = vF.resize(sample.gt_mask_obj_roi, [64])  # mask: vis changed to obj
         sample.gt_coord_3d_roi = vF.resize(sample.gt_coord_3d_roi, [64]) * sample.gt_mask_vis_roi
@@ -81,7 +87,7 @@ class GDRN(pl.LightningModule):
             sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.gt_cam_t_m2c) @ pred_cam_R_m2c_allo
         else:
             sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c) @ pred_cam_R_m2c_allo
-        if not self.training:
+        if False and not self.training:
             sample.compute_pnp(erode_min=5.)
         # sample.visualize()
         return sample

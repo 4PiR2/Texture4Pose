@@ -7,7 +7,6 @@ from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor, Mo
 
 import config.const as cc
 from dataloader.data_module import LitDataModule
-from dataloader.pose_dataset import rendered_pose_bop_obj_dp
 from dataloader.sample import Sample
 from models.cdpn.cdpn import CDPN
 from models.cdpn.cdpn2 import CDPN2
@@ -55,7 +54,7 @@ def main():
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
     # ckpt_path = 'outputs/lightning_logs/version_26/checkpoints/epoch=0048-val_metric=0.0550.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_48/checkpoints/epoch=0081-val_metric=0.1408.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_56/checkpoints/last.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)

@@ -12,7 +12,7 @@ dataset = dict(
     repeated_sample_obj=True,
     occlusion_size_max=.5,
     path='data/BOP/lm',
-    bop_scene=True,
+    bop_scene=0,  # 0: random, 1: rendered, 2: load from bop
 )
 
 dataloader = dict(

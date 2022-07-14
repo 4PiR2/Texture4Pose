@@ -55,7 +55,7 @@ def random_scene_any_obj_dp(
     dp = dp.apply_bg()  # convert mask_vis back to bool
     dp = dp.gen_coord_2d(width=img_render_size, height=img_render_size)
     dp = dp.crop_coord_2d(out_size=crop_out_size)
-    # dp = dp.render_img()
+    dp = dp.render_img()
     # dp = dp.augment_img(transform=transform)
     return dp
 
@@ -90,7 +90,7 @@ def rendered_scene_bop_obj_dp(
     dp = dp.apply_bg()  # convert mask_vis back to bool
     dp = dp.gen_coord_2d(width=640, height=480)
     dp = dp.crop_coord_2d(out_size=crop_out_size)
-    # dp = dp.render_img()
+    dp = dp.render_img()
     # dp = dp.augment_img(transform=transform)
     return dp
 
