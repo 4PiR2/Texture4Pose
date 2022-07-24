@@ -7,7 +7,6 @@ class ResnetBackbone(nn.Module):
         super().__init__()
         if in_channels == 3:
             self.backbone: torchvision.models.ResNet = torchvision.models.resnet34(pretrained=True)
-            self.backbone.avgpool = nn.Sequential()
         else:
             self.backbone: torchvision.models.ResNet = torchvision.models.resnet34(pretrained=False)
             self.backbone.conv1 = nn.Conv2d(in_channels,
@@ -15,10 +14,23 @@ class ResnetBackbone(nn.Module):
                                             kernel_size=self.backbone.conv1.kernel_size,
                                             stride=self.backbone.conv1.stride, padding=self.backbone.conv1.padding,
                                             bias=self.backbone.conv1.bias is not None)
-        self.backbone.avgpool = nn.Sequential()
         self.backbone.fc = nn.Sequential()
 
     def forward(self, x):
-        x = self.backbone(x)
-        size = int((x.shape[-1] // 512) ** .5)
-        return x.view(-1, 512, size, size)
+        backbone = self.backbone
+
+        x = backbone.conv1(x)
+        x = backbone.bn1(x)
+        x = backbone.relu(x)
+        x = backbone.maxpool(x)
+
+        x = backbone.layer1(x)
+        x = backbone.layer2(x)
+        x = backbone.layer3(x)
+        x = backbone.layer4(x)
+
+        # x = self.avgpool(x)
+        # x = torch.flatten(x, 1)
+        # x = self.fc(x)
+
+        return x

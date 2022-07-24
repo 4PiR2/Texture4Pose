@@ -17,9 +17,9 @@ dataset = dict(
     repeated_sample_obj=False,
     path='data/BOP/lm',
     occlusion_size_min=.125,
-    occlusion_size_max=.5,
-    num_occlusion_per_obj=4,
-    min_occlusion_vis_ratio=.25,
+    occlusion_size_max=.125,
+    num_occlusion_per_obj=10,
+    min_occlusion_vis_ratio=.10,
     bop_scene=False,
 )
 

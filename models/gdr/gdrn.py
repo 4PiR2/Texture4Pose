@@ -25,15 +25,14 @@ import utils.transform_3d
 class GDRN(pl.LightningModule):
     def __init__(self, cfg, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
-        # sigma = .1
         self.transform = T.Compose([
             T.ColorJitter(**cfg.augmentation),
             # T.GaussianBlur(kernel_size=int(3.5 * 4.) * 2 + 1, sigma=(2., 4.)),
-            # T.Lambda(lambda x: (x + sigma * torch.randn_like(x)).clamp(0., 1.)),
+            # T.Lambda(lambda x: (x + 1. * torch.randn_like(x)).clamp(0., 1.)),
         ])
         self.texture_net_v = None  # TextureNetV(objects)
         self.texture_net_p = None
-        # self.texture_net_p = TextureNetP(in_channels=6+36+36, out_channels=3, n_layers=3, hidden_size=128)
+        self.texture_net_p = TextureNetP(in_channels=6+36+36, out_channels=3, n_layers=3, hidden_size=128)
         self.backbone = ResnetBackbone(in_channels=3)
         self.rot_head_net = RotWithRegionHead(512, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
         self.pnp_net = ConvPnPNet(in_channels=6)
@@ -76,6 +75,8 @@ class GDRN(pl.LightningModule):
         if self.training:
             pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(
                 sample.gt_coord_3d_roi, sample.coord_2d_roi, sample.gt_mask_vis_roi
+                # (sample.pred_coord_3d_roi * (sample.pred_mask_vis_roi > .5).detach()), sample.coord_2d_roi,
+                # (sample.pred_mask_vis_roi > .5).to(dtype=sample.pred_mask_vis_roi.dtype).detach()
             )
         else:
             pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(
@@ -85,6 +86,7 @@ class GDRN(pl.LightningModule):
         pred_cam_R_m2c_allo = pytorch3d.transforms.rotation_6d_to_matrix(pred_cam_R_m2c_6d)
         if self.training:
             sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.gt_cam_t_m2c) @ pred_cam_R_m2c_allo
+            # sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c) @ pred_cam_R_m2c_allo
         else:
             sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c) @ pred_cam_R_m2c_allo
         if False and not self.training:
@@ -95,6 +97,7 @@ class GDRN(pl.LightningModule):
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:
         sample = self.forward(sample)
         loss_pm, loss_t_site_center, loss_t_site_depth, loss_coord_3d, loss_mask = self.loss(sample)
+        # loss_mask *= .5
         loss = loss_coord_3d + loss_mask + loss_pm + loss_t_site_center + loss_t_site_depth
         self.log('loss', {'total': loss, 'coord_3d': loss_coord_3d, 'mask': loss_mask, 'pm': loss_pm,
                           'ts_center': loss_t_site_center, 'ts_depth': loss_t_site_depth})
