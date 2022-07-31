@@ -101,6 +101,15 @@ class _(SampleMapperIDP):
         return next(self._iterator)
 
 
+@functional_datapipe('rand_scene_id')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP):
+        super().__init__(src_dp, [], [sf.o_item], required_attributes=['len'])
+
+    def main(self):
+        return int(torch.randint(self.len, [1]))
+
+
 @functional_datapipe('set_pose')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
