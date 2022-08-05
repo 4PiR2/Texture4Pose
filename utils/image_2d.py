@@ -191,6 +191,55 @@ def erode_mask(mask: torch.Tensor, radius_min: float = 0., radius_max: float = t
     return eroded_mask
 
 
+def coarse_dropout(img: torch.Tensor, num_holes: Union[int, tuple[int, int]] = 8,
+                   width: Union[float, tuple[float, float], int, tuple[int, int]] = 8,
+                   height: Union[float, tuple[float, float], int, tuple[int, int]] = None,
+                   fill_value: float = None, inplace: bool = False) -> torch.Tensor:
+    """
+    https://github.com/albumentations-team/albumentations/blob/master/albumentations/augmentations/dropout/coarse_dropout.py#L46
+    :param img: [..., H, W]
+    :param num_holes: (min, max), inclusive
+    :param width: (min, max), float -> ratio, int -> pixels
+    :param height: (min, max), None -> width, float -> ratio, int -> pixels
+    :param fill_value: None -> uniform(0, 1), float -> value
+    :param inplace: bool
+    :return: [..., H, W]
+    """
+    dtype = img.dtype
+    device = img.device
+    H, W = img.shape[-2:]
+
+    if isinstance(num_holes, int):
+        num_holes = (num_holes,)
+    if isinstance(width, (float, int)):
+        width = (width,)
+    if height is None:
+        height = width
+    elif isinstance(height, (float, int)):
+        height = (height,)
+
+    if isinstance(width[0], float):
+        width = (width[0] * W, width[-1] * W)
+    if isinstance(height[0], float):
+        height = (height[0] * H, height[-1] * H)
+
+    n_holes = int(torch.randint(num_holes[0], num_holes[-1] + 1, [1]))
+    xywh = torch.rand(n_holes, 4, dtype=dtype, device=device)  # [n, 4(XYWH)]
+    xywh[:, 0] *= W
+    xywh[:, 1] *= H
+    xywh[:, 2] = xywh[:, 2] * (width[-1] - width[0]) + width[0]
+    xywh[:, 3] = xywh[:, 3] * (height[-1] - height[0]) + height[0]
+    x0y0x1y1 = torch.empty_like(xywh, dtype=torch.int)  # [n, 4(X0Y0X1Y1)]
+    x0y0x1y1[:, :2] = (xywh[:, :2] - xywh[:, 2:] * .5).relu().round()
+    x0y0x1y1[:, 2:] = (xywh[:, :2] + xywh[:, 2:] * .5).round()
+
+    if not inplace:
+        img = img.clone()
+    for x0, y0, x1, y1 in x0y0x1y1:
+        img[..., y0:y1, x0:x1] = torch.rand_like(img[..., y0:y1, x0:y0]) if fill_value is None else fill_value
+    return img
+
+
 def draw_ax(ax: plt.Axes, img_1: torch.Tensor, bg_1: torch.Tensor = None, mask: torch.Tensor = None,
             bboxes: torch.Tensor = None) -> plt.Axes:
     """
