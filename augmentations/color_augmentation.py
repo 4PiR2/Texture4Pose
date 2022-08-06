@@ -3,7 +3,7 @@ import torch
 import utils.color
 
 
-def adapt_background_mean(img: torch.Tensor, mask: torch.Tensor, blend_saturation: float = 1.,
+def match_background_mean(img: torch.Tensor, mask: torch.Tensor, blend_saturation: float = 1.,
                           blend_light: float = 1.) -> torch.Tensor:
     """
 
@@ -27,10 +27,88 @@ def adapt_background_mean(img: torch.Tensor, mask: torch.Tensor, blend_saturatio
     return utils.color.hsl2rgb_torch(img_hsl_obj_adapted)
 
 
-def adapt_background_histogram(img: torch.Tensor, mask: torch.Tensor, blend_saturation: float = 1.,
+def match_cdf(source: torch.Tensor, template: torch.Tensor) -> torch.Tensor:
+    """
+    skimage.exposure.match_histograms
+    skimage.exposure.histogram_matching._match_cumulative_cdf
+    source: [...]
+    template: [...]
+    return: [...]
+    Return modified source array so that the cumulative density function of
+    its values matches the cumulative density function of the template.
+    """
+    src_values, src_unique_indices, src_counts = source.unique(return_inverse=True, return_counts=True)
+    tmpl_values, tmpl_counts = template.unique(return_counts=True)
+
+    # calculate normalized quantiles for each array
+    src_quantiles = src_counts.cumsum(dim=0) / source.numel()
+    tmpl_quantiles = tmpl_counts.cumsum(dim=0) / template.numel()
+
+    def interp(x: torch.Tensor, xp: torch.Tensor, fp: torch.Tensor) -> torch.Tensor:
+        """
+        np.interp
+        :param x: [n], x
+        :param xp: [N], x_ref
+        :param fp: [N], y_ref
+        :return: [n], y
+        """
+        idx_r = torch.searchsorted(xp, x)
+        idx_l = (idx_r - 1).relu()
+        idx_r = idx_r.clamp(max=len(xp) - 1)
+        x_l, x_r = xp[idx_l], xp[idx_r]
+        y_l, y_r = fp[idx_l], fp[idx_r]
+        y = (y_r * (x - x_l) + y_l * (x_r - x)) / (x_r - x_l)
+        m = y.isnan()
+        y[m] = y_l[m]
+        return y
+
+    interp_values = interp(src_quantiles, tmpl_quantiles, tmpl_values)
+    result = interp_values[src_unique_indices].reshape(source.shape)
+
+    def get_pdf(values, counts, bins: int = None):
+        if bins is None:
+            # exact calculation
+            dy = counts / counts.sum()
+            dx = values.diff(prepend=torch.full_like(values[:1], -torch.inf))
+            pdf = dy / dx
+            bin_edges = torch.cat([torch.full_like(values[:1], -torch.inf), values], dim=0)
+        else:
+            # smoothed
+            pdf, bin_edges = values.histogram(bins=bins, weight=counts.to(dtype=values.dtype), density=True)
+        return pdf, bin_edges
+
+    if source.requires_grad or True:
+        n_bins = 100
+        src_hist, src_bin_edges = get_pdf(src_values, src_counts, n_bins)
+        tmpl_hist, tmpl_bin_edges = get_pdf(tmpl_values, tmpl_counts, n_bins)
+        src_pdf = interp(src_values, (src_bin_edges[:-1] + src_bin_edges[1:]) * .5, src_hist)
+        interp_pdf = interp(interp_values, (tmpl_bin_edges[:-1] + tmpl_bin_edges[1:]) * .5, tmpl_hist)
+        derivative = (src_pdf / interp_pdf).clamp(max=100.)  # prevent div 0 error or gradient explosion
+        # import matplotlib.pyplot as plt
+        # plt.plot(src_values.detach().cpu().numpy(), src_quantiles.detach().cpu().numpy(), label='src')
+        # plt.plot(tmpl_values.detach().cpu().numpy(), tmpl_quantiles.detach().cpu().numpy(), label='tmpl')
+        # plt.plot(interp_values.detach().cpu().numpy(), src_quantiles.detach().cpu().numpy(), label='interp')
+        # plt.legend()
+        # plt.show()
+        # plt.plot(src_values.detach().cpu().numpy(), src_pdf.detach().cpu().numpy(), label='src')
+        # plt.plot(src_values.detach().cpu().numpy(), interp_pdf.detach().cpu().numpy())
+        # plt.plot(interp_values.detach().cpu().numpy(), interp_pdf.detach().cpu().numpy(), label='interp')
+        # plt.legend()
+        # plt.show()
+        # plt.plot(src_values.detach().cpu().numpy(), derivative.detach().cpu().numpy())
+        # plt.show()
+        D = derivative[src_unique_indices].reshape(source.shape)
+        result = result.detach() + D.detach() * source - (D * source).detach()
+
+    return result
+
+
+def match_background_histogram(img: torch.Tensor, mask: torch.Tensor, blend_saturation: float = 1.,
                                blend_light: float = 1., p: float = 1.) -> torch.Tensor:
     """
     make the object's histogram the same as background's
+    https://albumentations.ai/docs/api_reference/full_reference/#albumentations.augmentations.domain_adaptation.HistogramMatching
+    https://en.wikipedia.org/wiki/Histogram_equalization
     :param img: [N, 3(RGB), H, W] \in [0, 1]
     :param mask: [N, 1, H, W]
     :param blend_saturation: float, 0. -> keep original, 1. -> fully adapted
@@ -38,21 +116,6 @@ def adapt_background_histogram(img: torch.Tensor, mask: torch.Tensor, blend_satu
     :param p: float
     :return: [N, 3(RGB), H, W] \in [0, 1]
     """
-    N, _, H, W = img.shape
-    img_hsl = utils.color.rgb2hsl_torch(img)  # [N, 3(HSL), H, W]
-
-    def per_channel(img_channel: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """
-        https://en.wikipedia.org/wiki/Histogram_equalization
-        :param img_channel: [H, W]
-        :param mask: [H, W]
-        :return: [H, W]
-        """
-        obj_sort = img_channel[mask].argsort().argsort()
-        cdf_bg, _ = img_channel[~mask].sort()
-        img_channel = img_channel.clone()
-        img_channel[mask] = cdf_bg[(obj_sort * (len(cdf_bg) / len(obj_sort))).long()]
-        return img_channel
 
     def per_image(img_hsl: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
@@ -61,12 +124,24 @@ def adapt_background_histogram(img: torch.Tensor, mask: torch.Tensor, blend_satu
         :param mask: [1, H, W]
         :return: [3(HSL), H, W]
         """
+        def per_channel(img_channel: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+            """
+            :param img_channel: [H, W]
+            :param mask: [H, W]
+            :return: [H, W]
+            """
+            img_channel = img_channel.clone()
+            img_channel[mask] = match_cdf(img_channel[mask], img_channel[~mask])
+            return img_channel
+
         if blend_saturation and torch.rand(1) <= p:
             img_hsl[1] = per_channel(img_hsl[1], mask[0]) * blend_saturation + img_hsl[1] * (1. - blend_saturation)
         if blend_light and torch.rand(1) <= p:
             img_hsl[2] = per_channel(img_hsl[2], mask[0]) * blend_light + img_hsl[2] * (1. - blend_light)
         return img_hsl
 
+    N, _, H, W = img.shape
+    img_hsl = utils.color.rgb2hsl_torch(img)  # [N, 3(HSL), H, W]
     return utils.color.hsl2rgb_torch(torch.stack([per_image(i, m) for i, m in zip(img_hsl, mask)], dim=0))
 
 
@@ -90,3 +165,18 @@ def iso_noise(img: torch.Tensor, color_shift: float = .05, intensity: float = .5
     hue_color_noise = torch.randn_like(img_hsl[:, 2]) * color_shift * intensity  # [N, H, W]
     img_hsl[:, 0] = (img_hsl[:, 0] + hue_color_noise) % 1.
     return utils.color.hsl2rgb_torch(img_hsl)
+
+
+# if __name__ == '__main__':
+#     import utils.io
+#     from utils.image_2d import visualize
+#
+#     im0 = utils.io.read_img_file('/data/coco/train2017/000000000009.jpg')
+#     # im0 = utils.io.read_img_file('/data/lm/test/000001/rgb/000200.png')
+#     im1 = utils.io.read_img_file('/data/lm/train/000001/rgb/000200.png')
+#     mask = utils.io.read_img_file('/data/lm/train/000001/mask_visib/000200_000000.png')[:, :1].bool()
+#     im = im0 * ~mask + im1 * mask
+#     # x = match_background_mean(im, mask, 1., 0.)
+#     x = match_background_histogram(im, mask, 1., 1., 1.)
+#     visualize(im0)
+#     visualize(x)

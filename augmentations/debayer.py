@@ -88,7 +88,7 @@ def _debayer(img_bayer: torch.Tensor) -> torch.Tensor:
 
     # Now we need to get the final image by, for each pixel,
     # select the appropriate channels from dimension 1 of the tensor.
-    return torch.gather(img_convolved, -3, channel_selection_map)  # [N, 3(RGB), H, W]
+    return torch.gather(img_convolved, -3, channel_selection_map).clamp(min=0., max=1.)  # [N, 3(RGB), H, W]
 
 
 def debayer_aug(img: torch.Tensor, permute_channel: bool = True) -> torch.Tensor:

@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import torchvision.transforms as T
+import torchvision.transforms.functional as F
 
 import augmentations.color_augmentation
 import augmentations.debayer
@@ -26,7 +27,7 @@ class GaussNoise(nn.Module):
 
 
 class ColorJitter(nn.Module):
-    def __init__(self, brightness=0, contrast=0, saturation=0, hue=0, p: float = 1.):
+    def __init__(self, brightness=0., contrast=0., saturation=0., hue=0., p: float = 1.):
         super().__init__()
         self.p: float = p
         self.color_jitter = T.ColorJitter(brightness, contrast, saturation, hue)
@@ -51,8 +52,26 @@ class GaussianBlur(nn.Module):
                             if torch.rand(1) <= self.p else xi for xi in x], dim=0)
 
 
+class Sharpen(nn.Module):
+    # https://en.wikipedia.org/wiki/Unsharp_masking
+    # https://github.com/rasmushaugaard/surfemb/blob/53e1852433a3b2b84fedc7a3a01674fe1b6189cc/surfemb/data/tfms.py#L26
+    # factor := strength + 1.
+    def __init__(self, sharpness_factor=(1., 3.), p: float = 1.):
+        super().__init__()
+        self.p: float = p
+        if isinstance(sharpness_factor, float):
+            sharpness_factor = (sharpness_factor,)
+        self.sharpness_min: float = sharpness_factor[0]
+        self.sharpness_max: float = sharpness_factor[-1]
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        factors = torch.rand([len(x)], dtype=x.dtype) * (self.sharpness_max - self.sharpness_min) + self.sharpness_min
+        return torch.stack([F.adjust_sharpness(xi, factor)
+                            if torch.rand(1) <= self.p else xi for xi, factor in zip(x, factors)], dim=0)
+
+
 class CoarseDropout(nn.Module):
-    def __init__(self, num_holes, width, p: float = 1.):
+    def __init__(self, num_holes=10, width=8, p: float = 1.):
         super().__init__()
         self.p = p
         self.fn = lambda x: utils.image_2d.coarse_dropout(x, num_holes, width, fill_value=0., inplace=False)
