@@ -1,3 +1,5 @@
+from typing import Callable, Union
+
 import torch
 from torch import nn
 import torchvision.transforms as T
@@ -8,22 +10,48 @@ import augmentations.debayer
 import utils.image_2d
 
 
-class GaussNoise(nn.Module):
-    def __init__(self, sigma=(0., .1), p: float = 1.):
+class _Base(nn.Module):
+    def __init__(self, fn: Callable = lambda x, *_: x,
+                 *values_range: Union[float, list[float], tuple[float], tuple[float, float]],
+                 per_channel: float = 0., p: float = 1.):
         super().__init__()
+        self.fn: Callable = fn
         self.p: float = p
-        if isinstance(sigma, float):
-            sigma = (sigma,)
-        self.sigma_min: float = sigma[0]
-        self.sigma_max: float = sigma[-1]
+        self.per_channel: float = per_channel
+        self.values_range: list[Union[list[float], tuple[float], tuple[float, float]]] = \
+            [(v,) if isinstance(v, (float, int)) else v for v in values_range]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        N = len(x)
         dtype = x.dtype
         device = x.device
-        sigma = torch.rand(N, dtype=dtype, device=device) * (self.sigma_max - self.sigma_min) + self.sigma_min
-        sigma *= torch.rand(N, dtype=dtype, device=device) <= self.p
-        return (x + sigma[..., None, None, None] * torch.randn_like(x)).clamp(min=0., max=1.)
+        *N, C = x.shape[:-2]
+        values = torch.stack([torch.lerp(
+            torch.tensor(v[0], dtype=dtype, device=device),
+            torch.tensor(v[-1], dtype=dtype, device=device),
+            torch.rand(*N, C, dtype=dtype, device=device),
+        ) for v in self.values_range], dim=0)
+        per_image_mask = torch.rand(*N, dtype=dtype, device=device) > self.per_channel
+        values[:, per_image_mask] = values[:, per_image_mask, :1]
+        values *= torch.rand(*N, 1, dtype=dtype, device=device) <= self.p
+        y = self.fn(x, *values[..., None, None])
+        return y.clamp(min=0., max=1.)
+
+
+class Add(_Base):
+    def __init__(self, value: Union[float, list[float], tuple[float], tuple[float, float]],
+                 per_channel: float = 0., p: float = 1.):
+        super().__init__(lambda x, a: x + a, value, per_channel=per_channel, p=p)
+
+
+class Mult(_Base):
+    def __init__(self, value: Union[float, list[float], tuple[float], tuple[float, float]],
+                 per_channel: float = 0., p: float = 1.):
+        super().__init__(lambda x, a: x * a, value, per_channel=per_channel, p=p)
+
+
+class GaussNoise(_Base):
+    def __init__(self, sigma=(0., .1), p: float = 1.):
+        super().__init__(lambda x, s: x + s * torch.randn_like(x), sigma, per_channel=0., p=p)
 
 
 class ColorJitter(nn.Module):
@@ -101,3 +129,10 @@ class Debayer(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.cat([augmentations.debayer.debayer_aug(xi, self.permute_channel)
                           if torch.rand(1) <= self.p else xi for xi in x.split(1)], dim=0)
+
+
+# if __name__ == '__main__':
+#     aug = Add((-20., 20.), per_channel=.5, p=.5)
+#     x = torch.rand(4, 5, 6, 7)
+#     y = aug(x)
+#     a = 0

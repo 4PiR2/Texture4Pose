@@ -9,6 +9,8 @@ from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as T
 import torchvision.transforms.functional as vF
 
+import augmentations.color_augmentation
+import augmentations.wrapper as A
 from dataloader.obj_mesh import ObjMesh
 from dataloader.sample import Sample
 from models.eval.loss import Loss
@@ -18,6 +20,7 @@ from models.gdr.conv_pnp_net import ConvPnPNet
 from models.gdr.rot_head import RotWithRegionHead
 from models.texture_net_p import TextureNetP
 from renderer.scene import Scene
+import utils.color
 import utils.image_2d
 import utils.transform_3d
 
@@ -26,15 +29,23 @@ class GDRN(pl.LightningModule):
     def __init__(self, cfg, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
         self.transform = T.Compose([
-            T.ColorJitter(**cfg.augmentation),
-            # T.GaussianBlur(kernel_size=int(3.5 * 4.) * 2 + 1, sigma=(2., 4.)),
-            # T.Lambda(lambda x: (x + 1. * torch.randn_like(x)).clamp(0., 1.)),
+            A.CoarseDropout(num_holes=10, width=8, p=.5),
+            A.Debayer(permute_channel=True, p=.5),
+            A.GaussianBlur(sigma=(1., 3.), p=.5),
+            A.Sharpen(sharpness_factor=(1., 3.), p=.5),
+            A.ISONoise(color_shift=.05, intensity=.1, p=.5),
+            A.GaussNoise(sigma=.1, p=.5),
+            A.ColorJitter(**cfg.augmentation, p=.5),
+            # T.RandomAutocontrast(p=.5),
+            # T.RandomEqualize(p=.5),
+            # vF.adjust_gamma(),
         ])
         self.texture_net_v = None  # TextureNetV(objects)
         self.texture_net_p = None
-        self.texture_net_p = TextureNetP(in_channels=6+36+36, out_channels=3, n_layers=3, hidden_size=128)
+        # self.texture_net_p = TextureNetP(in_channels=6+36+36, out_channels=3, n_layers=3, hidden_size=128)
         self.backbone = ResnetBackbone(in_channels=3)
-        self.rot_head_net = RotWithRegionHead(512, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
+        self.rot_head_net = RotWithRegionHead(512, out_channels=3, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
+        self.rot_head_net_m = RotWithRegionHead(512, out_channels=1, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
         self.pnp_net = ConvPnPNet(in_channels=6)
         self.objects_eval = objects_eval if objects_eval is not None else objects
         self.loss = Loss(objects_eval if objects_eval is not None else objects)
@@ -44,6 +55,7 @@ class GDRN(pl.LightningModule):
         params = [
             {'params': self.backbone.parameters(), 'lr': 1e-5, 'name': 'backbone'},
             {'params': self.rot_head_net.parameters(), 'lr': 1e-5, 'name': 'rot_head'},
+            {'params': self.rot_head_net_m.parameters(), 'lr': 1e-5, 'name': 'rot_head_m'},
             {'params': self.pnp_net.parameters(), 'lr': 1e-5, 'name': 'pnp'},
             # {'params': self.texture_net_p.parameters(), 'lr': 1e-6, 'name': 'texture_p'},
         ]
@@ -63,13 +75,19 @@ class GDRN(pl.LightningModule):
             dim=1)
             gt_texel_roi = self.texture_net_p(gt_position_info_roi)
             sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
-        sample.img_roi = self.transform(sample.img_roi)
+        if self.training or True:
+            sample.img_roi = augmentations.color_augmentation.match_background_histogram(
+                sample.img_roi, sample.gt_mask_vis_roi, blend_saturation=1., blend_light=1., p=.5
+            )
+            sample.img_roi = self.transform(sample.img_roi)
         sample.gt_mask_vis_roi = vF.resize(sample.gt_mask_obj_roi, [64])  # mask: vis changed to obj
         sample.gt_coord_3d_roi = vF.resize(sample.gt_coord_3d_roi, [64]) * sample.gt_mask_vis_roi
         sample.coord_2d_roi = vF.resize(sample.coord_2d_roi, [64])
 
         features = self.backbone(sample.img_roi)
-        pred_mask_vis_roi, sample.pred_coord_3d_roi_normalized = self.rot_head_net(features)
+        sample.pred_coord_3d_roi_normalized = self.rot_head_net(features)
+        pred_mask_vis_roi = self.rot_head_net_m(features)
+        # pred_mask_vis_roi, sample.pred_coord_3d_roi_normalized = features.split([1, 3], dim=1)
         sample.pred_mask_vis_roi = pred_mask_vis_roi  #.sigmoid()
 
         if self.training:
@@ -97,7 +115,7 @@ class GDRN(pl.LightningModule):
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:
         sample = self.forward(sample)
         loss_pm, loss_t_site_center, loss_t_site_depth, loss_coord_3d, loss_mask = self.loss(sample)
-        # loss_mask *= .5
+        # loss_mask *= 0.
         loss = loss_coord_3d + loss_mask + loss_pm + loss_t_site_center + loss_t_site_depth
         self.log('loss', {'total': loss, 'coord_3d': loss_coord_3d, 'mask': loss_mask, 'pm': loss_pm,
                           'ts_center': loss_t_site_center, 'ts_depth': loss_t_site_depth})

@@ -65,25 +65,34 @@ def match_cdf(source: torch.Tensor, template: torch.Tensor) -> torch.Tensor:
     interp_values = interp(src_quantiles, tmpl_quantiles, tmpl_values)
     result = interp_values[src_unique_indices].reshape(source.shape)
 
-    def get_pdf(values, counts, bins: int = None):
-        if bins is None:
-            # exact calculation
-            dy = counts / counts.sum()
-            dx = values.diff(prepend=torch.full_like(values[:1], -torch.inf))
-            pdf = dy / dx
-            bin_edges = torch.cat([torch.full_like(values[:1], -torch.inf), values], dim=0)
-        else:
-            # smoothed
-            pdf, bin_edges = values.histogram(bins=bins, weight=counts.to(dtype=values.dtype), density=True)
-        return pdf, bin_edges
+    if source.requires_grad:
+        def get_pdf(values: torch.Tensor, counts: torch.Tensor, bins: int = None) -> (torch.Tensor, torch.Tensor):
+            if bins is None:
+                # exact calculation
+                dy = counts / counts.sum()
+                dx = values.diff(prepend=torch.full_like(values[:1], -torch.inf))
+                pdf = dy / dx
+                bin_edges = torch.cat([torch.full_like(values[:1], -torch.inf), values], dim=0)
+            else:
+                # smoothed
+                device = values.device
+                dtype = values.dtype
+                if device == torch.device('cpu'):
+                    # torch.histogram does not support CUDA https://github.com/pytorch/pytorch/issues/69519
+                    pdf, bin_edges = values.histogram(bins=bins, weight=counts.to(dtype=dtype), density=True)
+                else:
+                    values = values.repeat_interleave(counts)
+                    pdf = values.histc(bins=bins) * (bins / ((values[-1] - values[0]) * len(values)))
+                    bin_edges = torch.linspace(values[0], values[-1], bins + 1, dtype=dtype, device=device)
+            return pdf, bin_edges
 
-    if source.requires_grad or True:
         n_bins = 100
         src_hist, src_bin_edges = get_pdf(src_values, src_counts, n_bins)
         tmpl_hist, tmpl_bin_edges = get_pdf(tmpl_values, tmpl_counts, n_bins)
         src_pdf = interp(src_values, (src_bin_edges[:-1] + src_bin_edges[1:]) * .5, src_hist)
         interp_pdf = interp(interp_values, (tmpl_bin_edges[:-1] + tmpl_bin_edges[1:]) * .5, tmpl_hist)
         derivative = (src_pdf / interp_pdf).clamp(max=100.)  # prevent div 0 error or gradient explosion
+
         # import matplotlib.pyplot as plt
         # plt.plot(src_values.detach().cpu().numpy(), src_quantiles.detach().cpu().numpy(), label='src')
         # plt.plot(tmpl_values.detach().cpu().numpy(), tmpl_quantiles.detach().cpu().numpy(), label='tmpl')
@@ -97,6 +106,7 @@ def match_cdf(source: torch.Tensor, template: torch.Tensor) -> torch.Tensor:
         # plt.show()
         # plt.plot(src_values.detach().cpu().numpy(), derivative.detach().cpu().numpy())
         # plt.show()
+
         D = derivative[src_unique_indices].reshape(source.shape)
         result = result.detach() + D.detach() * source - (D * source).detach()
 
@@ -177,6 +187,6 @@ def iso_noise(img: torch.Tensor, color_shift: float = .05, intensity: float = .5
 #     mask = utils.io.read_img_file('/data/lm/train/000001/mask_visib/000200_000000.png')[:, :1].bool()
 #     im = im0 * ~mask + im1 * mask
 #     # x = match_background_mean(im, mask, 1., 0.)
-#     x = match_background_histogram(im, mask, 1., 1., 1.)
+#     x = match_background_histogram(im.cuda(), mask.cuda(), 1., 1., 1.)
 #     visualize(im0)
 #     visualize(x)

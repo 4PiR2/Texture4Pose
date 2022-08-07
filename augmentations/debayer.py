@@ -101,13 +101,3 @@ def debayer_aug(img: torch.Tensor, permute_channel: bool = True) -> torch.Tensor
     """
     img_bayer, channel_idxs_inv = _get_bayer_img(img, permute_channel)
     return _debayer(img_bayer)[..., channel_idxs_inv, :, :]
-
-
-# if __name__ == '__main__':
-#     import utils.io
-#     from utils.image_2d import visualize
-#
-#     img = utils.io.read_img_file('/data/coco/train2017/000000000009.jpg').cuda()
-#     img_debayered = debayer_aug(img, True)
-#     visualize(img)
-#     visualize(img_debayered)

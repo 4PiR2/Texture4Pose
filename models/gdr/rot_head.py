@@ -5,7 +5,7 @@ import utils.weight_init
 
 
 class RotWithRegionHead(nn.Module):
-    def __init__(self, in_channels, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1):
+    def __init__(self, in_channels, out_channels=4, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1):
         super().__init__()
 
         assert kernel_size == 2 or kernel_size == 3 or kernel_size == 4, "Only support kenerl 2, 3 and 4"
@@ -47,7 +47,7 @@ class RotWithRegionHead(nn.Module):
         features.append(
             nn.Conv2d(
                 num_filters,
-                1 + 3,
+                out_channels,
                 kernel_size=output_kernel_size,
                 padding=pad,
                 bias=True,
@@ -64,6 +64,4 @@ class RotWithRegionHead(nn.Module):
                 utils.weight_init.normal_init(m, std=0.001)
 
     def forward(self, x):
-        x = self.features(x)
-        mask, coord_3d_normalized = x.split([1, 3], dim=1)
-        return mask, coord_3d_normalized
+        return self.features(x)

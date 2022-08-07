@@ -8,26 +8,26 @@ dataset = dict(
     vis_ratio_filter_threshold=.5,
     max_dzi_ratio=.25,  # dynamic zoom in
     bbox_zoom_out_ratio=1.5,
-    light_max_saturation=1.,
+    light_max_saturation=.1,
     light_ambient_range=(.5, 1.),
     light_diffuse_range=(0., .3),
     light_specular_range=(0., .2),
-    light_shininess_range=(40, 80),
+    light_shininess_range=(1, 40),
     num_obj=None,
     repeated_sample_obj=False,
     path='data/BOP/lm',
     occlusion_size_min=.125,
     occlusion_size_max=.125,
-    num_occlusion_per_obj=10,
+    num_occlusion_per_obj=0,
     min_occlusion_vis_ratio=.10,
     bop_scene=False,
 )
 
 augmentation = dict(  # torchvision.transforms.ColorJitter
-    brightness=.3,
-    contrast=.3,
-    saturation=.3,
-    hue=0.
+    brightness=.5,
+    contrast=.5,
+    saturation=.5,
+    hue=.5
 )
 
 dataloader = dict(
