@@ -113,7 +113,8 @@ class MotionBlur(_BaseI):
     def __init__(self, kernel_size=(1., 5.), p: float = 1.):
         # parameter is the half kernel size to make sure the kernel size is an odd integer in the end
         angle = (0., torch.pi)
-        super().__init__(lambda x, a, k: augmentations.motion_blur.motion_blur(x, angle=a, kernel_size=int(k) * 2 + 1),
+        super().__init__(lambda x, a, k:
+                         augmentations.motion_blur.motion_blur(x, angle=float(a), kernel_size=int(k) * 2 + 1),
                          angle, kernel_size, p=p)
 
 

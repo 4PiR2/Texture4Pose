@@ -31,6 +31,7 @@ class GDRN(pl.LightningModule):
         self.transform = T.Compose([
             A.CoarseDropout(num_holes=10, width=8, p=.5),
             A.Debayer(permute_channel=True, p=.5),
+            A.MotionBlur(kernel_size=(1., 9.), p=.5),
             A.GaussianBlur(sigma=(1., 3.), p=.5),
             A.Sharpen(sharpness_factor=(1., 3.), p=.5),
             A.ISONoise(color_shift=.05, intensity=.1, p=.5),
