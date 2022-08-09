@@ -27,8 +27,7 @@ class _(SampleMapperIDP):
         objects = {}
         for obj_id in obj_list:
             objects[obj_id] = RegularMesh(dtype=self.dtype, device=self.device, obj_id=int(obj_id),
-                                          name=obj_list[obj_id] if isinstance(obj_list, dict) else None,
-                                          level=5 if obj_id == 101 else 0)
+                                          name=obj_list[obj_id] if isinstance(obj_list, dict) else None, level=5)
 
         self.objects: dict[int, ObjMesh] = {**self.objects, **objects}
         self.objects_eval: dict[int, ObjMesh] = {**self.objects_eval, **objects}

@@ -1,6 +1,9 @@
 import glob
 import json
+import numpy as np
 import os.path
+from PIL import Image
+import pillow_heif
 import re
 from typing import Optional, Union
 
@@ -8,9 +11,22 @@ import cv2
 import torch
 
 
+pillow_heif.register_heif_opener()
+
+
 def read_json_file(path: str) -> Union[dict, list]:
     with open(path, 'r') as f:
         return json.load(f)
+
+
+def imread(filename: str, size: tuple[int, int] = None, opencv_bgr: bool = True):
+    im = Image.open(filename)
+    if size is not None:
+        im.thumbnail(size, Image.ANTIALIAS)
+    img = np.array(im)
+    if opencv_bgr:
+        img = img[..., ::-1]
+    return img
 
 
 def read_img_file(path: str, dtype: torch.dtype = torch.float, device: Union[torch.device, str] = None) -> torch.Tensor:

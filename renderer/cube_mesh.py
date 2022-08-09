@@ -6,6 +6,7 @@ from pytorch3d.structures.meshes import Meshes
 # sphere: #verts[i] = 10 * 4 ** i + 2, #faces[i] = 5 * 4 ** (i + 1)
 # cube: #verts[i] = 6 * 4 ** i + 2, #faces[i] = 3 * 4 ** (i + 1)
 # tetrahedron: #verts[i] = 2 * 4 ** i + 2, #faces[i] = 4 ** (i + 1)
+# cylinder_side: #verts[i] = 6 * 4 ** i + 2, #faces[i] = 2 * 4 ** (i + 1)
 
 
 def _get_mesh(verts0, faces0, level: int = 0, device: torch.device = None):
@@ -22,7 +23,7 @@ def _get_mesh(verts0, faces0, level: int = 0, device: torch.device = None):
     return mesh
 
 
-def cube(level: int = 0, device: torch.device = None):
+def cube(level: int = 0, base: bool = True, device: torch.device = None):
     """
     Create verts and faces for a unit cube, with all faces oriented
     consistently.
@@ -31,6 +32,7 @@ def cube(level: int = 0, device: torch.device = None):
         level: integer specifying the number of iterations for subdivision
                of the mesh faces. Each additional level will result in four new
                faces per face.
+        base: whether to have top and bottom surface
         device: A torch.device object on which the outputs will be allocated.
 
     Returns:
@@ -62,6 +64,8 @@ def cube(level: int = 0, device: torch.device = None):
         [6, 7, 4],
         [0, 5, 1],
     ]
+    if not base:
+        faces0 = [[a, b, c] for a, b, c in faces0 if not verts0[a][-1] == verts0[b][-1] == verts0[c][-1]]
     return _get_mesh(verts0, faces0, level, device)
 
 
@@ -79,3 +83,24 @@ def tetrahedron(level: int = 0, device: torch.device = None):
         [1, 2, 3],
     ]
     return _get_mesh(verts0, faces0, level, device)
+
+
+def cylinder_side(level: int = 0, device: torch.device = None):
+    # no base
+    if level == 0:
+        mesh = cube(0, False, device)
+        verts = mesh.verts_list()[0]
+        sin_45 = 2 ** .5 * .5
+        rot = torch.tensor([
+            [sin_45, sin_45, 0.],
+            [-sin_45, sin_45, 0.],
+            [0., 0., 1.],
+        ], dtype=verts.dtype, device=verts.device)
+        verts = verts @ rot
+    else:
+        subdivide = SubdivideMeshes()
+        mesh = subdivide(cylinder_side(level - 1, device))
+        verts = mesh.verts_list()[0]
+    verts[:, :2] /= verts[:, :2].norm(p=2, dim=1, keepdim=True)
+    faces = mesh.faces_list()[0]
+    return Meshes(verts=[verts], faces=[faces])

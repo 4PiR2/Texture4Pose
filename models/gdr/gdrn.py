@@ -76,6 +76,8 @@ class GDRN(pl.LightningModule):
             dim=1)
             gt_texel_roi = self.texture_net_p(gt_position_info_roi)
             sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
+        gt_texel_roi = sample.gt_coord_3d_roi_normalized
+        sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
         if self.training or True:
             sample.img_roi = augmentations.color_augmentation.match_background_histogram(
                 sample.img_roi, sample.gt_mask_vis_roi, blend_saturation=1., blend_light=1., p=.5

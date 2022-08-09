@@ -4,6 +4,7 @@ import torch.utils.data
 
 import config.const as cc
 import dataloader.datapipe.functional_bop
+import dataloader.datapipe.functional_custom
 from dataloader.datapipe.helper import SampleSource
 from dataloader.sample import Sample
 
@@ -35,7 +36,8 @@ def random_scene_any_obj_dp(
     dp = dp.set_static_camera(cam_K=cam_K)
     dp = dp.rand_select_objs(num_obj=num_obj, repeated_sample_obj=repeated_sample_obj)
     dp = dp.rand_gt_translation(random_t_depth_range=random_t_depth_range, cuboid=False)
-    dp = dp.rand_gt_rotation()
+    # dp = dp.rand_gt_rotation()
+    dp = dp.rand_gt_rotation_cylinder(thresh_theta=15. * torch.pi / 180.)
     dp = dp.render_scene()
     dp = dp.gen_mask()
     dp = dp.compute_vis_ratio()

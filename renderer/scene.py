@@ -87,6 +87,7 @@ class Scene:
                 faces_per_pixel=1,
                 max_faces_per_bin=max([int(mesh.num_faces_per_mesh().max()) for mesh in obj_meshes]),
                 # bin_size=0,  # Noisy Renderings on LM: https://github.com/facebookresearch/pytorch3d/issues/867
+                cull_backfaces=True,
             ),
         )
 
