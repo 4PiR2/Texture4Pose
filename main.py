@@ -54,8 +54,7 @@ def main():
 
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_26/checkpoints/epoch=0048-val_metric=0.0550.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_82/checkpoints/last.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_86/checkpoints/last.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)

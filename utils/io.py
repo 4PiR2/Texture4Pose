@@ -2,7 +2,7 @@ import glob
 import json
 import numpy as np
 import os.path
-from PIL import Image
+from PIL import Image, ExifTags
 import pillow_heif
 import re
 from typing import Optional, Union
@@ -19,8 +19,56 @@ def read_json_file(path: str) -> Union[dict, list]:
         return json.load(f)
 
 
+def _rotate_pil_im(im: Image, orientation: int = 1) -> Image:
+    if orientation == 2:
+        im = im.transpose(Image.FLIP_LEFT_RIGHT)
+    elif orientation == 3:
+        im = im.transpose(Image.ROTATE_180)
+    elif orientation == 4:
+        im = im.transpose(Image.FLIP_TOP_BOTTOM)
+    elif orientation == 5:
+        im = im.transpose(Image.ROTATE_90).transpose(Image.FLIP_TOP_BOTTOM)
+    elif orientation == 6:
+        im = im.transpose(Image.ROTATE_270)
+    elif orientation == 7:
+        im = im.transpose(Image.ROTATE_270).transpose(Image.FLIP_TOP_BOTTOM)
+    elif orientation == 8:
+        im = im.transpose(Image.ROTATE_90)
+    return im
+
+
+def _fetch_exif_data(exif_data, gps: bool = False):
+    # https://www.awaresystems.be/imaging/tiff/tifftags/privateifd.html
+    tag_ids, contents = list(exif_data.keys()), list(exif_data.values())
+    tags = [(ExifTags.TAGS if not gps else ExifTags.GPSTAGS).get(tag_id, None) for tag_id in tag_ids]
+    for ifd_id in [0x8769, 0x8825, 0xA005]:
+        if ifd_id in tag_ids:
+            tag_ids_ifd, tags_ifd, contents_ifd = _fetch_exif_data(exif_data.get_ifd(ifd_id), ifd_id == 0x8825)
+            tag_ids += tag_ids_ifd
+            tags += tags_ifd
+            contents += contents_ifd
+    return tag_ids, tags, contents
+
+
 def imread(filename: str, size: tuple[int, int] = None, opencv_bgr: bool = True):
     im = Image.open(filename)
+    try:
+        exif = im.getexif()
+        orientation = int(exif[274])
+    except (KeyError, AttributeError, TypeError, IndexError):
+        orientation = None
+    if (filename.split('.')[-1]).lower() == 'heic':
+        orientation = im.info['original_orientation']
+        if orientation is not None:
+            if orientation == 3:  # 180 deg
+                im = _rotate_pil_im(im, 3)
+            elif orientation == 6:  # 270 deg
+                im = _rotate_pil_im(im, 8)
+            elif orientation == 8:  # 90 deg
+                im = _rotate_pil_im(im, 6)
+        tag_ids, tags, contents = _fetch_exif_data(exif)
+        for tag_id, tag, content in zip(tag_ids, tags, contents):
+            print(f'{hex(tag_id)}\t{str(tag):25}: {content}')
     if size is not None:
         im.thumbnail(size, Image.ANTIALIAS)
     img = np.array(im)

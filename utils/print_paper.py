@@ -14,8 +14,13 @@ def px2meter(px: Union[int, float], dpi: int = 72) -> float:
     return px * .0254 / dpi
 
 
-def get_a4_size(unit_or_dpi: Union[str, int]) -> tuple[Union[int, float], Union[int, float]]:
-    w, h = 210, 297
+def get_paper_size(unit_or_dpi: Union[str, int], paper_size: str = 'a4') -> tuple[Union[int, float], Union[int, float]]:
+    if paper_size.lower() == 'a4':
+        w, h = 210, 297
+    elif paper_size.lower() == 'a3':
+        w, h = 297, 420
+    else:
+        raise NotImplementedError
     if unit_or_dpi == 'mm':
         return w, h
     elif unit_or_dpi == 'inch':
@@ -24,8 +29,8 @@ def get_a4_size(unit_or_dpi: Union[str, int]) -> tuple[Union[int, float], Union[
         return meter2px(w * 1e-3, unit_or_dpi), meter2px(h * 1e-3, unit_or_dpi)
 
 
-def get_ax_a4(dpi: int = 72) -> plt.Axes:
-    fig = plt.figure(figsize=get_a4_size('inch'), dpi=dpi)
+def get_ax_paper(dpi: int = 72, paper_size: str = 'a4') -> plt.Axes:
+    fig = plt.figure(figsize=get_paper_size('inch', paper_size), dpi=dpi)
     ax = plt.Axes(fig, [0., 0., 1., 1.])
     fig.add_axes(ax)
     ax.spines['top'].set_visible(False)
@@ -63,17 +68,17 @@ def plt_save_pdf(path: str, ax: plt.Axes = None, fig: plt.Figure = None):
         plt.savefig(path, format='pdf')
 
 
-def print_tensor_to_a4_pdf(img: Union[torch.Tensor, np.ndarray], path: str, interpolation: str = 'antialiased',
-                           dpi: int = 72):
+def print_tensor_to_paper_pdf(img: Union[torch.Tensor, np.ndarray], path: str, interpolation: str = 'antialiased',
+                              dpi: int = 72, paper_size: str = 'a4'):
     # interpolation: Supported values are
     # 'none', 'antialiased', 'nearest', 'bilinear', 'bicubic', 'spline16', 'spline36', 'hanning', 'hamming', 'hermite',
     # 'kaiser', 'quadric', 'catrom', 'gaussian', 'bessel', 'mitchell', 'sinc', 'lanczos', 'blackman'.
     img = tensor_to_ndarray_rgba(img)
     h, w = img.shape[:2]
-    W, H = get_a4_size(dpi)
+    W, H = get_paper_size(dpi, paper_size)
     im = np.full([H, W, 4], 255, dtype=np.uint8)
     im[(H - h) // 2:(H + h) // 2, (W - w) // 2:(W + w) // 2] = img
-    ax = get_ax_a4(dpi)
+    ax = get_ax_paper(dpi, paper_size)
     ax.imshow(im, interpolation=interpolation)
     # Matplotlib's linewidth is in points, 1 inch = 72 point, default dpi = 72, 1 point = 0.352778 mm
     # https://stackoverflow.com/questions/57657419/how-to-draw-a-figure-in-specific-pixel-size-with-matplotlib

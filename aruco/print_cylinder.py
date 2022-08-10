@@ -1,13 +1,13 @@
 import torch
 
-import utils.print_a4
+import utils.print_paper
 
 
 def unroll_cylinder_side(r: float, h: float = None, dpi: int = 72):
     if h is None:
         h = r * 2.
-    H = utils.print_a4.meter2px(2. * torch.pi * r, dpi)
-    W = utils.print_a4.meter2px(h, dpi)
+    H = utils.print_paper.meter2px(2. * torch.pi * r, dpi)
+    W = utils.print_paper.meter2px(h, dpi)
     coord_3d = torch.empty(3, H, W)
     normal = torch.empty_like(coord_3d)
     theta = torch.linspace(0., 2. * torch.pi, H)[..., None]

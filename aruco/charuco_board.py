@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 import utils.io
-import utils.print_a4
+import utils.print_paper
 
 
 class ChArUcoBoard:
@@ -15,13 +15,13 @@ class ChArUcoBoard:
         self.board: cv2.aruco_CharucoBoard = cv2.aruco.CharucoBoard_create(
             w_square, h_square, square_length, .8 * square_length, self.aruco_dict)  # square length is in meter
 
-    def to_a4_pdf(self, path: str, dpi: int = 300):
+    def to_paper_pdf(self, path: str, dpi: int = 300, paper_size: str = 'a4'):
         w_square, h_square = self.board.getChessboardSize()
         square_length = self.board.getSquareLength()
-        w = utils.print_a4.meter2px(w_square * square_length, dpi)
-        h = utils.print_a4.meter2px(h_square * square_length, dpi)
+        w = utils.print_paper.meter2px(w_square * square_length, dpi)
+        h = utils.print_paper.meter2px(h_square * square_length, dpi)
         img = self.board.draw((w, h))
-        utils.print_a4.print_tensor_to_a4_pdf(img, path, 'nearest', dpi)
+        utils.print_paper.print_tensor_to_paper_pdf(img, path, 'nearest', dpi, paper_size)
 
     def detect_markers(self, img_gray: np.ndarray):
         parameters = cv2.aruco.DetectorParameters_create()
