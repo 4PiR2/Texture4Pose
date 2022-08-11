@@ -66,22 +66,22 @@ def imread(filename: str, size: tuple[int, int] = None, opencv_bgr: bool = True)
                 im = _rotate_pil_im(im, 8)
             elif orientation == 8:  # 90 deg
                 im = _rotate_pil_im(im, 6)
-        tag_ids, tags, contents = _fetch_exif_data(exif)
-        for tag_id, tag, content in zip(tag_ids, tags, contents):
-            print(f'{hex(tag_id)}\t{str(tag):25}: {content}')
+        # tag_ids, tags, contents = _fetch_exif_data(exif)
+        # for tag_id, tag, content in zip(tag_ids, tags, contents):
+        #     print(f'{hex(tag_id)}\t{str(tag):25}: {content}')
     if size is not None:
         im.thumbnail(size, Image.ANTIALIAS)
     img = np.array(im)
     if opencv_bgr:
         img = img[..., ::-1]
-    return img
+    return np.ascontiguousarray(img)
 
 
 def read_img_file(path: str, dtype: torch.dtype = torch.float, device: Union[torch.device, str] = None) -> torch.Tensor:
     """
     :return: [1, 3(RGB), H, W] \in [0, 1]
     """
-    return torch.tensor(cv2.imread(path, cv2.IMREAD_COLOR)[None, ..., ::-1].copy(), dtype=dtype,
+    return torch.tensor(imread(path, opencv_bgr=False)[None], dtype=dtype,
                         device=parse_device(device)).permute(0, 3, 1, 2) / 255.
 
 
@@ -99,6 +99,12 @@ def parse_device(device: Union[torch.device, str] = None) -> Union[torch.device,
     :return: device if device is not None else 'cpu'
     """
     return device if device is not None else 'cpu'
+
+
+def list_img_from_dir(data_dir: str, ext: str = 'heic'):
+    images = np.array([os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.lower().endswith(f'.{ext}')])
+    order = np.argsort([int(p.split('.')[-2].split('_')[-1]) for p in images])
+    return images[order]
 
 
 def find_lightning_ckpt_path(root: str = '.', version: int = None, epoch: int = None, step: int = None) \

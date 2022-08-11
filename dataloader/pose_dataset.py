@@ -123,3 +123,30 @@ def bop_scene_bop_obj_dp(
     dp = dp.set_coord_3d()
     # dp = dp.augment_img(transform=transform)
     return dp
+
+
+def real_scene_regular_obj_dp(
+    path=None, obj_list=None, dtype=cc.dtype, device=cc.device, scene_mode=True,
+    crop_out_size=256,
+    vis_ratio_filter_threshold=.5, max_dzi_ratio=.25,
+    bbox_zoom_out_ratio=1.5, **kwargs,
+):
+    assert len(obj_list) == 1
+    dp = SampleSource(dtype=dtype, device=device, scene_mode=scene_mode, img_render_size=4032)
+    dp = dataloader.datapipe.functional_bop.init_objects(dp, obj_list=obj_list, path=None)
+    dp = dp.load_real_scene(path=path, ext='heic')
+    # dp = dp.rand_scene_id()
+    dp = dp.set_real_scene()
+    dp = dp.set_calib_camera(w_square=7, h_square=10, square_length=.04)
+    dp = dp.estimate_pose()
+    dp = dp.set_mesh_info()
+    dp = dp.offset_cylinder_pose(scale_true=.042, tangent_x=3., tangent_y=5.)
+    dp = dp.render_scene()
+    dp = dp.gen_mask()
+    dp = dp.compute_vis_ratio()
+    dp = dp.filter_vis_ratio(vis_ratio_filter_threshold=vis_ratio_filter_threshold)
+    dp = dp.gen_bbox()
+    dp = dp.dzi_bbox(max_dzi_ratio=0., bbox_zoom_out_ratio=bbox_zoom_out_ratio)
+    dp = dp.gen_coord_2d(width=4032, height=3024)
+    dp = dp.crop_roi_bop(out_size=crop_out_size)
+    return dp

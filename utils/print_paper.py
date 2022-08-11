@@ -84,3 +84,14 @@ def print_tensor_to_paper_pdf(img: Union[torch.Tensor, np.ndarray], path: str, i
     # https://stackoverflow.com/questions/57657419/how-to-draw-a-figure-in-specific-pixel-size-with-matplotlib
     plt_save_pdf(path, ax)
     plt.close(ax.get_figure())
+
+
+def make_grid(img: torch.Tensor, size: tuple[int, int], margin: float = .05):
+    *C, H, W = img.shape
+    n_h, n_w = size
+    margin_h, margin_w = round(H * margin), round(W * margin)
+    img_grid = torch.ones(*C, H * n_h + margin_h * (n_h - 1), W * n_w + margin_w * (n_w - 1))
+    for i in range(n_h):
+        for j in range(n_w):
+            img_grid[..., (H + margin_h) * i: (H + margin_h) * i + H, (W + margin_w) * j: (W + margin_w) * j + W] = img
+    return img_grid

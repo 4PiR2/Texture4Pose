@@ -18,22 +18,23 @@ def show_ndarray(img):
 
 
 if __name__ == '__main__':
-    dpi = 300
-    # img = ap.unroll_cylinder_side(r=.04, dpi=dpi)
-    # utils.print_a4.print_tensor_to_a4_pdf(img, '/home/user/Desktop/2.pdf', dpi=dpi)
+    # ac.ChArUcoBoard(7, 10, .04).to_paper_pdf('/home/user/Desktop/1.pdf', paper_size='a3')
+    # dpi = 300
+    # img_84 = ap.unroll_cylinder_side(r=.042, dpi=dpi)
+    # img_82 = ap.unroll_cylinder_side(r=.041, dpi=dpi)
+    # img = utils.print_paper.make_grid(img_84, (1, 2), margin=.05)
+    # img[..., :img_84.shape[-1]] = 1.
+    # img[..., :img_82.shape[-2], :img_82.shape[-1]] = img_82
+    # utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/2.pdf', dpi=dpi)
 
-    datadir = '/data/calib/'
-    images = np.array([os.path.join(datadir, f) for f in os.listdir(datadir) if f.endswith('.HEIC')])
-    order = np.argsort([int(p.split('.')[-2].split('_')[-1]) for p in images])
-    images = images[order]
+    chboard: ac.ChArUcoBoard = ac.ChArUcoBoard(7, 10, .04)
+    print('Starting camera calibration ...')
+    camera_matrix = chboard.calibrate_camera(utils.io.list_img_from_dir('/data/real_exp/i12P_26mm/calib', ext='heic'))[0]
+    print('Finished camera calibration')
 
-    chboard = ac.ChArUcoBoard(7, 10, .04)
-    chboard.to_paper_pdf('/home/user/Desktop/1.pdf', paper_size='a3')
-    mtx, dist, rvecs, tvecs = chboard.calibrate_camera(images[:-1])
-
-    frame = utils.io.imread(images[-1])
+    frame = utils.io.imread('/data/real_exp/i12P_26mm/000104/IMG_8170.HEIC')
     # frame = utils.io.imread('/data/coco/train2017/000000000009.jpg')
-    frame = cv2.undistort(frame, mtx, dist)
+    # frame = cv2.undistort(frame, camera_matrix, distortion)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     # cap = cv2.VideoCapture('/data/calib/4e9eaa7bdc/rgb.mp4')
@@ -45,9 +46,9 @@ if __name__ == '__main__':
     #     show_ndarray(frame_markers)
     #     a = 0
 
-    ret, p_rmat, p_tvec, p_rvec = chboard.estimate_pose(gray, mtx)
+    ret, p_rmat, p_tvec, p_rvec = chboard.estimate_pose(gray, camera_matrix)
     if ret:
-        frame_pose = cv2.aruco.drawAxis(frame, mtx, dist, p_rvec, p_tvec, .1)
-        show_ndarray(frame_pose)
+        frame_pose = cv2.aruco.drawAxis(frame, camera_matrix, None, p_rvec, p_tvec, .1)
+        show_ndarray(frame_pose[..., ::-1])
 
     a = 0
