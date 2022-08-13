@@ -14,7 +14,7 @@ def match_background_mean(img: torch.Tensor, mask: torch.Tensor, blend_saturatio
     :return: [N, 3(RGB), H, W] \in [0, 1]
     """
     N, _, H, W = img.shape
-    img_hsl = utils.color.rgb2hsl_torch(img)  # [N, 3(HSL), H, W]
+    img_hsl = utils.color.rgb2hsl(img)  # [N, 3(HSL), H, W]
     mask_count = mask.sum(dim=[-2, -1])  # [N, 1]
     bg_mean = (img_hsl * ~mask).sum(dim=[-2, -1]) / (H * W - mask_count)  # [N, 3(HSL)]
     obj_mean = (img_hsl * mask).sum(dim=[-2, -1]) / mask_count  # [N, 3(HSL)]
@@ -24,7 +24,7 @@ def match_background_mean(img: torch.Tensor, mask: torch.Tensor, blend_saturatio
     mean_diff[:, 2] *= blend_light
     img_hsl_obj_adapted = ((img_hsl + mean_diff[..., None, None]) * mask + img_hsl * ~mask).clamp(min=0., max=1.)
     # mean values might not be the same after clamping
-    return utils.color.hsl2rgb_torch(img_hsl_obj_adapted)
+    return utils.color.hsl2rgb(img_hsl_obj_adapted)
 
 
 def match_cdf(source: torch.Tensor, template: torch.Tensor) -> torch.Tensor:
@@ -82,8 +82,9 @@ def match_cdf(source: torch.Tensor, template: torch.Tensor) -> torch.Tensor:
                     pdf, bin_edges = values.histogram(bins=bins, weight=counts.to(dtype=dtype), density=True)
                 else:
                     values = values.repeat_interleave(counts)
-                    pdf = values.histc(bins=bins) * (bins / ((values[-1] - values[0]) * len(values)))
-                    bin_edges = torch.linspace(values[0], values[-1], bins + 1, dtype=dtype, device=device)
+                    pdf = values.histc(bins=bins) * (bins / ((values[-1] - values[0]) * len(values) + 1e-6))
+                    bin_edges = torch.linspace(float(values[0]), float(values[-1]), bins + 1, dtype=dtype,
+                                               device=device)
             return pdf, bin_edges
 
         n_bins = 100
@@ -127,32 +128,32 @@ def match_background_histogram(img: torch.Tensor, mask: torch.Tensor, blend_satu
     :return: [N, 3(RGB), H, W] \in [0, 1]
     """
 
-    def per_image(img_hsl: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    def per_image(img_hsl: torch.Tensor, m: torch.Tensor) -> torch.Tensor:
         """
 
         :param img_hsl: [3(HSL), H, W]
-        :param mask: [1, H, W]
+        :param m: [H, W]
         :return: [3(HSL), H, W]
         """
-        def per_channel(img_channel: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        def per_channel(img_channel: torch.Tensor) -> torch.Tensor:
             """
             :param img_channel: [H, W]
-            :param mask: [H, W]
             :return: [H, W]
             """
             img_channel = img_channel.clone()
-            img_channel[mask] = match_cdf(img_channel[mask], img_channel[~mask])
+            img_channel[m] = match_cdf(img_channel[m], img_channel[~m])
             return img_channel
 
+        img_hsl = img_hsl.clone()
         if blend_saturation and torch.rand(1) <= p:
-            img_hsl[1] = per_channel(img_hsl[1], mask[0]) * blend_saturation + img_hsl[1] * (1. - blend_saturation)
+            img_hsl[1] = per_channel(img_hsl[1]) * blend_saturation + img_hsl[1] * (1. - blend_saturation)
         if blend_light and torch.rand(1) <= p:
-            img_hsl[2] = per_channel(img_hsl[2], mask[0]) * blend_light + img_hsl[2] * (1. - blend_light)
+            img_hsl[2] = per_channel(img_hsl[2]) * blend_light + img_hsl[2] * (1. - blend_light)
         return img_hsl
 
     N, _, H, W = img.shape
-    img_hsl = utils.color.rgb2hsl_torch(img)  # [N, 3(HSL), H, W]
-    return utils.color.hsl2rgb_torch(torch.stack([per_image(i, m) for i, m in zip(img_hsl, mask)], dim=0))
+    hsl = utils.color.rgb2hsl(img)  # [N, 3(HSL), H, W]
+    return utils.color.hsl2rgb(torch.stack([per_image(i, m[0]) for i, m in zip(hsl, mask)], dim=0))
 
 
 def iso_noise(img: torch.Tensor, color_shift: float = .05, intensity: float = .5) -> torch.Tensor:
@@ -168,13 +169,14 @@ def iso_noise(img: torch.Tensor, color_shift: float = .05, intensity: float = .5
         [N, 3(RGB), H, W] \in [0, 1]
     """
     N, _, H, W = img.shape
-    img_hsl = utils.color.rgb2hsl_torch(img)
-    stddev = img_hsl.std(dim=[-2, -1], unbiased=False)[:, 2, None, None]  # [N, 1, 1]
+    hsl = utils.color.rgb2hsl(img)
+    result = hsl.clone()  # to avoid 'in-place operation' error during back propagation
+    stddev = hsl.std(dim=[-2, -1], unbiased=False)[:, 2, None, None]  # [N, 1, 1]
     luminance_noise = torch.poisson((stddev * intensity * 255.).expand(-1, H, W)) / 255.  # [N, H, W]
-    img_hsl[:, 2] = (img_hsl[:, 2] + luminance_noise * (1. - img_hsl[:, 2])).clamp(min=0., max=1.)
-    hue_color_noise = torch.randn_like(img_hsl[:, 2]) * color_shift * intensity  # [N, H, W]
-    img_hsl[:, 0] = (img_hsl[:, 0] + hue_color_noise) % 1.
-    return utils.color.hsl2rgb_torch(img_hsl)
+    result[:, 2] = (hsl[:, 2] + luminance_noise * (1. - hsl[:, 2])).clamp(min=0., max=1.)
+    hue_color_noise = torch.randn_like(hsl[:, 0]) * color_shift * intensity  # [N, H, W]
+    result[:, 0] = (hsl[:, 0] + hue_color_noise) % 1.
+    return utils.color.hsl2rgb(result)
 
 
 # if __name__ == '__main__':

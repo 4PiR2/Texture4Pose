@@ -72,7 +72,9 @@ def imread(filename: str, size: tuple[int, int] = None, opencv_bgr: bool = True)
     if size is not None:
         im.thumbnail(size, Image.ANTIALIAS)
     img = np.array(im)
-    if opencv_bgr:
+    if img.ndim == 2:
+        img = np.tile(img[..., None], (1, 1, 3))
+    elif opencv_bgr:
         img = img[..., ::-1]
     return np.ascontiguousarray(img)
 
