@@ -1,5 +1,3 @@
-import os
-
 import cv2
 from matplotlib import pyplot as plt
 import numpy as np
@@ -19,13 +17,13 @@ def show_ndarray(img):
 
 if __name__ == '__main__':
     # ac.ChArUcoBoard(7, 10, .04).to_paper_pdf('/home/user/Desktop/1.pdf', paper_size='a3')
-    # dpi = 300
-    # img_84 = ap.unroll_cylinder_side(r=.042, dpi=dpi)
-    # img_82 = ap.unroll_cylinder_side(r=.041, dpi=dpi)
-    # img = utils.print_paper.make_grid(img_84, (1, 2), margin=.05)
-    # img[..., :img_84.shape[-1]] = 1.
-    # img[..., :img_82.shape[-2], :img_82.shape[-1]] = img_82
-    # utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/2.pdf', dpi=dpi)
+    dpi = 300
+    img_84 = ap.unroll_cylinder_side(r=.042, dpi=dpi)
+    img_82 = ap.unroll_cylinder_side(r=.041, dpi=dpi)
+    img = utils.print_paper.make_grid(img_84, (1, 2), margin=.05)
+    img[..., :img_84.shape[-1]] = 1.
+    img[..., :img_82.shape[-2], :img_82.shape[-1]] = img_82
+    utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/3.pdf', dpi=dpi)
 
     chboard: ac.ChArUcoBoard = ac.ChArUcoBoard(7, 10, .04)
     print('Starting camera calibration ...')

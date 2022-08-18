@@ -21,6 +21,7 @@ def t_to_t_site(t: torch.Tensor, bbox: torch.Tensor, r: Union[torch.Tensor, floa
     :param cam_K: cam_K: [..., 3, 3]
     :return: [..., 3]
     """
+    # r *= 3.1037e+03 / 572.4114
     if cam_K is not None:
         # if bbox is in image space
         cam_K = normalize_cam_K(cam_K)
@@ -41,6 +42,7 @@ def t_site_to_t(t_site: torch.Tensor, bbox: torch.Tensor, r: Union[torch.Tensor,
     :param cam_K: [..., 3, 3]
     :return: [..., 3]
     """
+    # r *= 3.1037e+03 / 572.4114
     t = t_site.clone()
     t[..., :2] = (t_site[..., :2] * bbox[..., 2:] + bbox[..., :2]) * t_site[..., 2:]
     # (ox * dz, oy * dz, dz) = ((dx * w + cx) * dz, (dy * h + cy) * dz, dz)

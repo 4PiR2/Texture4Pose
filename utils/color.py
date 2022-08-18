@@ -42,47 +42,67 @@ def hsv2rgb(hsv: torch.Tensor) -> torch.Tensor:
     return vFt._hsv2rgb(hsv)
 
 
+def hsv2hsl(hsv) -> torch.Tensor:
+    # https://en.wikipedia.org/wiki/HSL_and_HSV#Interconversion
+    hsv_h, hsv_s, hsv_v = hsv.split(split_size=1, dim=-3)
+    hsl_l = hsv_v * (1. - hsv_s * .5)
+    hsl_s = torch.where((hsl_l <= 0.) | (hsl_l >= 1.), torch.zeros_like(hsl_l),
+                        (hsv_v - hsl_l) / (torch.minimum(hsl_l, 1. - hsl_l) + 1e-12))  # to prevent nan
+    return torch.cat([hsv_h, hsl_s, hsl_l], dim=-3)
+
+
+def hsl2hsv(hsl) -> torch.Tensor:
+    hsl_h, hsl_s, hsl_l = hsl.split(split_size=1, dim=-3)
+    hsv_v = hsl_l + hsl_s * torch.minimum(hsl_l, 1. - hsl_l)
+    hsv_s = torch.where(hsv_v == 0., torch.zeros_like(hsv_v), 2. * (1. - hsl_l / (hsv_v + 1e-12)))
+    return torch.cat([hsl_h, hsv_s, hsv_v], dim=-3)
+
+
 def rgb2hsl(rgb: torch.Tensor) -> torch.Tensor:
+    return hsv2hsl(rgb2hsv(rgb))
     # https://docs.opencv.org/3.4/de/d25/imgproc_color_conversions.html
-    v_max, v_max_idx = rgb.max(dim=-3, keepdim=True)
-    v_min, _ = rgb.min(dim=-3, keepdim=True)
-    delta = v_max - v_min
-    rgb_r, rgb_g, rgb_b = rgb.split(split_size=1, dim=-3)
-    hsl_h = torch.empty_like(rgb_r)
-    hsl_h[v_max_idx == 0] = ((rgb_g - rgb_b) / delta % 6.)[v_max_idx == 0]
-    hsl_h[v_max_idx == 1] = ((rgb_b - rgb_r) / delta + 2.)[v_max_idx == 1]
-    hsl_h[v_max_idx == 2] = ((rgb_r - rgb_g) / delta + 4.)[v_max_idx == 2]
-    hsl_h[delta <= 0.] = 0.
-    hsl_h /= 6.
-    hsl_l_2 = v_max + v_min
-    hsl_l = hsl_l_2 * .5
-    hsl_s = torch.empty_like(hsl_h)
-    hsl_s[hsl_l_2 <= 0.] = 0.
-    hsl_s[hsl_l_2 >= 2.] = 0.
-    hsl_l_l_0_5 = (0. < hsl_l_2) & (hsl_l_2 < 1.)
-    hsl_l_g_0_5 = (1. <= hsl_l_2) & (hsl_l_2 < 2.)
-    hsl_s[hsl_l_l_0_5] = (delta / hsl_l_2)[hsl_l_l_0_5]
-    hsl_s[hsl_l_g_0_5] = (delta / (2. - hsl_l_2))[hsl_l_g_0_5]
-    return torch.cat([hsl_h, hsl_s, hsl_l], dim=-3)
+    # v_max, v_max_idx = rgb.max(dim=-3, keepdim=True)
+    # v_min, _ = rgb.min(dim=-3, keepdim=True)
+    # delta = v_max - v_min
+    # rgb_r, rgb_g, rgb_b = rgb.split(split_size=1, dim=-3)
+    # hsl_h = torch.empty_like(rgb_r)
+    # mask_gt_0 = delta > 0.
+    # mask_r, mask_g, mask_b = (v_max_idx == 0) & mask_gt_0, (v_max_idx == 1) & mask_gt_0, (v_max_idx == 2) & mask_gt_0
+    # hsl_h[mask_r] = ((rgb_g[mask_r] - rgb_b[mask_r]) / delta[mask_r] % 6.)
+    # hsl_h[mask_g] = ((rgb_b[mask_g] - rgb_r[mask_g]) / delta[mask_g] + 2.)
+    # hsl_h[mask_b] = ((rgb_r[mask_b] - rgb_g[mask_b]) / delta[mask_b] + 4.)
+    # hsl_h[~mask_gt_0] = 0.
+    # hsl_h /= 6.
+    # hsl_l_2 = v_max + v_min
+    # hsl_l = hsl_l_2 * .5
+    # hsl_s = torch.empty_like(hsl_l)
+    # hsl_s[hsl_l_2 <= 0.] = 0.
+    # hsl_s[hsl_l_2 >= 2.] = 0.
+    # hsl_l_l_0_5 = (0. < hsl_l_2) & (hsl_l_2 < 1.)
+    # hsl_l_g_0_5 = (1. <= hsl_l_2) & (hsl_l_2 < 2.)
+    # hsl_s[hsl_l_l_0_5] = delta[hsl_l_l_0_5] / hsl_l_2[hsl_l_l_0_5]
+    # hsl_s[hsl_l_g_0_5] = delta[hsl_l_g_0_5] / (2. - hsl_l_2[hsl_l_g_0_5])
+    # return torch.cat([hsl_h, hsl_s, hsl_l], dim=-3)
 
 
 def hsl2rgb(hsl: torch.Tensor) -> torch.Tensor:
+    return hsv2rgb(hsl2hsv(hsl))
     # https://www.rapidtables.com/convert/color/hsl-to-rgb.html
-    hsl_h, hsl_s, hsl_l = hsl.split(split_size=1, dim=-3)
-    _c = (1. - (hsl_l * 2. - 1.).abs()) * hsl_s
-    _x = _c * (1. - (hsl_h * 6. % 2. - 1.).abs())
-    _m = hsl_l - _c * .5
-    idx = ((hsl_h * 6.).type(torch.uint8) % 6).expand(*([-1] * (hsl.ndim - 3)), 3, -1, -1)
-    rgb = torch.empty_like(hsl)
-    _o = torch.zeros_like(_c)
-    rgb[idx == 0] = torch.cat([_c, _x, _o], dim=-3)[idx == 0]
-    rgb[idx == 1] = torch.cat([_x, _c, _o], dim=-3)[idx == 1]
-    rgb[idx == 2] = torch.cat([_o, _c, _x], dim=-3)[idx == 2]
-    rgb[idx == 3] = torch.cat([_o, _x, _c], dim=-3)[idx == 3]
-    rgb[idx == 4] = torch.cat([_x, _o, _c], dim=-3)[idx == 4]
-    rgb[idx == 5] = torch.cat([_c, _o, _x], dim=-3)[idx == 5]
-    rgb += _m
-    return rgb
+    # hsl_h, hsl_s, hsl_l = hsl.split(split_size=1, dim=-3)
+    # _c = (1. - (hsl_l * 2. - 1.).abs()) * hsl_s
+    # _x = _c * (1. - (hsl_h * 6. % 2. - 1.).abs())
+    # _m = hsl_l - _c * .5
+    # idx = ((hsl_h * 6.).type(torch.uint8) % 6).expand(*([-1] * (hsl.ndim - 3)), 3, -1, -1)
+    # rgb = torch.empty_like(hsl)
+    # _o = torch.zeros_like(_c)
+    # rgb[idx == 0] = torch.cat([_c, _x, _o], dim=-3)[idx == 0]
+    # rgb[idx == 1] = torch.cat([_x, _c, _o], dim=-3)[idx == 1]
+    # rgb[idx == 2] = torch.cat([_o, _c, _x], dim=-3)[idx == 2]
+    # rgb[idx == 3] = torch.cat([_o, _x, _c], dim=-3)[idx == 3]
+    # rgb[idx == 4] = torch.cat([_x, _o, _c], dim=-3)[idx == 4]
+    # rgb[idx == 5] = torch.cat([_c, _o, _x], dim=-3)[idx == 5]
+    # rgb += _m
+    # return rgb
 
 
 def random_color_v_eq_1(N: int, max_saturation: float = 1.) -> torch.Tensor:

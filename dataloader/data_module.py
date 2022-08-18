@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataloader.pose_dataset import DatasetWrapper, random_scene_any_obj_dp, rendered_scene_bop_obj_dp, \
-    bop_scene_bop_obj_dp
+    bop_scene_bop_obj_dp, real_scene_regular_obj_dp
 from dataloader.sample import Sample
 from utils.config import Config
 
@@ -24,8 +24,12 @@ class LitDataModule(pl.LightningDataModule):
         else:
             if cfg.dataset.bop_scene == 1:
                 dp = rendered_scene_bop_obj_dp
-            else:
+            elif cfg.dataset.bop_scene == 2:
                 dp = bop_scene_bop_obj_dp
+            elif cfg.dataset.bop_scene == 3:
+                dp = real_scene_regular_obj_dp
+            else:
+                raise NotImplementedError
             self.dataset: torch.utils.data.IterableDataset = dp(
                 dtype=self.cfg.dtype, device=self.cfg.device,
                 crop_out_size=self.cfg.model.img_input_size,

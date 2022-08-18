@@ -13,11 +13,11 @@ import augmentations.color_augmentation
 import augmentations.wrapper as A
 from dataloader.obj_mesh import ObjMesh
 from dataloader.sample import Sample
+from models.epropnp.demo import EProPnPDemo
 from models.eval.loss import Loss
 from models.eval.score import Score
 from models.resnet_backbone import ResnetBackbone
-from models.gdr.conv_pnp_net import ConvPnPNet
-from models.gdr.rot_head import RotWithRegionHead
+from models.gdr2.rot_head import RotWithRegionHead
 from models.surfemb.siren import Siren
 from models.texture_net_p import TextureNetP
 from renderer.scene import Scene
@@ -44,86 +44,97 @@ class GDRN(pl.LightningModule):
         ])
         self.texture_net_v = None  # TextureNetV(objects)
         self.texture_net_p = None
-        self.texture_net_p = TextureNetP(in_channels=6+36+36, out_channels=3, n_layers=3, hidden_size=128)
+        self.texture_net_p = TextureNetP(in_channels=3*(1+8*2), out_channels=3, n_layers=3, hidden_size=128)
         # self.texture_net_p = Siren(in_features=6, out_features=3, hidden_features=128, hidden_layers=2)
         self.backbone = ResnetBackbone(in_channels=3)
-        self.rot_head_net = RotWithRegionHead(512, out_channels=3, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
-        self.rot_head_net_m = RotWithRegionHead(512, out_channels=1, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
-        self.pnp_net = ConvPnPNet(in_channels=6)
+        self.rot_head_net = RotWithRegionHead(512, out_channels=3+2, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
         self.objects_eval = objects_eval if objects_eval is not None else objects
         self.loss = Loss(objects_eval if objects_eval is not None else objects)
         self.score = Score(objects_eval if objects_eval is not None else objects)
+        self.epropnp = EProPnPDemo()
 
     def configure_optimizers(self):
         params = [
-            {'params': self.backbone.parameters(), 'lr': 1e-5, 'name': 'backbone'},
-            {'params': self.rot_head_net.parameters(), 'lr': 1e-5, 'name': 'rot_head'},
-            {'params': self.rot_head_net_m.parameters(), 'lr': 1e-5, 'name': 'rot_head_m'},
-            {'params': self.pnp_net.parameters(), 'lr': 1e-5, 'name': 'pnp'},
-            # {'params': self.texture_net_p.parameters(), 'lr': 1e-6, 'name': 'texture_p'},
+            {'params': self.backbone.parameters(), 'lr': 3e-4, 'name': 'backbone'},
+            {'params': self.rot_head_net.parameters(), 'lr': 3e-4, 'name': 'rot_head'},
+            {'params': self.texture_net_p.parameters(), 'lr': 1e-6, 'name': 'texture_p'},
         ]
         optimizer = torch.optim.Adam(params)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=.1)
         return [optimizer], [scheduler]
 
     def forward(self, sample: Sample):
-        if self.texture_net_p is not None and False:
+        if self.texture_net_p is not None:
             gt_position_info_roi = torch.cat([
                 sample.gt_coord_3d_roi_normalized,
-                sample.gt_normal_roi,
+                # sample.gt_normal_roi,
             ], dim=1)
             gt_position_info_roi = torch.cat([gt_position_info_roi] \
-                + [x.sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32]]] \
-                + [x.cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32]]],
+                + [(x * (torch.pi * 2.)).sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]] \
+                + [(x * (torch.pi * 2.)).cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]],
             dim=1)
             gt_texel_roi = self.texture_net_p(gt_position_info_roi)
             sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
+
         # gt_texel_roi = sample.gt_coord_3d_roi_normalized  # XYZ texture
         # sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
-        if self.training or False:
+        if self.training or True:
             sample.img_roi = augmentations.color_augmentation.match_background_histogram(
                 sample.img_roi, sample.gt_mask_vis_roi, blend_saturation=1., blend_light=1., p=.5
             )
-            sample.img_roi = self.transform(sample.img_roi)
+            sample.img_roi2 = self.transform(sample.img_roi)
+
+        # if self.training and False:
+        #     import pickle
+        #     with open('/home/user/Desktop/im.pkl', 'wb') as f:
+        #         pickle.dump([sample.img_roi, sample.img_roi2], f)
+        #     sample.img_roi.retain_grad()
+        #     loss = sample.img_roi2.sum()
+        #     loss.backward()
+        #     ps = list(self.texture_net_p.parameters())
+        #     gs = [p.grad for p in ps]
+        #     gsf = [g.isfinite().all() for g in gs]
+        #     gi = sample.img_roi.grad
+        #     gif = gi.isfinite().all()
+        #     print((~gi.isfinite()).nonzero())
+        #     a = 0
+
         sample.gt_mask_vis_roi = vF.resize(sample.gt_mask_obj_roi, [64])  # mask: vis changed to obj
         sample.gt_coord_3d_roi = vF.resize(sample.gt_coord_3d_roi, [64]) * sample.gt_mask_vis_roi
         sample.coord_2d_roi = vF.resize(sample.coord_2d_roi, [64])
 
         features = self.backbone(sample.img_roi)
-        sample.pred_coord_3d_roi_normalized = self.rot_head_net(features)
-        pred_mask_vis_roi = self.rot_head_net_m(features)
-        # pred_mask_vis_roi, sample.pred_coord_3d_roi_normalized = features.split([1, 3], dim=1)
-        sample.pred_mask_vis_roi = pred_mask_vis_roi  #.sigmoid()
+        features, log_weight_scale = self.rot_head_net(features)
+        sample.pred_coord_3d_roi_normalized, w2d = features.split([3, 2], dim=-3)
+        N = len(sample)
+        x3d = sample.pred_coord_3d_roi.permute(0, 2, 3, 1).reshape(N, -1, 3)
+        x2d = sample.coord_2d_roi.permute(0, 2, 3, 1).reshape(N, -1, 2)
+        w2d = w2d.permute(0, 2, 3, 1).reshape(N, -1, 2)
+
+        # pose_opt = torch.zeros(N, 7, device=x3d.device)
+        # pose_opt[..., [2, -1]] = 1.
+        # sample.loss = 0.
 
         if self.training:
-            pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(
-                sample.gt_coord_3d_roi, sample.coord_2d_roi, sample.gt_mask_vis_roi
-                # (sample.pred_coord_3d_roi * (sample.pred_mask_vis_roi > .5).detach()), sample.coord_2d_roi,
-                # (sample.pred_mask_vis_roi > .5).to(dtype=sample.pred_mask_vis_roi.dtype).detach()
-            )
+            out_pose = torch.cat(
+                [sample.gt_cam_t_m2c, pytorch3d.transforms.matrix_to_quaternion(sample.gt_cam_R_m2c)], dim=-1)
+            pose_opt, *_, loss = self.epropnp.forward_train(x3d, x2d, w2d, log_weight_scale, out_pose)
+            sample.loss = loss
         else:
-            pred_cam_R_m2c_6d, sample.pred_cam_t_m2c_site = self.pnp_net(
-                sample.pred_coord_3d_roi * (sample.pred_mask_vis_roi > .5),
-                sample.coord_2d_roi, (sample.pred_mask_vis_roi > .5).to(dtype=sample.pred_mask_vis_roi.dtype)
-            )
-        pred_cam_R_m2c_allo = pytorch3d.transforms.rotation_6d_to_matrix(pred_cam_R_m2c_6d)
-        if self.training:
-            sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.gt_cam_t_m2c) @ pred_cam_R_m2c_allo
-            # sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c) @ pred_cam_R_m2c_allo
-        else:
-            sample.pred_cam_R_m2c = utils.transform_3d.rot_allo2ego(sample.pred_cam_t_m2c) @ pred_cam_R_m2c_allo
-        if False and not self.training:
-            sample.compute_pnp(erode_min=5.)
-        # sample.visualize()
+            pose_opt = self.epropnp.forward_test(x3d, x2d, w2d, log_weight_scale, fast_mode=False)
+        t_site = utils.transform_3d.t_to_t_site(pose_opt[:, :3], sample.bbox, sample.roi_zoom_in_ratio, sample.cam_K)
+        sample.pred_cam_t_m2c_site = t_site
+        sample.pred_cam_R_m2c = pytorch3d.transforms.quaternion_to_matrix(pose_opt[:, 3:])
+
         return sample
 
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:
         sample = self.forward(sample)
-        loss_pm, loss_t_site_center, loss_t_site_depth, loss_coord_3d, loss_mask = self.loss(sample)
-        # loss_mask *= 0.
-        loss = loss_coord_3d + loss_mask + loss_pm + loss_t_site_center + loss_t_site_depth
-        self.log('loss', {'total': loss, 'coord_3d': loss_coord_3d, 'mask': loss_mask, 'pm': loss_pm,
-                          'ts_center': loss_t_site_center, 'ts_depth': loss_t_site_depth})
+        loss_coord_3d = self.loss.coord_3d_loss(
+            sample.gt_coord_3d_roi_normalized, sample.gt_mask_vis_roi, sample.pred_coord_3d_roi_normalized).mean()
+        loss_epro = sample.loss * .02
+        loss = loss_coord_3d + loss_epro
+        self.log('loss', {'total': loss, 'coord_3d': loss_coord_3d, 'loss_epro': loss_epro})
         return loss
 
     def validation_step(self, sample: Sample, batch_idx: int) -> Optional[STEP_OUTPUT]:

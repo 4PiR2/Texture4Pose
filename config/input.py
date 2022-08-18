@@ -11,8 +11,9 @@ dataset = dict(
     num_obj=2,
     repeated_sample_obj=True,
     occlusion_size_max=.5,
+    # path='/data/real_exp/i12P_26mm',
     path='data/BOP/lm',
-    bop_scene=0,  # 0: random, 1: rendered, 2: load from bop
+    bop_scene=0,  # 0: random, 1: rendered, 2: load from bop, 3: real
 )
 
 dataloader = dict(

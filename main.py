@@ -1,5 +1,6 @@
 import pickle
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from pytorch_lightning import Trainer
@@ -11,7 +12,8 @@ from dataloader.sample import Sample
 from models.cdpn.cdpn import CDPN
 from models.cdpn.cdpn2 import CDPN2
 from models.drn.drn import DRN
-from models.gdr.gdrn import GDRN
+# from models.gdr.gdrn import GDRN
+from models.gdr2.gdrn import GDRN
 from models.surfemb.surfemb import SurfEmb
 from utils.ckpt_io import CkptIO
 from utils.config import Config
@@ -54,7 +56,7 @@ def main():
 
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_86/checkpoints/last.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_92/checkpoints/epoch=0108-val_metric=0.0865.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)
@@ -79,6 +81,23 @@ def main():
     model = model.to(cfg.device, dtype=cfg.dtype)
     trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
     # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
+
+    exit(1)
+
+    from dataloader.pose_dataset import real_scene_regular_obj_dp
+    from utils.image_2d import visualize
+    dp = real_scene_regular_obj_dp(path='/data/real_exp/i12P_26mm', obj_list={104: 'cylinderside'},)
+    # with open('/home/user/Desktop/x.pkl', 'rb') as f:
+    #     x = pickle.load(f)
+    model.eval()
+    with torch.no_grad():
+        i = 0
+        for y in dp:
+            y = model(y)
+            fig = y.visualize(return_figs=True)[0]
+            fig.savefig(f'/home/user/Desktop/f{i}.png')
+            fig.show()
+            i += 1
 
 
 if __name__ == '__main__':
