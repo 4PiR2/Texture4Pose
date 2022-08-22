@@ -71,15 +71,16 @@ class _(SampleFiltererIDP):
         return selected
 
 
-@functional_datapipe('rand_gt_translation')
+@functional_datapipe('rand_gt_translation_inside_camera')
 class _(SampleMapperIDP):
-    def __init__(self, src_dp: SampleMapperIDP, random_t_depth_range: tuple[int, int] = (.5, 1.2), cuboid: bool = True):
+    def __init__(self, src_dp: SampleMapperIDP, random_t_depth_range: tuple[float, float] = (.5, 1.2),
+                 cuboid: bool = False):
         super().__init__(src_dp, [sf.obj_id, sf.cam_K], [sf.gt_cam_t_m2c],
                          required_attributes=['objects', 'scene_mode', 'img_render_size'])
-        self._random_t_depth_range: tuple[int, int] = random_t_depth_range
+        self._random_t_depth_range: tuple[float, float] = random_t_depth_range
         self._cuboid: bool = cuboid
 
-    def main(self, obj_id: torch.Tensor, cam_K: torch.Tensor):
+    def main(self, obj_id: torch.Tensor, cam_K: torch.Tensor) -> torch.Tensor:
         N = len(obj_id)
         dtype = cam_K.dtype
         device = cam_K.device
@@ -478,3 +479,105 @@ class _(SampleMapperIDP):
         if self._transform is not None:
             img_roi = self._transform(img_roi)
         return img_roi
+
+
+@functional_datapipe('rand_gt_translation')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP, random_t_depth_range: tuple[float, float] = (.5, 1.2),
+                 random_t_center_range: tuple[float, float] = (-.7, .7), cuboid: bool = False):
+        super().__init__(src_dp, [sf.N], [sf.gt_cam_t_m2c],
+                         required_attributes=['dtype', 'device', 'objects'])
+        self._random_t_depth_range: tuple[float, float] = random_t_depth_range
+        self._random_t_center_range: tuple[float, float] = random_t_center_range
+        self._cuboid: bool = cuboid
+
+    def main(self, N: int) -> torch.Tensor:
+        t_depth_min, t_depth_max = self._random_t_depth_range
+        t_center_min, t_center_max = self._random_t_center_range
+        if self._cuboid:
+            tmin = torch.tensor([t_center_min, t_center_min, t_depth_min], dtype=self.dtype, device=self.device)
+            tmax = torch.tensor([t_center_max, t_center_max, t_depth_max], dtype=self.dtype, device=self.device)
+            gt_cam_t_m2c = torch.lerp(tmin, tmax, torch.rand((N, 3), dtype=self.dtype, device=self.device))
+        else:
+            # frustum
+            tz = torch.rand(N, 1, dtype=self.dtype, device=self.device)  # [N, 1(Z)]
+            tz = (tz * t_depth_max ** 3 + (1. - tz) * t_depth_min ** 3) ** (1. / 3.)  # uniform
+            txy = torch.lerp(torch.tensor(t_center_min, dtype=self.dtype, device=self.device),
+                             torch.tensor(t_center_max, dtype=self.dtype, device=self.device),
+                             torch.rand(N, 2, dtype=self.dtype, device=self.device))  # [N, 2(XY)]
+            gt_cam_t_m2c = torch.cat([txy * tz, tz], dim=-1)
+        return gt_cam_t_m2c
+
+
+@functional_datapipe('gen_bbox_proj')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp):
+        super().__init__(src_dp, [sf.obj_id, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c], [sf.gt_bbox_vis],
+                         required_attributes=['objects'])
+
+    def main(self, obj_id: torch.Tensor, gt_cam_R_m2c: torch.Tensor, gt_cam_t_m2c: torch.Tensor) -> torch.Tensor:
+        bbox = []
+        for oid, cam_R, cam_t in zip(obj_id, gt_cam_R_m2c, gt_cam_t_m2c):
+            mesh = self.objects[int(oid)].mesh
+            verts = mesh.verts_packed() @ cam_R.transpose(-2, -1) + cam_t
+            pverts = verts[..., :2] / verts[..., -1:]
+            pmin, _ = pverts.min(dim=-2)
+            pmax, _ = pverts.max(dim=-2)
+            bbox.append(torch.cat([(pmin + pmax) * .5, pmax - pmin], dim=-1))
+        return torch.stack(bbox, dim=0)
+
+
+@functional_datapipe('set_roi_camera')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp):
+        super().__init__(src_dp, [sf.bbox], [sf.cam_K])
+
+    def main(self, bbox: torch.Tensor) -> torch.Tensor:
+        cam_K = torch.zeros(len(bbox), 3, 3, dtype=bbox.dtype, device=bbox.device)
+        cam_K[..., 2, 2] = 1.
+        cam_K[..., 0, 0] = cam_K[..., 1, 1] = bbox[..., 2:].max(dim=-1)[0] / 256.
+        cam_K[..., :2, 2] = bbox[..., :2] - bbox[..., 2:] * .5
+        return torch.linalg.inv(cam_K)
+
+
+@functional_datapipe('crop_roi_dummy')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP, delete_original: bool = True):
+        fields = [sf.gt_mask_vis, sf.gt_mask_obj, sf.gt_coord_3d, sf.gt_normal, sf.gt_texel, sf.gt_bg]
+        super().__init__(src_dp, fields, [f'{field}_roi' for field in fields], fields if delete_original else [])
+
+    def main(self, **kwargs):
+        return kwargs.values()
+
+
+@functional_datapipe('normalize_normal')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP):
+        super().__init__(src_dp, [sf.gt_normal_roi], [sf.gt_normal_roi])
+
+    def main(self, gt_normal_roi) -> torch.Tensor:
+        return F.normalize(gt_normal_roi, p=2, dim=-3)
+
+
+@functional_datapipe('gen_coord_2d_bbox')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP):
+        super().__init__(src_dp, [sf.bbox], [sf.coord_2d_roi], required_attributes=['dtype', 'device', 'img_render_size'])
+        self._coord_2d = utils.image_2d.get_coord_2d_map(self.img_render_size, self.img_render_size, dtype=self.dtype,
+                                                         device=self.device) / self.img_render_size  # [2(XY), H, W]
+
+    def main(self, bbox: torch.Tensor) -> torch.Tensor:
+        pmin = bbox[:, :2] - bbox[:, 2:] * .5
+        pmax = bbox[:, :2] + bbox[:, 2:] * .5
+        return torch.lerp(pmin[..., None, None], pmax[..., None, None], self._coord_2d)
+
+
+@functional_datapipe('calibrate_bbox')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP):
+        super().__init__(src_dp, [sf.N], [sf.bbox], required_attributes=['dtype', 'device', 'img_render_size'])
+
+    def main(self, N: int) -> torch.Tensor:
+        w = self.img_render_size
+        x = w * .5
+        return torch.tensor([x, x, w, w], dtype=self.dtype, device=self.device).expand(N, -1)

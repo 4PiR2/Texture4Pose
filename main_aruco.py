@@ -16,6 +16,13 @@ def show_ndarray(img):
 
 
 if __name__ == '__main__':
+    # img_100 = ap.unroll_cylinder_side(r=.05, margin=0., border=0, dpi=300)
+    # freq, amplitude, phase = ap.get_spectrum_info(img_100.detach())
+    # plt.plot(freq[:], amplitude[0, :, :].mean(dim=-2), c='r')
+    # plt.plot(freq[:], amplitude[1, :, :].mean(dim=-2), c='g')
+    # plt.plot(freq[:], amplitude[2, :, :].mean(dim=-2), c='b')
+    # plt.show()
+
     # ac.ChArUcoBoard(7, 10, .04).to_paper_pdf('/home/user/Desktop/1.pdf', paper_size='a3')
     dpi = 300
     img_84 = ap.unroll_cylinder_side(r=.042, dpi=dpi)
@@ -23,7 +30,7 @@ if __name__ == '__main__':
     img = utils.print_paper.make_grid(img_84, (1, 2), margin=.05)
     img[..., :img_84.shape[-1]] = 1.
     img[..., :img_82.shape[-2], :img_82.shape[-1]] = img_82
-    utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/3.pdf', dpi=dpi)
+    utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/4.pdf', dpi=dpi)
 
     chboard: ac.ChArUcoBoard = ac.ChArUcoBoard(7, 10, .04)
     print('Starting camera calibration ...')

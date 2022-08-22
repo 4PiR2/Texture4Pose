@@ -2,8 +2,8 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader
 
-from dataloader.pose_dataset import DatasetWrapper, random_scene_any_obj_dp, rendered_scene_bop_obj_dp, \
-    bop_scene_bop_obj_dp, real_scene_regular_obj_dp
+from dataloader.pose_dataset import DatasetWrapper, random_scene_any_obj_dp, random_scene_any_obj_dp2,\
+    rendered_scene_bop_obj_dp, bop_scene_bop_obj_dp, real_scene_regular_obj_dp
 from dataloader.sample import Sample
 from utils.config import Config
 
@@ -14,7 +14,7 @@ class LitDataModule(pl.LightningDataModule):
         self.cfg: Config = cfg
         self.batch_size: int = self.cfg.dataloader.batch_size
         if cfg.dataset.bop_scene == 0:
-            self.dataset: torch.utils.data.IterableDataset = random_scene_any_obj_dp(
+            self.dataset: torch.utils.data.IterableDataset = random_scene_any_obj_dp2(
                 dtype=self.cfg.dtype, device=self.cfg.device,
                 crop_out_size=self.cfg.model.img_input_size,
                 **self.cfg.dataset

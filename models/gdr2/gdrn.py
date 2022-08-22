@@ -73,8 +73,8 @@ class GDRN(pl.LightningModule):
                 + [(x * (torch.pi * 2.)).sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]] \
                 + [(x * (torch.pi * 2.)).cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]],
             dim=1)
-            gt_texel_roi = self.texture_net_p(gt_position_info_roi)
-            sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
+            sample.gt_texel_roi = self.texture_net_p(gt_position_info_roi)
+            sample.img_roi = (sample.gt_light_texel_roi * sample.gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
 
         # gt_texel_roi = sample.gt_coord_3d_roi_normalized  # XYZ texture
         # sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
@@ -84,36 +84,19 @@ class GDRN(pl.LightningModule):
             )
             sample.img_roi2 = self.transform(sample.img_roi)
 
-        # if self.training and False:
-        #     import pickle
-        #     with open('/home/user/Desktop/im.pkl', 'wb') as f:
-        #         pickle.dump([sample.img_roi, sample.img_roi2], f)
-        #     sample.img_roi.retain_grad()
-        #     loss = sample.img_roi2.sum()
-        #     loss.backward()
-        #     ps = list(self.texture_net_p.parameters())
-        #     gs = [p.grad for p in ps]
-        #     gsf = [g.isfinite().all() for g in gs]
-        #     gi = sample.img_roi.grad
-        #     gif = gi.isfinite().all()
-        #     print((~gi.isfinite()).nonzero())
-        #     a = 0
-
         sample.gt_mask_vis_roi = vF.resize(sample.gt_mask_obj_roi, [64])  # mask: vis changed to obj
         sample.gt_coord_3d_roi = vF.resize(sample.gt_coord_3d_roi, [64]) * sample.gt_mask_vis_roi
         sample.coord_2d_roi = vF.resize(sample.coord_2d_roi, [64])
 
         features = self.backbone(sample.img_roi)
         features, log_weight_scale = self.rot_head_net(features)
-        sample.pred_coord_3d_roi_normalized, w2d = features.split([3, 2], dim=-3)
+        sample.pred_coord_3d_roi_normalized, w2d_raw = features.split([3, 2], dim=-3)
         N = len(sample)
+        sample.pred_weight_2d = (w2d_raw.reshape(N, 2, -1).log_softmax(dim=-1).reshape(N, 2, 64, 64) + log_weight_scale[..., None, None]).exp()
+        sample.pred_weight_2d /= sample.pred_weight_2d.max()
         x3d = sample.pred_coord_3d_roi.permute(0, 2, 3, 1).reshape(N, -1, 3)
         x2d = sample.coord_2d_roi.permute(0, 2, 3, 1).reshape(N, -1, 2)
-        w2d = w2d.permute(0, 2, 3, 1).reshape(N, -1, 2)
-
-        # pose_opt = torch.zeros(N, 7, device=x3d.device)
-        # pose_opt[..., [2, -1]] = 1.
-        # sample.loss = 0.
+        w2d = w2d_raw.permute(0, 2, 3, 1).reshape(N, -1, 2)
 
         if self.training:
             out_pose = torch.cat(

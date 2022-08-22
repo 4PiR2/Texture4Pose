@@ -35,9 +35,9 @@ def random_scene_any_obj_dp(
     dp = dp.set_mesh_info()
     dp = dp.set_static_camera(cam_K=cam_K)
     dp = dp.rand_select_objs(num_obj=num_obj, repeated_sample_obj=repeated_sample_obj)
-    dp = dp.rand_gt_translation(random_t_depth_range=random_t_depth_range, cuboid=False)
-    # dp = dp.rand_gt_rotation()
-    dp = dp.rand_gt_rotation_cylinder(thresh_theta=15. * torch.pi / 180.)
+    dp = dp.rand_gt_translation_inside_camera(random_t_depth_range=random_t_depth_range, cuboid=False)
+    dp = dp.rand_gt_rotation()
+    # dp = dp.rand_gt_rotation_cylinder(thresh_theta=15. * torch.pi / 180.)
     dp = dp.render_scene()
     dp = dp.gen_mask()
     dp = dp.compute_vis_ratio()
@@ -57,6 +57,47 @@ def random_scene_any_obj_dp(
     dp = dp.apply_bg()  # convert mask_vis back to bool
     dp = dp.gen_coord_2d(width=img_render_size, height=img_render_size)
     dp = dp.crop_coord_2d(out_size=crop_out_size)
+    dp = dp.render_img()
+    # dp = dp.augment_img(transform=transform)
+    return dp
+
+
+def random_scene_any_obj_dp2(
+    path=None, obj_list=None, dtype=cc.dtype, device=cc.device,
+    bg_img_path=None, img_render_size=512, crop_out_size=256,
+    random_t_depth_range=(.5, 1.2), max_dzi_ratio=.25,
+    bbox_zoom_out_ratio=1.5, light_max_saturation=1., light_ambient_range=(.5, 1.),
+    light_diffuse_range=(0., .3), light_specular_range=(0., .2), light_shininess_range=(40, 80),
+    num_obj=None, repeated_sample_obj=False, occlusion_size_min=.125, occlusion_size_max=.5,
+    num_occlusion_per_obj=1, min_occlusion_vis_ratio=.5, **kwargs,
+):
+    dp = SampleSource(dtype=dtype, device=device, scene_mode=False, img_render_size=crop_out_size)
+    dp = dataloader.datapipe.functional_bop.init_objects(dp, obj_list=obj_list, path=path)
+    dp = dp.set_mesh_info()
+    dp = dp.rand_select_objs(num_obj=num_obj, repeated_sample_obj=repeated_sample_obj)
+    dp = dp.rand_gt_translation(random_t_depth_range=random_t_depth_range, random_t_center_range=(-.7, .7),
+                                cuboid=False)
+    # dp = dp.rand_gt_rotation()
+    dp = dp.rand_gt_rotation_cylinder(thresh_theta=15. * torch.pi / 180.)
+    dp = dp.gen_bbox_proj()
+    dp = dp.dzi_bbox(max_dzi_ratio=max_dzi_ratio, bbox_zoom_out_ratio=bbox_zoom_out_ratio)
+    dp = dp.set_roi_camera()
+    dp = dp.render_scene()
+    dp = dp.gen_mask()
+    dp = dp.rand_bg(bg_img_path=bg_img_path)
+    dp = dp.crop_roi_dummy()
+    dp = dp.normalize_normal()
+    dp = dp.rand_occlude(occlusion_size_min=occlusion_size_min, occlusion_size_max=occlusion_size_max,
+                         num_occlusion_per_obj=num_occlusion_per_obj, min_occlusion_vis_ratio=min_occlusion_vis_ratio,
+                         batch_occlusion=1)
+    dp = dp.rand_lights(light_max_saturation=light_max_saturation, light_ambient_range=light_ambient_range,
+                        light_diffuse_range=light_diffuse_range,
+                        light_specular_range=light_specular_range, light_shininess_range=light_shininess_range)
+    dp = dp.apply_lighting(batch_lighting=1)
+    dp = dp.apply_bg()
+    dp = dp.gen_coord_2d_bbox()
+    # dp = dp.set_static_camera(cam_K=torch.eye(3, dtype=dtype))
+    dp = dp.calibrate_bbox()
     dp = dp.render_img()
     # dp = dp.augment_img(transform=transform)
     return dp
