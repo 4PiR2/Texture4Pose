@@ -1,4 +1,6 @@
 import torch
+import torchvision.transforms as T
+import torchvision.transforms.functional_tensor as F_t
 
 import utils.color
 
@@ -177,6 +179,31 @@ def iso_noise(img: torch.Tensor, color_shift: float = .05, intensity: float = .5
     hue_color_noise = torch.randn_like(hsl[:, 0]) * color_shift * intensity  # [N, H, W]
     result[:, 0] = (hsl[:, 0] + hue_color_noise) % 1.
     return utils.color.hsl2rgb(result)
+
+
+class ColorJitter(T.ColorJitter):
+    def forward(self, img):
+        fn_idx, brightness_factor, contrast_factor, saturation_factor, hue_factor = self.get_params(
+            self.brightness, self.contrast, self.saturation, self.hue
+        )
+
+        for fn_id in fn_idx:
+            if fn_id == 0 and brightness_factor is not None:
+                img = F_t.adjust_brightness(img, brightness_factor)
+            elif fn_id == 1 and contrast_factor is not None:
+                img = F_t.adjust_contrast(img, contrast_factor)
+            elif fn_id == 2 and saturation_factor is not None:
+                img = F_t.adjust_saturation(img, saturation_factor)
+            elif fn_id == 3 and hue_factor is not None:
+                if not (-0.5 <= hue_factor <= 0.5):
+                    raise ValueError(f"hue_factor ({hue_factor}) is not in [-0.5, 0.5].")
+                img = utils.color.rgb2hsv(img)
+                h, s, v = img.unbind(dim=-3)
+                h = (h + hue_factor) % 1.0
+                img = torch.stack((h, s, v), dim=-3)
+                img = utils.color.hsv2rgb(img)
+
+        return img
 
 
 # if __name__ == '__main__':

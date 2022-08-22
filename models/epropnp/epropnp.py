@@ -18,7 +18,7 @@ def cholesky_wrapper(mat, default_diag=None, force_cpu=True):
     if force_cpu:
         mat = mat.cpu()
     try:
-        tril = torch.cholesky(mat, upper=False)
+        tril = torch.linalg.cholesky(mat)
     except RuntimeError:
         n_dims = mat.size(-1)
         tril = []
@@ -26,7 +26,7 @@ def cholesky_wrapper(mat, default_diag=None, force_cpu=True):
             else torch.eye(n_dims, dtype=mat.dtype, device=mat.device)
         for cov in mat.reshape(-1, n_dims, n_dims):
             try:
-                tril.append(torch.cholesky(cov, upper=False))
+                tril.append(torch.linalg.cholesky(cov))
             except RuntimeError:
                 tril.append(default_tril_single)
         tril = torch.stack(tril, dim=0).reshape(mat.shape)

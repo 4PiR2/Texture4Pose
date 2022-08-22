@@ -75,7 +75,7 @@ class _BaseI(_Base):
 
 class ColorJitter(_BaseI):
     def __init__(self, brightness=0., contrast=0., saturation=0., hue=0., p: float = 1.):
-        super().__init__(T.ColorJitter(brightness, contrast, saturation, hue), p=p)
+        super().__init__(augmentations.color_augmentation.ColorJitter(brightness, contrast, saturation, hue), p=p)
 
 
 class GaussianBlur(_BaseI):

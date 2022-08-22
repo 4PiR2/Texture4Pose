@@ -222,7 +222,7 @@ class Sample:
             draw_fields(axs[1, 2], [sf.pred_mask_vis_roi], i, 'pred mask vis', lambda x: x.clamp(0., 1.))
 
             draw_fields(axs[0, 3], [sf.coord_2d_roi], i, '2D coord (relative)', utils.image_2d.normalize_channel)
-            draw_fields(axs[1, 3], [sf.pred_weight_2d], i, 'pred weight 2D', lambda x: x.clamp(0., 1.))
+            draw_fields(axs[1, 3], [sf.pred_weight_2d], i, 'pred weight 2D (relative)', lambda x: x.clamp(0., 1.))
 
             draw_fields(axs[0, 4], [sf.cam_K, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c, sf.obj_size, sf.bbox], i, 'gt pose',
                         fn_ax=utils.transform_3d.show_pose)

@@ -16,9 +16,9 @@ from dataloader.sample import Sample
 from models.epropnp.demo import EProPnPDemo
 from models.eval.loss import Loss
 from models.eval.score import Score
+from models.gdr2.siren_conv import SirenConv
 from models.resnet_backbone import ResnetBackbone
 from models.gdr2.rot_head import RotWithRegionHead
-from models.surfemb.siren import Siren
 from models.texture_net_p import TextureNetP
 from renderer.scene import Scene
 import utils.color
@@ -44,8 +44,8 @@ class GDRN(pl.LightningModule):
         ])
         self.texture_net_v = None  # TextureNetV(objects)
         self.texture_net_p = None
-        self.texture_net_p = TextureNetP(in_channels=3*(1+8*2), out_channels=3, n_layers=3, hidden_size=128)
-        # self.texture_net_p = Siren(in_features=6, out_features=3, hidden_features=128, hidden_layers=2)
+        # self.texture_net_p = TextureNetP(in_channels=3*(1+8*2), out_channels=3, n_layers=3, hidden_size=128)
+        self.texture_net_p = SirenConv(in_features=3, out_features=3, hidden_features=128, hidden_layers=2, outermost_linear=False)
         self.backbone = ResnetBackbone(in_channels=3)
         self.rot_head_net = RotWithRegionHead(512, out_channels=3+2, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
         self.objects_eval = objects_eval if objects_eval is not None else objects
@@ -69,11 +69,11 @@ class GDRN(pl.LightningModule):
                 sample.gt_coord_3d_roi_normalized,
                 # sample.gt_normal_roi,
             ], dim=1)
-            gt_position_info_roi = torch.cat([gt_position_info_roi] \
-                + [(x * (torch.pi * 2.)).sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]] \
-                + [(x * (torch.pi * 2.)).cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]],
-            dim=1)
-            sample.gt_texel_roi = self.texture_net_p(gt_position_info_roi)
+            # gt_position_info_roi = torch.cat([gt_position_info_roi] \
+            #     + [(x * (torch.pi * 2.)).sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]] \
+            #     + [(x * (torch.pi * 2.)).cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]],
+            # dim=1)
+            sample.gt_texel_roi = self.texture_net_p(gt_position_info_roi) *.5 + .5
             sample.img_roi = (sample.gt_light_texel_roi * sample.gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
 
         # gt_texel_roi = sample.gt_coord_3d_roi_normalized  # XYZ texture
@@ -82,7 +82,7 @@ class GDRN(pl.LightningModule):
             sample.img_roi = augmentations.color_augmentation.match_background_histogram(
                 sample.img_roi, sample.gt_mask_vis_roi, blend_saturation=1., blend_light=1., p=.5
             )
-            sample.img_roi2 = self.transform(sample.img_roi)
+            sample.img_roi = self.transform(sample.img_roi)
 
         sample.gt_mask_vis_roi = vF.resize(sample.gt_mask_obj_roi, [64])  # mask: vis changed to obj
         sample.gt_coord_3d_roi = vF.resize(sample.gt_coord_3d_roi, [64]) * sample.gt_mask_vis_roi
@@ -92,7 +92,8 @@ class GDRN(pl.LightningModule):
         features, log_weight_scale = self.rot_head_net(features)
         sample.pred_coord_3d_roi_normalized, w2d_raw = features.split([3, 2], dim=-3)
         N = len(sample)
-        sample.pred_weight_2d = (w2d_raw.reshape(N, 2, -1).log_softmax(dim=-1).reshape(N, 2, 64, 64) + log_weight_scale[..., None, None]).exp()
+        sample.pred_weight_2d = (w2d_raw.detach().reshape(N, 2, -1).log_softmax(dim=-1).reshape(N, 2, 64, 64)
+                                 + log_weight_scale.detach()[..., None, None]).exp()
         sample.pred_weight_2d /= sample.pred_weight_2d.max()
         x3d = sample.pred_coord_3d_roi.permute(0, 2, 3, 1).reshape(N, -1, 3)
         x2d = sample.coord_2d_roi.permute(0, 2, 3, 1).reshape(N, -1, 2)

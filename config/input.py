@@ -8,7 +8,7 @@ dataset = dict(
     obj_list={104: 'cylinderside',},
     # cam_K=cc.lm_cam_K,
     scene_mode=False,
-    num_obj=2,
+    num_obj=12,
     repeated_sample_obj=True,
     occlusion_size_max=.5,
     # path='/data/real_exp/i12P_26mm',
@@ -17,7 +17,7 @@ dataset = dict(
 )
 
 dataloader = dict(
-    batch_size=8,
-    train_epoch_len=500 * 8,
+    batch_size=1,
+    train_epoch_len=500 * 1,
     val_epoch_len=200 // dataset['num_obj'],
 )

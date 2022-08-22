@@ -16,7 +16,7 @@ class AngularCentralGaussian(TorchDistribution):
     arg_constraints = {'scale_tril': constraints.lower_cholesky}
     has_rsample = True
 
-    def __init__(self, scale_tril, validate_args=None, eps=1e-6):
+    def __init__(self, scale_tril, validate_args=False, eps=1e-6):
         q = scale_tril.size(-1)
         assert q > 1
         assert scale_tril.shape[-2:] == (q, q)
