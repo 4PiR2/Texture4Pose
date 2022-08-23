@@ -43,22 +43,22 @@ class EProPnPDemo(nn.Module):
                 num_iter=4,
                 solver=LMSolver(
                     dof=6,
-                    num_iter=5,
+                    num_iter=10,
                     init_solver=RSLMSolver(
                         dof=6,
-                        num_points=16,
-                        num_proposals=4,
-                        num_iter=3))),
+                        num_points=8,
+                        num_proposals=128,
+                        num_iter=5))),
             camera=PerspectiveCamera(),
             cost_fun=AdaptiveHuberPnPCost(
                 relative_delta=0.5)):
         super().__init__()
         # Here we use static weight_scale because the data noise is homoscedastic
-        # self.log_weight_scale = nn.Parameter(torch.zeros(2))
         self.epropnp = epropnp
         self.camera = camera
         self.cost_fun = cost_fun
         self.mc_loss_fun = MonteCarloPoseLoss()
+        # self.log_weight_scale = nn.Parameter(torch.zeros(2))
 
     @staticmethod
     def forward_w2d(w2d, log_weight_scale):
@@ -104,7 +104,6 @@ class EProPnPDemo(nn.Module):
             pose_init=out_pose,
             force_init_solve=True,
             with_pose_opt_plus=True)  # True for derivative regularization loss
-        # norm_factor = self.log_weight_scale.detach().exp().mean()
         norm_factor = log_weight_scale.detach().exp().mean()
 
         loss = self._compute_loss(pose_opt_plus, pose_sample_logweights, cost_tgt, norm_factor, out_pose)

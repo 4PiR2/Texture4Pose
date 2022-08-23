@@ -19,5 +19,5 @@ dataset = dict(
 dataloader = dict(
     batch_size=1,
     train_epoch_len=500 * 1,
-    val_epoch_len=200 // dataset['num_obj'],
+    val_epoch_len=(200 + dataset['num_obj'] - 1) // dataset['num_obj'],
 )

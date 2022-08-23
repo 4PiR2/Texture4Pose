@@ -20,6 +20,7 @@ from models.gdr2.siren_conv import SirenConv
 from models.resnet_backbone import ResnetBackbone
 from models.gdr2.rot_head import RotWithRegionHead
 from models.texture_net_p import TextureNetP
+from models.texture_net_v import TextureNetV
 from renderer.scene import Scene
 import utils.color
 import utils.image_2d
@@ -29,6 +30,8 @@ import utils.transform_3d
 class GDRN(pl.LightningModule):
     def __init__(self, cfg, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
+        self.texture_net_mode: str = 'siren'  # [None, 'xyz', 'vertex', 'mlp', 'siren']
+        self.eval_augmentation: bool = True
         self.transform = T.Compose([
             A.CoarseDropout(num_holes=10, width=8, p=.5),
             A.Debayer(permute_channel=True, p=.5),
@@ -40,12 +43,20 @@ class GDRN(pl.LightningModule):
             A.ColorJitter(**cfg.augmentation, p=.5),
             # T.RandomAutocontrast(p=.5),
             # T.RandomEqualize(p=.5),
-            # vF.adjust_gamma(),
+            # T.Lambda(vF.adjust_gamma),
         ])
-        self.texture_net_v = None  # TextureNetV(objects)
-        self.texture_net_p = None
-        # self.texture_net_p = TextureNetP(in_channels=3*(1+8*2), out_channels=3, n_layers=3, hidden_size=128)
-        self.texture_net_p = SirenConv(in_features=3, out_features=3, hidden_features=128, hidden_layers=2, outermost_linear=False)
+        if self.texture_net_mode == 'vertex':
+            self.texture_net_v = TextureNetV(objects)
+        else:
+            self.texture_net_v = None
+            if self.texture_net_mode == 'mlp':
+                self.texture_net_p = TextureNetP(in_channels=3*(1+8*2), out_channels=3, n_layers=3, hidden_size=128)
+            elif self.texture_net_mode == 'siren':
+                self.texture_net_p = SirenConv(in_features=3, out_features=3, hidden_features=128, hidden_layers=2,
+                                               outermost_linear=False)
+            else:
+                self.texture_net_p = None
+
         self.backbone = ResnetBackbone(in_channels=3)
         self.rot_head_net = RotWithRegionHead(512, out_channels=3+2, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
         self.objects_eval = objects_eval if objects_eval is not None else objects
@@ -69,15 +80,18 @@ class GDRN(pl.LightningModule):
                 sample.gt_coord_3d_roi_normalized,
                 # sample.gt_normal_roi,
             ], dim=1)
-            gt_position_info_roi = torch.cat([gt_position_info_roi] \
-                + [(x * (torch.pi * 2.)).sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]] \
-                + [(x * (torch.pi * 2.)).cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]],
-            dim=1)
-            sample.gt_texel_roi = self.texture_net_p(gt_position_info_roi)  # * .5 + .5
-        else:
-            sample.gt_texel_roi = sample.gt_coord_3d_roi_normalized  # XYZ texture
+            # gt_position_info_roi = torch.cat([gt_position_info_roi] \
+            #     + [(x * (torch.pi * 2.)).sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]] \
+            #     + [(x * (torch.pi * 2.)).cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]],
+            # dim=1)
+            sample.gt_texel_roi = self.texture_net_p(gt_position_info_roi)
+            if self.texture_net_mode == 'siren':
+                sample.gt_texel_roi = sample.gt_texel_roi * .5 + .5
+        elif self.texture_net_mode == 'xyz':
+            sample.gt_texel_roi = sample.gt_coord_3d_roi_normalized
         sample.img_roi = (sample.gt_light_texel_roi * sample.gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
-        if self.training or True:
+
+        if self.training or self.eval_augmentation:
             sample.img_roi = augmentations.color_augmentation.match_background_histogram(
                 sample.img_roi, sample.gt_mask_vis_roi, blend_saturation=1., blend_light=1., p=.5
             )
