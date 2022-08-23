@@ -69,15 +69,14 @@ class GDRN(pl.LightningModule):
                 sample.gt_coord_3d_roi_normalized,
                 # sample.gt_normal_roi,
             ], dim=1)
-            # gt_position_info_roi = torch.cat([gt_position_info_roi] \
-            #     + [(x * (torch.pi * 2.)).sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]] \
-            #     + [(x * (torch.pi * 2.)).cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]],
-            # dim=1)
-            sample.gt_texel_roi = self.texture_net_p(gt_position_info_roi) *.5 + .5
-            sample.img_roi = (sample.gt_light_texel_roi * sample.gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
-
-        # gt_texel_roi = sample.gt_coord_3d_roi_normalized  # XYZ texture
-        # sample.img_roi = (sample.gt_light_texel_roi * gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
+            gt_position_info_roi = torch.cat([gt_position_info_roi] \
+                + [(x * (torch.pi * 2.)).sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]] \
+                + [(x * (torch.pi * 2.)).cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]],
+            dim=1)
+            sample.gt_texel_roi = self.texture_net_p(gt_position_info_roi)  # * .5 + .5
+        else:
+            sample.gt_texel_roi = sample.gt_coord_3d_roi_normalized  # XYZ texture
+        sample.img_roi = (sample.gt_light_texel_roi * sample.gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
         if self.training or True:
             sample.img_roi = augmentations.color_augmentation.match_background_histogram(
                 sample.img_roi, sample.gt_mask_vis_roi, blend_saturation=1., blend_light=1., p=.5
@@ -116,7 +115,7 @@ class GDRN(pl.LightningModule):
         sample = self.forward(sample)
         loss_coord_3d = self.loss.coord_3d_loss(
             sample.gt_coord_3d_roi_normalized, sample.gt_mask_vis_roi, sample.pred_coord_3d_roi_normalized).mean()
-        loss_epro = sample.loss * .02
+        loss_epro = sample.loss
         loss = loss_coord_3d + loss_epro
         self.log('loss', {'total': loss, 'coord_3d': loss_coord_3d, 'loss_epro': loss_epro})
         return loss
