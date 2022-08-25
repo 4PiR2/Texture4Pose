@@ -30,7 +30,7 @@ import utils.transform_3d
 class GDRN(pl.LightningModule):
     def __init__(self, cfg, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
-        self.texture_net_mode: str = 'siren'  # [None, 'xyz', 'vertex', 'mlp', 'siren']
+        self.texture_net_mode: str = 'mlp'  # [None, 'xyz', 'vertex', 'mlp', 'siren']
         self.eval_augmentation: bool = True
         self.transform = T.Compose([
             A.CoarseDropout(num_holes=10, width=8, p=.5),
@@ -50,43 +50,43 @@ class GDRN(pl.LightningModule):
         else:
             self.texture_net_v = None
             if self.texture_net_mode == 'mlp':
-                self.texture_net_p = TextureNetP(in_channels=3*(1+8*2), out_channels=3, n_layers=3, hidden_size=128)
+                self.texture_net_p = TextureNetP(in_channels=3, out_channels=3, n_layers=3, hidden_size=128,
+                    positional_encoding=[2. ** i for i in range(8)], use_cosine_positional_encoding=True)
             elif self.texture_net_mode == 'siren':
                 self.texture_net_p = SirenConv(in_features=3, out_features=3, hidden_features=128, hidden_layers=2,
-                                               outermost_linear=False)
+                                               outermost_linear=False, first_omega_0=30., hidden_omega_0=30.)
             else:
                 self.texture_net_p = None
 
         self.backbone = ResnetBackbone(in_channels=3)
         self.rot_head_net = RotWithRegionHead(512, out_channels=3+2, num_layers=3, num_filters=256, kernel_size=3, output_kernel_size=1)
+        self.epropnp = EProPnPDemo()
         self.objects_eval = objects_eval if objects_eval is not None else objects
         self.loss = Loss(objects_eval if objects_eval is not None else objects)
         self.score = Score(objects_eval if objects_eval is not None else objects)
-        self.epropnp = EProPnPDemo()
 
     def configure_optimizers(self):
         params = [
             {'params': self.backbone.parameters(), 'lr': 3e-4, 'name': 'backbone'},
             {'params': self.rot_head_net.parameters(), 'lr': 3e-4, 'name': 'rot_head'},
-            {'params': self.texture_net_p.parameters(), 'lr': 1e-6, 'name': 'texture_p'},
         ]
+        if self.texture_net_mode in ['mlp', 'siren']:
+            params.append({'params': self.texture_net_p.parameters(), 'lr': 1e-6, 'name': 'texture_p'})
         optimizer = torch.optim.Adam(params)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=.1)
         return [optimizer], [scheduler]
 
     def forward(self, sample: Sample):
         if self.texture_net_p is not None:
-            gt_position_info_roi = torch.cat([
-                sample.gt_coord_3d_roi_normalized,
-                # sample.gt_normal_roi,
-            ], dim=1)
-            # gt_position_info_roi = torch.cat([gt_position_info_roi] \
-            #     + [(x * (torch.pi * 2.)).sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]] \
-            #     + [(x * (torch.pi * 2.)).cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]],
-            # dim=1)
-            sample.gt_texel_roi = self.texture_net_p(gt_position_info_roi)
-            if self.texture_net_mode == 'siren':
-                sample.gt_texel_roi = sample.gt_texel_roi * .5 + .5
+            N, _, H, W = sample.gt_mask_vis_roi.shape
+            input_feature_map = sample.gt_coord_3d_roi_normalized * 2. - 1.
+            input_feature = input_feature_map.permute(0, 2, 3, 1)[sample.gt_mask_vis_roi[:, 0]][..., None, None]
+            # [NHW, C, 1, 1]
+            output_feature_map = torch.ones(N, H, W, 3, dtype=input_feature.dtype, device=input_feature.device)
+            output_feature_map[sample.gt_mask_vis_roi[:, 0]] = self.texture_net_p(input_feature)[..., 0, 0]
+            sample.gt_texel_roi = output_feature_map.permute(0, 3, 1, 2)
+            # if self.texture_net_mode == 'siren':
+            #     sample.gt_texel_roi = sample.gt_texel_roi * .5 + .5
         elif self.texture_net_mode == 'xyz':
             sample.gt_texel_roi = sample.gt_coord_3d_roi_normalized
         sample.img_roi = (sample.gt_light_texel_roi * sample.gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
@@ -129,7 +129,7 @@ class GDRN(pl.LightningModule):
         sample = self.forward(sample)
         loss_coord_3d = self.loss.coord_3d_loss(
             sample.gt_coord_3d_roi_normalized, sample.gt_mask_vis_roi, sample.pred_coord_3d_roi_normalized).mean()
-        loss_epro = sample.loss
+        loss_epro = sample.loss * .02
         loss = loss_coord_3d + loss_epro
         self.log('loss', {'total': loss, 'coord_3d': loss_coord_3d, 'loss_epro': loss_epro})
         return loss

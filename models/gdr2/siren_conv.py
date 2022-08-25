@@ -23,15 +23,18 @@ class SineConvLayer(nn.Module):
                 self.linear.weight.uniform_(-np.sqrt(6. / self.in_features) / self.omega_0,
                                             np.sqrt(6. / self.in_features) / self.omega_0)
 
-    def forward(self, input):
-        return torch.sin(self.omega_0 * self.linear(input))
+    def forward(self, input, omega=None):
+        if omega is None:
+            omega = self.omega_0
+        return torch.sin(omega * self.linear(input))
 
 
 class SirenConv(nn.Module):
     def __init__(self, in_features, hidden_features, hidden_layers, out_features, outermost_linear=True,
-                 first_omega_0=30., hidden_omega_0=30.):
+                 first_omega_0=1., hidden_omega_0=1.):
         super().__init__()
         assert hidden_layers > 0
+        self.omega = nn.Parameter(torch.tensor(0.))
         self.net = []
         self.net.append(SineConvLayer(in_features, hidden_features, is_first=True, omega_0=first_omega_0))
         for i in range(hidden_layers - 1):
@@ -46,5 +49,7 @@ class SirenConv(nn.Module):
             self.net.append(SineConvLayer(hidden_features, out_features, is_first=False, omega_0=hidden_omega_0))
         self.net = nn.Sequential(*self.net)
 
-    def forward(self, coords):
-        return self.net(coords)
+    def forward(self, x):
+        for net in self.net:
+            x = net(x, self.omega.exp())
+        return x * .5 + .5
