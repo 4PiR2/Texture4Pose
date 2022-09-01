@@ -16,12 +16,14 @@ def show_ndarray(img):
 
 
 if __name__ == '__main__':
-    # img_100 = ap.unroll_cylinder_side(r=.05, margin=0., border=0, dpi=300)
-    # freq, amplitude, phase = ap.get_spectrum_info(img_100.detach())
-    # plt.plot(freq[:], amplitude[0, :, :].mean(dim=-2), c='r')
-    # plt.plot(freq[:], amplitude[1, :, :].mean(dim=-2), c='g')
-    # plt.plot(freq[:], amplitude[2, :, :].mean(dim=-2), c='b')
-    # plt.show()
+    img_100 = ap.unroll_cylinder_side(r=.05, margin=0., border=0, dpi=300)
+    freq, amplitude, phase = ap.get_spectrum_info(img_100.detach())
+    plt.plot(freq[:150], amplitude[0, :, :150].mean(dim=-2), c='r')
+    plt.show()
+    plt.plot(freq[:150], amplitude[1, :, :150].mean(dim=-2), c='g')
+    plt.show()
+    plt.plot(freq[:150], amplitude[2, :, :150].mean(dim=-2), c='b')
+    plt.show()
 
     # ac.ChArUcoBoard(7, 10, .04).to_paper_pdf('/home/user/Desktop/1.pdf', paper_size='a3')
     dpi = 300

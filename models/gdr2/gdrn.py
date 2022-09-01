@@ -5,6 +5,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT, STEP_OUTPUT
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as T
 import torchvision.transforms.functional as vF
@@ -30,7 +31,7 @@ import utils.transform_3d
 class GDRN(pl.LightningModule):
     def __init__(self, cfg, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
-        self.texture_net_mode: str = 'mlp'  # [None, 'xyz', 'vertex', 'mlp', 'siren']
+        self.texture_mode: str = 'mlp'  # [None, 'default', 'xyz', 'vertex', 'mlp', 'siren']
         self.eval_augmentation: bool = True
         self.transform = T.Compose([
             A.CoarseDropout(num_holes=10, width=8, p=.5),
@@ -45,14 +46,14 @@ class GDRN(pl.LightningModule):
             # T.RandomEqualize(p=.5),
             # T.Lambda(vF.adjust_gamma),
         ])
-        if self.texture_net_mode == 'vertex':
+        if self.texture_mode == 'vertex':
             self.texture_net_v = TextureNetV(objects)
         else:
             self.texture_net_v = None
-            if self.texture_net_mode == 'mlp':
+            if self.texture_mode == 'mlp':
                 self.texture_net_p = TextureNetP(in_channels=3, out_channels=3, n_layers=3, hidden_size=128,
                     positional_encoding=[2. ** i for i in range(8)], use_cosine_positional_encoding=True)
-            elif self.texture_net_mode == 'siren':
+            elif self.texture_mode == 'siren':
                 self.texture_net_p = SirenConv(in_features=3, out_features=3, hidden_features=128, hidden_layers=2,
                                                outermost_linear=False, first_omega_0=30., hidden_omega_0=30.)
             else:
@@ -67,29 +68,30 @@ class GDRN(pl.LightningModule):
 
     def configure_optimizers(self):
         params = [
-            {'params': self.backbone.parameters(), 'lr': 3e-4, 'name': 'backbone'},
-            {'params': self.rot_head_net.parameters(), 'lr': 3e-4, 'name': 'rot_head'},
+            {'params': self.backbone.parameters(), 'lr': 3e-5, 'name': 'backbone'},
+            {'params': self.rot_head_net.parameters(), 'lr': 3e-5, 'name': 'rot_head'},
         ]
-        if self.texture_net_mode in ['mlp', 'siren']:
+        if self.texture_mode in ['mlp', 'siren']:
             params.append({'params': self.texture_net_p.parameters(), 'lr': 1e-6, 'name': 'texture_p'})
         optimizer = torch.optim.Adam(params)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=.1)
         return [optimizer], [scheduler]
 
     def forward(self, sample: Sample):
-        if self.texture_net_p is not None:
-            N, _, H, W = sample.gt_mask_vis_roi.shape
-            input_feature_map = sample.gt_coord_3d_roi_normalized * 2. - 1.
-            input_feature = input_feature_map.permute(0, 2, 3, 1)[sample.gt_mask_vis_roi[:, 0]][..., None, None]
-            # [NHW, C, 1, 1]
-            output_feature_map = torch.ones(N, H, W, 3, dtype=input_feature.dtype, device=input_feature.device)
-            output_feature_map[sample.gt_mask_vis_roi[:, 0]] = self.texture_net_p(input_feature)[..., 0, 0]
-            sample.gt_texel_roi = output_feature_map.permute(0, 3, 1, 2)
-            # if self.texture_net_mode == 'siren':
-            #     sample.gt_texel_roi = sample.gt_texel_roi * .5 + .5
-        elif self.texture_net_mode == 'xyz':
-            sample.gt_texel_roi = sample.gt_coord_3d_roi_normalized
-        sample.img_roi = (sample.gt_light_texel_roi * sample.gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
+        if self.texture_mode is not None:
+            if self.texture_net_p is not None:
+                N, _, H, W = sample.gt_mask_vis_roi.shape
+                input_feature_map = sample.gt_coord_3d_roi_normalized * 2. - 1.
+                input_feature = input_feature_map.permute(0, 2, 3, 1)[sample.gt_mask_vis_roi[:, 0]][..., None, None]
+                # [NHW, C, 1, 1]
+                output_feature_map = torch.ones(N, H, W, 3, dtype=input_feature.dtype, device=input_feature.device)
+                output_feature_map[sample.gt_mask_vis_roi[:, 0]] = self.texture_net_p(input_feature)[..., 0, 0]
+                sample.gt_texel_roi = output_feature_map.permute(0, 3, 1, 2)
+                # if self.texture_net_mode == 'siren':
+                #     sample.gt_texel_roi = sample.gt_texel_roi * .5 + .5
+            elif self.texture_mode == 'xyz':
+                sample.gt_texel_roi = sample.gt_coord_3d_roi_normalized
+            sample.img_roi = (sample.gt_light_texel_roi * sample.gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
 
         if self.training or self.eval_augmentation:
             sample.img_roi = augmentations.color_augmentation.match_background_histogram(
@@ -119,8 +121,7 @@ class GDRN(pl.LightningModule):
             sample.loss = loss
         else:
             pose_opt = self.epropnp.forward_test(x3d, x2d, w2d, log_weight_scale, fast_mode=False)
-        t_site = utils.transform_3d.t_to_t_site(pose_opt[:, :3], sample.bbox, sample.roi_zoom_in_ratio, sample.cam_K)
-        sample.pred_cam_t_m2c_site = t_site
+        sample.pred_cam_t_m2c = pose_opt[:, :3]
         sample.pred_cam_R_m2c = pytorch3d.transforms.quaternion_to_matrix(pose_opt[:, 3:])
 
         return sample
@@ -129,7 +130,7 @@ class GDRN(pl.LightningModule):
         sample = self.forward(sample)
         loss_coord_3d = self.loss.coord_3d_loss(
             sample.gt_coord_3d_roi_normalized, sample.gt_mask_vis_roi, sample.pred_coord_3d_roi_normalized).mean()
-        loss_epro = sample.loss * .02
+        loss_epro = sample.loss * 1.
         loss = loss_coord_3d + loss_epro
         self.log('loss', {'total': loss, 'coord_3d': loss_coord_3d, 'loss_epro': loss_epro})
         return loss
@@ -154,7 +155,7 @@ class GDRN(pl.LightningModule):
 
     def _log_sample_visualizations(self, sample: Sample) -> None:
         writer: SummaryWriter = self.logger.experiment
-        figs = sample.visualize(return_figs=True)
+        figs = sample.visualize(return_figs=True, max_samples=16)
         count = {}
         for obj_id, fig in zip(sample.obj_id, figs):
             obj_id = int(obj_id)

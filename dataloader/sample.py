@@ -166,10 +166,10 @@ class Sample:
         gt_cam_t_m2c = self.get(sf.gt_cam_t_m2c)
         return self._get_cam_t_m2c_site(gt_cam_t_m2c)  # [N, 3]
 
-    @property
-    def pred_cam_t_m2c(self) -> torch.Tensor:
-        pred_cam_t_m2c_site = self.get(sf.pred_cam_t_m2c_site)
-        return self._get_cam_t_m2c(pred_cam_t_m2c_site)  # [N, 3]
+    def get_pred_cam_t_m2c(self) -> torch.Tensor:
+        pred_cam_t_m2c = self._get_cam_t_m2c(self.get(sf.pred_cam_t_m2c_site))
+        self.set(sf.pred_cam_t_m2c, pred_cam_t_m2c)
+        return pred_cam_t_m2c  # [N, 3]
 
     def _get_coord_3d_roi_normalized(self, coord_3d_roi: torch.Tensor) -> torch.Tensor:
         obj_size = self.get(sf.obj_size)

@@ -21,7 +21,7 @@ def unroll_cylinder_side(r: float, h: float = None, margin: float = .01, border:
         return coord_3d / (2. * r) + .5
 
     def learnt_texture():
-        ckpt_path = 'outputs/lightning_logs/version_94/checkpoints/last.ckpt'
+        ckpt_path = 'outputs/lightning_logs/version_106/checkpoints/epoch=0014-val_metric=0.1471.ckpt'
 
         def setup(args=None) -> Config:
             """Create configs and perform basic setups."""
@@ -34,13 +34,9 @@ def unroll_cylinder_side(r: float, h: float = None, margin: float = .01, border:
         datamodule = LitDataModule(cfg)
         model = GDRN.load_from_checkpoint(ckpt_path, cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
         gt_position_info_roi = torch.cat([
-            coord_3d / (2. * r) + .5,
+            coord_3d / r,
             # normal,
         ], dim=-3)
-        gt_position_info_roi = torch.cat([gt_position_info_roi] \
-            + [(x * (torch.pi * 2.)).sin() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]] \
-            + [(x * (torch.pi * 2.)).cos() for x in [gt_position_info_roi * i for i in [1, 2, 4, 8, 16, 32, 64, 128]]],
-            dim=-3)
         return model.texture_net_p(gt_position_info_roi[None])
 
     if h is None:

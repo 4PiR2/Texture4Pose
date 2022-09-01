@@ -216,13 +216,13 @@ class _(SampleMapperIDP):
 @functional_datapipe('crop_roi_bop')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, out_size: Union[list[int], int], delete_original: bool = True):
-        fields = [sf.gt_mask_vis, sf.gt_mask_obj, sf.gt_coord_3d, sf.coord_2d, sf.gt_bg]
-        super().__init__(src_dp, [sf.bbox] + fields, [f'{field}_roi' for field in fields[:-1]] + [sf.img_roi],
-                         fields if delete_original else [])
+        fields = [sf.gt_mask_vis, sf.gt_mask_obj, sf.gt_coord_3d, sf.coord_2d, sf.gt_bg, sf.gt_normal]
+        super().__init__(src_dp, [sf.bbox] + fields, [f'{field}_roi' for field in fields[:-2]]
+                         + [sf.img_roi, f'{fields[-1]}_roi'], fields if delete_original else [])
         self._out_size: Union[list[int], int] = out_size
 
     def main(self, bbox: torch.Tensor, gt_mask_vis: torch.Tensor, gt_mask_obj: torch.Tensor, gt_coord_3d: torch.Tensor,
-             coord_2d: torch.Tensor, gt_bg: torch.Tensor):
+             coord_2d: torch.Tensor, gt_bg: torch.Tensor, gt_normal: torch.Tensor = None):
         crop_size = utils.image_2d.get_dzi_crop_size(bbox)
         crop = lambda img, mode: utils.image_2d.crop_roi(img, bbox, crop_size, self._out_size, mode) \
             if img is not None else None
@@ -232,7 +232,8 @@ class _(SampleMapperIDP):
         gt_coord_3d_roi = crop(gt_coord_3d, 'bilinear')
         coord_2d_roi = crop(coord_2d, 'bilinear')
         img_roi = crop(gt_bg, 'bilinear')
-        return gt_mask_vis_roi, gt_mask_obj_roi, gt_coord_3d_roi, coord_2d_roi, img_roi
+        gt_normal_roi = crop(gt_normal, 'bilinear') if gt_normal is not None else None
+        return gt_mask_vis_roi, gt_mask_obj_roi, gt_coord_3d_roi, coord_2d_roi, img_roi, gt_normal_roi
 
 
 @functional_datapipe('set_coord_3d')
