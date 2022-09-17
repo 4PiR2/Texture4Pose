@@ -16,9 +16,9 @@ class SineConvLayer(nn.Module):
 
     def init_weights(self):
         with torch.no_grad():
-            if self.is_first:
-                self.linear.weight.uniform_(-1. / self.in_features,
-                                            1. / self.in_features)
+            if self.is_first and False:
+                self.linear.weight.uniform_(-1. / self.in_features * self.omega_0,
+                                            1. / self.in_features * self.omega_0)
             else:
                 self.linear.weight.uniform_(-np.sqrt(6. / self.in_features) / self.omega_0,
                                             np.sqrt(6. / self.in_features) / self.omega_0)
@@ -26,7 +26,7 @@ class SineConvLayer(nn.Module):
     def forward(self, input, omega=None):
         if omega is None:
             omega = self.omega_0
-        return torch.sin(omega * self.linear(input))
+        return torch.sin(1. * self.linear(input))
 
 
 class SirenConv(nn.Module):
@@ -50,6 +50,7 @@ class SirenConv(nn.Module):
         self.net = nn.Sequential(*self.net)
 
     def forward(self, x):
-        for net in self.net:
-            x = net(x, self.omega.exp())
+        # for net in self.net:
+            # x = net(x, self.omega.exp())
+        x = self.net(x)
         return x * .5 + .5

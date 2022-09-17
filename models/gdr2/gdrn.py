@@ -31,7 +31,7 @@ import utils.transform_3d
 class GDRN(pl.LightningModule):
     def __init__(self, cfg, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
-        self.texture_mode: str = 'mlp'  # [None, 'default', 'xyz', 'vertex', 'mlp', 'siren']
+        self.texture_mode: str = 'cb'  # [None, 'default', 'xyz', 'vertex', 'mlp', 'siren', 'cb']
         self.eval_augmentation: bool = True
         self.transform = T.Compose([
             A.CoarseDropout(num_holes=10, width=8, p=.5),
@@ -55,7 +55,7 @@ class GDRN(pl.LightningModule):
                     positional_encoding=[2. ** i for i in range(8)], use_cosine_positional_encoding=True)
             elif self.texture_mode == 'siren':
                 self.texture_net_p = SirenConv(in_features=3, out_features=3, hidden_features=128, hidden_layers=2,
-                                               outermost_linear=False, first_omega_0=30., hidden_omega_0=30.)
+                                               outermost_linear=False, first_omega_0=1., hidden_omega_0=1.)
             else:
                 self.texture_net_p = None
 
@@ -72,12 +72,17 @@ class GDRN(pl.LightningModule):
             {'params': self.rot_head_net.parameters(), 'lr': 3e-5, 'name': 'rot_head'},
         ]
         if self.texture_mode in ['mlp', 'siren']:
-            params.append({'params': self.texture_net_p.parameters(), 'lr': 1e-6, 'name': 'texture_p'})
-        optimizer = torch.optim.Adam(params)
+          params.append({'params': self.texture_net_p.parameters(), 'lr': 3e-5, 'name': 'texture_p'})
+        optimizer = torch.optim.Adam(params, lr=3e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=.1)
         return [optimizer], [scheduler]
 
     def forward(self, sample: Sample):
+        # if self.training:
+        #     with torch.no_grad():
+        #         weight_params = self.texture_net_p.layers[0][0].weight
+        #         weight_params *= .999
+
         if self.texture_mode is not None:
             if self.texture_net_p is not None:
                 N, _, H, W = sample.gt_mask_vis_roi.shape
@@ -91,6 +96,9 @@ class GDRN(pl.LightningModule):
                 #     sample.gt_texel_roi = sample.gt_texel_roi * .5 + .5
             elif self.texture_mode == 'xyz':
                 sample.gt_texel_roi = sample.gt_coord_3d_roi_normalized
+            elif self.texture_mode == 'cb':
+                n_cb_cycle = 4
+                sample.gt_texel_roi = (sample.gt_coord_3d_roi_normalized * (n_cb_cycle * 2)).int() % 2
             sample.img_roi = (sample.gt_light_texel_roi * sample.gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
 
         if self.training or self.eval_augmentation:
@@ -131,8 +139,19 @@ class GDRN(pl.LightningModule):
         loss_coord_3d = self.loss.coord_3d_loss(
             sample.gt_coord_3d_roi_normalized, sample.gt_mask_vis_roi, sample.pred_coord_3d_roi_normalized).mean()
         loss_epro = sample.loss * 1.
-        loss = loss_coord_3d + loss_epro
-        self.log('loss', {'total': loss, 'coord_3d': loss_coord_3d, 'loss_epro': loss_epro})
+        # if self.texture_net_p is not None:
+        #     weight_params = self.texture_net_p.layers[0][0].weight
+        #     # loss_regularize = weight_params.abs().mean() * 1e3
+        #     loss_regularize = (weight_params ** 2).sum()
+        # else:
+        #     loss_regularize = 0.
+        loss = loss_coord_3d * 1. + loss_epro * 1.
+        self.log('loss', {'total': loss,
+                          'coord_3d': loss_coord_3d,
+                          'loss_epro': loss_epro,
+                          # 'w_max': weight_params[:, -1:].abs().max(),
+                          # 'regularize': loss_regularize
+                          })
         return loss
 
     def validation_step(self, sample: Sample, batch_idx: int) -> Optional[STEP_OUTPUT]:

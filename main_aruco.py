@@ -17,12 +17,15 @@ def show_ndarray(img):
 
 if __name__ == '__main__':
     img_100 = ap.unroll_cylinder_side(r=.05, margin=0., border=0, dpi=300)
+    # img_100 = img_100.transpose(-2, -1).flip(-2)
+    from utils.image_2d import visualize
+    visualize(img_100)
     freq, amplitude, phase = ap.get_spectrum_info(img_100.detach())
-    plt.plot(freq[:150], amplitude[0, :, :150].mean(dim=-2), c='r')
-    plt.show()
-    plt.plot(freq[:150], amplitude[1, :, :150].mean(dim=-2), c='g')
-    plt.show()
-    plt.plot(freq[:150], amplitude[2, :, :150].mean(dim=-2), c='b')
+    cutoff = 500
+    for channel in range(3):
+        plt.plot(freq[:cutoff], amplitude[channel, :, :cutoff].mean(dim=-2), c=['r', 'g', 'b'][channel])
+        plt.show()
+    plt.plot(freq[:cutoff], amplitude[:, :, :cutoff].mean(dim=[-3, -2]), c='k')
     plt.show()
 
     # ac.ChArUcoBoard(7, 10, .04).to_paper_pdf('/home/user/Desktop/1.pdf', paper_size='a3')

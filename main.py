@@ -52,11 +52,15 @@ def main():
         default_root_dir='outputs',
         log_every_n_steps=10,
         # profiler=profiler,
+        # gradient_clip_val=0.,
+        # gradient_clip_algorithm='value',
+        # stochastic_weight_avg=True,
+        # terminate_on_nan=True,
     )
 
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_96/checkpoints/last.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_129/checkpoints/last.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)
@@ -75,12 +79,12 @@ def main():
     # if cfg.model.pretrain is not None:
     #     model.load_pretrain(cfg.model.pretrain)
 
-    # model = GDRN.load_from_checkpoint(
-    #     ckpt_path, cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
+    model = GDRN.load_from_checkpoint(
+        ckpt_path, cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
 
     model = model.to(cfg.device, dtype=cfg.dtype)
-    # trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
-    trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
+    trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
+    # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
     exit(1)
 
