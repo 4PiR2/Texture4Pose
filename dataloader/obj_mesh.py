@@ -159,10 +159,14 @@ class RegularMesh(ObjMesh):
             mesh = renderer.cube_mesh.tetrahedron(level=level)
             radius = 3. ** .5
             diameter = 2. ** .5 * 2.
-        elif name == 'cylinderside':
-            mesh = renderer.cube_mesh.cylinder_side(level=level)
+        elif name == 'cylinderstrip':
+            mesh = renderer.cube_mesh.cylinder_strip(level=level)
             radius = 2. ** .5
             diameter = radius * 2.
+        elif name == 'sphericon':
+            mesh = renderer.cube_mesh.sphericon(level=level)
+            radius = 1.
+            diameter = 2.
         else:
             raise NotImplementedError
         mesh.scale_verts_(scale)

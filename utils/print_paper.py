@@ -23,6 +23,10 @@ def get_paper_size(unit_or_dpi: Union[str, int], paper_size: str = 'a4') -> tupl
         raise NotImplementedError
     if unit_or_dpi == 'mm':
         return w, h
+    elif unit_or_dpi == 'm':
+        return w * 1e-3, h * 1e-3
+    elif unit_or_dpi == 'cm':
+        return w * 1e-2, h * 1e-2
     elif unit_or_dpi == 'inch':
         return w / 25.4, h / 25.4
     elif isinstance(unit_or_dpi, int):

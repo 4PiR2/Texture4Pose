@@ -15,11 +15,49 @@ from models.drn.drn import DRN
 # from models.gdr.gdrn import GDRN
 from models.gdr2.gdrn import GDRN
 from models.surfemb.surfemb import SurfEmb
+import realworld.charuco_board
+import realworld.print_unroll
 from utils.ckpt_io import CkptIO
 from utils.config import Config
+import utils.print_paper
+
+
+def print_board():
+    realworld.charuco_board.ChArUcoBoard(7, 10, .04).to_paper_pdf('/home/user/Desktop/1.pdf', paper_size='a3')
+
+
+def print_cylinder_strip():
+    dpi = 300
+    img_84 = realworld.print_unroll.unroll_cylinder_strip(scale=.042, dpi=dpi)
+    img_82 = realworld.print_unroll.unroll_cylinder_strip(scale=.041, dpi=dpi)
+    img = utils.print_paper.make_grid(img_84, (1, 2), margin=.05)
+    img[..., :img_84.shape[-1]] = 1.
+    img[..., :img_82.shape[-2], :img_82.shape[-1]] = img_82
+    utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/4.pdf', dpi=dpi)
+
+
+def spectrum_analysis():
+    img_100 = realworld.print_unroll.unroll_cylinder_strip(scale=.05, margin=0., border=0, dpi=300)
+    # img_100 = img_100.transpose(-2, -1).flip(-2)
+    from utils.image_2d import visualize
+    visualize(img_100)
+    freq, amplitude, phase = realworld.print_unroll.get_spectrum_info(img_100.detach())
+    cutoff = 500
+    for channel in range(3):
+        plt.plot(freq[:cutoff], amplitude[channel, :, :cutoff].mean(dim=-2), c=['r', 'g', 'b'][channel])
+        plt.show()
+    plt.plot(freq[:cutoff], amplitude[:, :, :cutoff].mean(dim=[-3, -2]), c='k')
+    plt.show()
+
+
+def print_sphericon():
+    dpi = 300
+    img = realworld.print_unroll.unroll_sphericon(scale=.05, dpi=dpi)
+    utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/s1.pdf', dpi=dpi)
 
 
 def main():
+    print_sphericon()
     def setup(args=None) -> Config:
         """Create configs and perform basic setups."""
         cfg = Config.fromfile('config/input.py')
@@ -60,7 +98,7 @@ def main():
 
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_129/checkpoints/last.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_138/checkpoints/last.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)
@@ -79,8 +117,8 @@ def main():
     # if cfg.model.pretrain is not None:
     #     model.load_pretrain(cfg.model.pretrain)
 
-    model = GDRN.load_from_checkpoint(
-        ckpt_path, cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
+    # model = GDRN.load_from_checkpoint(ckpt_path, strict=True,
+    #     cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
 
     model = model.to(cfg.device, dtype=cfg.dtype)
     trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
@@ -90,7 +128,7 @@ def main():
 
     from dataloader.pose_dataset import real_scene_regular_obj_dp
     from utils.image_2d import visualize
-    dp = real_scene_regular_obj_dp(path='/data/real_exp/i12P_26mm', obj_list={104: 'cylinderside'},)
+    dp = real_scene_regular_obj_dp(path='/data/real_exp/i12P_26mm', obj_list={104: 'cylinderstrip'},)
     # with open('/home/user/Desktop/x.pkl', 'rb') as f:
     #     x = pickle.load(f)
     model.eval()

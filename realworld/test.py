@@ -3,8 +3,8 @@ from matplotlib import pyplot as plt
 import numpy as np
 import torch
 
-import aruco.charuco_board as ac
-import aruco.print_cylinder as ap
+import realworld.charuco_board
+import realworld.print_unroll
 import utils.io
 import utils.print_paper
 
@@ -16,28 +16,18 @@ def show_ndarray(img):
 
 
 if __name__ == '__main__':
-    img_100 = ap.unroll_cylinder_side(r=.05, margin=0., border=0, dpi=300)
-    # img_100 = img_100.transpose(-2, -1).flip(-2)
     from utils.image_2d import visualize
-    visualize(img_100)
-    freq, amplitude, phase = ap.get_spectrum_info(img_100.detach())
-    cutoff = 500
-    for channel in range(3):
-        plt.plot(freq[:cutoff], amplitude[channel, :, :cutoff].mean(dim=-2), c=['r', 'g', 'b'][channel])
-        plt.show()
-    plt.plot(freq[:cutoff], amplitude[:, :, :cutoff].mean(dim=[-3, -2]), c='k')
-    plt.show()
+    img = realworld.print_unroll.unroll_sphericon(.05, dpi=300)
+    visualize(img)
 
-    # ac.ChArUcoBoard(7, 10, .04).to_paper_pdf('/home/user/Desktop/1.pdf', paper_size='a3')
-    dpi = 300
-    img_84 = ap.unroll_cylinder_side(r=.042, dpi=dpi)
-    img_82 = ap.unroll_cylinder_side(r=.041, dpi=dpi)
-    img = utils.print_paper.make_grid(img_84, (1, 2), margin=.05)
-    img[..., :img_84.shape[-1]] = 1.
-    img[..., :img_82.shape[-2], :img_82.shape[-1]] = img_82
-    utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/4.pdf', dpi=dpi)
+    from renderer.cube_mesh import sphericon
+    from pytorch3d.renderer import TexturesVertex
+    import pytorch3d.vis.plotly_vis
+    mesh = sphericon(5)
+    mesh.textures = TexturesVertex(mesh.verts_packed()[None] * .49 + .5)
+    pytorch3d.vis.plotly_vis.plot_scene({'subplot1': {'sphericon_mesh': mesh}}).show()
 
-    chboard: ac.ChArUcoBoard = ac.ChArUcoBoard(7, 10, .04)
+    chboard: realworld.charuco_board.ChArUcoBoard = realworld.charuco_board.ChArUcoBoard(7, 10, .04)
     print('Starting camera calibration ...')
     camera_matrix = chboard.calibrate_camera(utils.io.list_img_from_dir('/data/real_exp/i12P_26mm/calib', ext='heic'))[0]
     print('Finished camera calibration')

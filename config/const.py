@@ -14,6 +14,6 @@ lm_objects = {1: 'ape', 2: 'benchvise', 3: 'bowl', 4: 'camera', 5: 'can', 6: 'ca
 lm13_objects = {i: lm_objects[i] for i in [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]}
 lmo_objects = {i: lm_objects[i] for i in [1, 5, 6, 8, 9, 10, 11, 12]}
 
-regular_objects = {101: 'sphere', 102: 'cube', 103: 'tetrahedron'}
+regular_objects = {101: 'sphere', 102: 'cube', 103: 'tetrahedron', 104: 'cylinderstrip', 105: 'sphericon'}
 
 gdr_mode = True

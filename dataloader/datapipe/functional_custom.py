@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.utils.data import functional_datapipe
 import torchvision.transforms.functional as vF
 
-import aruco.charuco_board
+import realworld.charuco_board
 from dataloader.datapipe.helper import SampleMapperIDP
 from dataloader.sample import SampleFields as sf
 import utils.io
@@ -69,8 +69,8 @@ class _(SampleMapperIDP):
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, w_square: int, h_square: int, square_length: float):
         super().__init__(src_dp, [sf.N], [sf.cam_K], required_attributes=['dtype', 'device', 'path'])
-        self.board: aruco.charuco_board.ChArUcoBoard = \
-            aruco.charuco_board.ChArUcoBoard(w_square, h_square, square_length)
+        self.board: realworld.charuco_board.ChArUcoBoard = \
+            realworld.charuco_board.ChArUcoBoard(w_square, h_square, square_length)
         # cam_K = self.board.calibrate_camera(
         #     utils.io.list_img_from_dir(os.path.join(self.path, 'calib'), ext=self.ext))[0]
         cam_K = torch.tensor([[3.1037e+03, 0.0000e+00, 2.0362e+03], [0.0000e+00, 3.1037e+03, 1.5304e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]])

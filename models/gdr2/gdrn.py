@@ -13,7 +13,7 @@ import torchvision.transforms.functional as vF
 import augmentations.color_augmentation
 import augmentations.wrapper as A
 from dataloader.obj_mesh import ObjMesh
-from dataloader.sample import Sample
+from dataloader.sample import Sample, SampleFields as sf
 from models.epropnp.demo import EProPnPDemo
 from models.eval.loss import Loss
 from models.eval.score import Score
@@ -31,7 +31,7 @@ import utils.transform_3d
 class GDRN(pl.LightningModule):
     def __init__(self, cfg, objects: dict[int, ObjMesh], objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
-        self.texture_mode: str = 'cb'  # [None, 'default', 'xyz', 'vertex', 'mlp', 'siren', 'cb']
+        self.texture_mode: str = 'siren'  # [None, 'default', 'xyz', 'vertex', 'mlp', 'siren', 'cb']
         self.eval_augmentation: bool = True
         self.transform = T.Compose([
             A.CoarseDropout(num_holes=10, width=8, p=.5),
@@ -55,7 +55,7 @@ class GDRN(pl.LightningModule):
                     positional_encoding=[2. ** i for i in range(8)], use_cosine_positional_encoding=True)
             elif self.texture_mode == 'siren':
                 self.texture_net_p = SirenConv(in_features=3, out_features=3, hidden_features=128, hidden_layers=2,
-                                               outermost_linear=False, first_omega_0=1., hidden_omega_0=1.)
+                                               outermost_linear=False, first_omega_0=30., hidden_omega_0=30.)
             else:
                 self.texture_net_p = None
 
@@ -72,34 +72,49 @@ class GDRN(pl.LightningModule):
             {'params': self.rot_head_net.parameters(), 'lr': 3e-5, 'name': 'rot_head'},
         ]
         if self.texture_mode in ['mlp', 'siren']:
-          params.append({'params': self.texture_net_p.parameters(), 'lr': 3e-5, 'name': 'texture_p'})
-        optimizer = torch.optim.Adam(params, lr=3e-5)
+            params.append({'params': self.texture_net_p.parameters(), 'lr': 1e-5, 'name': 'texture_p'})
+        optimizer = torch.optim.Adam(params, lr=0e-4)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=.1)
         return [optimizer], [scheduler]
+
+    def forward_texture(self, sample: Sample = None, texture_mode: str = None, coord_3d_normalized: torch.Tensor = None,
+                        normal: torch.Tensor = None, mask: torch.Tensor = None) -> torch.Tensor:
+        if sample is not None:
+            coord_3d_normalized = sample.gt_coord_3d_roi_normalized
+            normal = sample.get(sf.gt_normal_roi)
+            mask = sample.get(sf.gt_mask_vis_roi)
+        if texture_mode is None:
+            texture_mode = self.texture_mode
+        texel = None
+        if texture_mode is not None:
+            if self.texture_net_p is not None:
+                N, _, H, W = mask.shape
+                input_feature_map = coord_3d_normalized * 2. - 1.
+                input_feature = input_feature_map.permute(0, 2, 3, 1)[mask[:, 0]][..., None, None]
+                # [NHW, C, 1, 1]
+                output_feature_map = torch.ones(N, H, W, 3, dtype=input_feature.dtype, device=input_feature.device)
+                output_feature_map[mask[:, 0]] = self.texture_net_p(input_feature)[..., 0, 0]
+                texel = output_feature_map.permute(0, 3, 1, 2)
+            elif texture_mode == 'xyz':
+                texel = coord_3d_normalized
+            elif texture_mode == 'cb':
+                n_cb_cycle = 4
+                texel = (coord_3d_normalized * (n_cb_cycle * 2)).int() % 2
+            if sample is not None:
+                if texel is not None:
+                    sample.set(sf.gt_texel_roi, texel)
+                sample.set(sf.img_roi, (sample.get(sf.gt_light_texel_roi) * sample.get(sf.gt_texel_roi) +
+                                        sample.get(sf.gt_light_specular_roi)).clamp(0., 1.))
+        return texel
 
     def forward(self, sample: Sample):
         # if self.training:
         #     with torch.no_grad():
-        #         weight_params = self.texture_net_p.layers[0][0].weight
-        #         weight_params *= .999
+        #         # weight_params = self.texture_net_p.layers[0][0].weight
+        #         weight_params = self.texture_net_p.net[0].linear.weight
+        #         weight_params *= .9999
 
-        if self.texture_mode is not None:
-            if self.texture_net_p is not None:
-                N, _, H, W = sample.gt_mask_vis_roi.shape
-                input_feature_map = sample.gt_coord_3d_roi_normalized * 2. - 1.
-                input_feature = input_feature_map.permute(0, 2, 3, 1)[sample.gt_mask_vis_roi[:, 0]][..., None, None]
-                # [NHW, C, 1, 1]
-                output_feature_map = torch.ones(N, H, W, 3, dtype=input_feature.dtype, device=input_feature.device)
-                output_feature_map[sample.gt_mask_vis_roi[:, 0]] = self.texture_net_p(input_feature)[..., 0, 0]
-                sample.gt_texel_roi = output_feature_map.permute(0, 3, 1, 2)
-                # if self.texture_net_mode == 'siren':
-                #     sample.gt_texel_roi = sample.gt_texel_roi * .5 + .5
-            elif self.texture_mode == 'xyz':
-                sample.gt_texel_roi = sample.gt_coord_3d_roi_normalized
-            elif self.texture_mode == 'cb':
-                n_cb_cycle = 4
-                sample.gt_texel_roi = (sample.gt_coord_3d_roi_normalized * (n_cb_cycle * 2)).int() % 2
-            sample.img_roi = (sample.gt_light_texel_roi * sample.gt_texel_roi + sample.gt_light_specular_roi).clamp(0., 1.)
+        self.forward_texture(sample)
 
         if self.training or self.eval_augmentation:
             sample.img_roi = augmentations.color_augmentation.match_background_histogram(

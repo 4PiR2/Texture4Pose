@@ -3,9 +3,9 @@
 _base_ = './pipeline.py'
 
 dataset = dict(
-    # obj_list={101: 'sphere', 102: 'cube', 103: 'tetrahedron'},
+    # obj_list={101: 'sphere', 102: 'cube', 103: 'tetrahedron', 104: 'cylinderstrip', 105: 'sphericon'},
     # obj_list={1: 'ape', 5: 'can', 6: 'cat', 8: 'driller', 9: 'duck', 10: 'eggbox', 11: 'glue', 12: 'holepuncher'},
-    obj_list={104: 'cylinderside',},
+    obj_list={104: 'cylinderstrip',},
     # cam_K=cc.lm_cam_K,
     scene_mode=False,
     num_obj=16,
