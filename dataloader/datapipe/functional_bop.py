@@ -169,8 +169,8 @@ class _(SampleMapperIDP):
 @functional_datapipe('set_mask')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, bitwise_and_with_existing: bool = False):
-        super().__init__(src_dp, [sf.N, sf.o_item, sf.gt_mask_vis, sf.gt_mask_obj] if bitwise_and_with_existing else
-                         [sf.N, sf.o_item], [sf.gt_mask_vis, sf.gt_mask_obj],
+        super().__init__(src_dp, [sf.N, sf.o_item] + ([sf.gt_mask_vis, sf.gt_mask_obj] if bitwise_and_with_existing else
+                         []), [sf.gt_mask_vis, sf.gt_mask_obj],
                          required_attributes=['dtype', 'device', 'data_path', 'scene_id'])
 
     def main(self, N: int, o_item: int, gt_mask_vis: torch.Tensor = None, gt_mask_obj: torch.Tensor = None):
@@ -232,7 +232,7 @@ class _(SampleMapperIDP):
         gt_coord_3d_roi = crop(gt_coord_3d, 'bilinear')
         coord_2d_roi = crop(coord_2d, 'bilinear')
         img_roi = crop(gt_bg, 'bilinear')
-        gt_normal_roi = crop(gt_normal, 'bilinear') if gt_normal is not None else None
+        gt_normal_roi = crop(gt_normal, 'bilinear')
         return gt_mask_vis_roi, gt_mask_obj_roi, gt_coord_3d_roi, coord_2d_roi, img_roi, gt_normal_roi
 
 

@@ -1,19 +1,12 @@
-# import config.const as cc
-
 _base_ = './pipeline.py'
 
 dataset = dict(
-    # obj_list={101: 'sphere', 102: 'cube', 103: 'tetrahedron', 104: 'cylinderstrip', 105: 'sphericon'},
-    # obj_list={1: 'ape', 5: 'can', 6: 'cat', 8: 'driller', 9: 'duck', 10: 'eggbox', 11: 'glue', 12: 'holepuncher'},
-    obj_list={104: 'cylinderstrip',},
-    # cam_K=cc.lm_cam_K,
-    scene_mode=False,
+    scene_src=3 * 1,  # 0: random (for training), 3: real exp (for testing)
+    obj_list={105: 'sphericon', },
     num_obj=16,
-    repeated_sample_obj=True,
+    num_occlusion_per_obj=0,
     occlusion_size_max=.5,
-    path='/data/real_exp/i12P_26mm',
-    # path='data/BOP/lm',
-    bop_scene=0,  # 0: random, 1: rendered, 2: load from bop, 3: real
+    min_occlusion_vis_ratio=.1,
 )
 
 dataloader = dict(

@@ -14,6 +14,7 @@ class ChArUcoBoard:
         # img = cv2.aruco.drawMarker(aruco_dict, 3, 700, borderBits=1)
         self.board: cv2.aruco_CharucoBoard = cv2.aruco.CharucoBoard_create(
             w_square, h_square, square_length, .8 * square_length, self.aruco_dict)  # square length is in meter
+        # origin point is at bottom left corner, x+: right, y+: up
 
     def to_paper_pdf(self, path: str, dpi: int = 300, paper_size: str = 'a4'):
         w_square, h_square = self.board.getChessboardSize()

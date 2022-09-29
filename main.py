@@ -52,12 +52,22 @@ def spectrum_analysis():
 
 def print_sphericon():
     dpi = 300
-    img = realworld.print_unroll.unroll_sphericon(scale=.05, dpi=dpi)
-    utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/s1.pdf', dpi=dpi)
+    img_100 = realworld.print_unroll.unroll_sphericon(scale=.05, dpi=dpi)
+    utils.print_paper.print_tensor_to_paper_pdf(img_100, '/home/user/Desktop/s1.pdf', dpi=dpi)
+
+
+def print_sphericon_a3():
+    dpi = 300
+    img_102 = realworld.print_unroll.unroll_sphericon(scale=.051, theta=.7, dpi=dpi)
+    img_100 = realworld.print_unroll.unroll_sphericon(scale=.05, theta=.7, dpi=dpi)
+    img = utils.print_paper.make_grid(img_102, (2, 1), margin=.05)
+    img[..., :img_102.shape[-2], :] = 1.
+    img[..., :img_100.shape[-2], :img_100.shape[-1]] = img_100
+    utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/s1.pdf', dpi=dpi, paper_size='a3')
 
 
 def main():
-    print_sphericon()
+    # print_sphericon_a3()
     def setup(args=None) -> Config:
         """Create configs and perform basic setups."""
         cfg = Config.fromfile('config/input.py')

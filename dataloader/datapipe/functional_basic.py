@@ -1,9 +1,11 @@
 import os
 from typing import Union
 
+import pytorch3d.ops
 import pytorch3d.transforms
 import torch
 import torch.nn.functional as F
+from pytorch3d.structures import Meshes
 from torch.utils.data import functional_datapipe
 import torchvision.transforms as T
 import torchvision.transforms.functional as vF
@@ -25,12 +27,18 @@ class _(SampleMapperIDP):
         super().__init__(src_dp, [], [sf.obj_id], required_attributes=['dtype', 'device', 'objects', 'objects_eval'])
 
         objects = {}
+        objects_eval = {}
         for obj_id in obj_list:
             objects[obj_id] = RegularMesh(dtype=self.dtype, device=self.device, obj_id=int(obj_id),
                                           name=obj_list[obj_id] if isinstance(obj_list, dict) else None, level=5)
+            mesh = objects[obj_id].mesh
+            objects_eval[obj_id] = Meshes(
+                verts=pytorch3d.ops.sample_points_from_meshes(meshes=mesh, num_samples=len(mesh.verts_packed())),
+                faces=torch.empty(1, 0, 3, dtype=torch.int, device=self.device)
+            )
 
         self.objects: dict[int, ObjMesh] = {**self.objects, **objects}
-        self.objects_eval: dict[int, ObjMesh] = {**self.objects_eval, **objects}
+        self.objects_eval: dict[int, ObjMesh] = {**self.objects_eval, **objects_eval}
 
     def main(self):
         obj_id = torch.tensor(list(self.objects), dtype=torch.uint8, device=self.device)
@@ -50,8 +58,9 @@ class _(SampleMapperIDP):
 
 @functional_datapipe('set_static_camera')
 class _(SampleMapperIDP):
-    def __init__(self, src_dp: SampleMapperIDP, cam_K: torch.Tensor = cc.lm_cam_K):
-        super().__init__(src_dp, [sf.N], [sf.cam_K], required_attributes=['dtype', 'device'])
+    def __init__(self, src_dp: SampleMapperIDP, cam_K: torch.Tensor = torch.eye(3), orig: bool = False):
+        super().__init__(src_dp, [sf.N], [sf.cam_K] if not orig else [sf.cam_K_orig],
+                         required_attributes=['dtype', 'device'])
         self._cam_K: torch.Tensor = utils.transform_3d.normalize_cam_K(cam_K.to(self.device, dtype=self.dtype))
         # [3, 3]
 

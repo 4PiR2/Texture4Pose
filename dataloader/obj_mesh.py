@@ -143,27 +143,27 @@ class BOPMesh(ObjMesh):
 
 
 class RegularMesh(ObjMesh):
-    def __init__(self, name=None, scale=5e-2, level=5, **kwargs):
+    def __init__(self, obj_id=None, name=None, scale=5e-2, level=5, **kwargs):
         min = torch.full([3], -scale)
         size = torch.full([3], scale * 2.)
         center = torch.zeros(3)
-        if name == 'sphere':
+        if obj_id == 101 or name == 'sphere':
             mesh = pytorch3d.utils.ico_sphere(level=level)
             radius = 1.
             diameter = radius * 2.
-        elif name == 'cube':
+        elif obj_id == 102 or name == 'cube':
             mesh = renderer.cube_mesh.cube(level=level)
             radius = 3. ** .5
             diameter = radius * 2.
-        elif name == 'tetrahedron':
+        elif obj_id == 103 or name == 'tetrahedron':
             mesh = renderer.cube_mesh.tetrahedron(level=level)
             radius = 3. ** .5
             diameter = 2. ** .5 * 2.
-        elif name == 'cylinderstrip':
+        elif obj_id == 104 or name == 'cylinderstrip':
             mesh = renderer.cube_mesh.cylinder_strip(level=level)
             radius = 2. ** .5
             diameter = radius * 2.
-        elif name == 'sphericon':
+        elif obj_id == 105 or name == 'sphericon':
             mesh = renderer.cube_mesh.sphericon(level=level)
             radius = 1.
             diameter = 2.
