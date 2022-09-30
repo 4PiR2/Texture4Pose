@@ -4,10 +4,10 @@ from typing import Union, Any
 import torch
 from torch.utils.data import functional_datapipe
 
-from dataloader.obj_mesh import ObjMesh, BOPMesh
 import dataloader.datapipe.functional_basic
 from dataloader.datapipe.helper import SampleMapperIDP, IterDataPipe
-from dataloader.sample import SampleFields as sf, Sample
+from dataloader.obj_mesh import ObjMesh, BOPMesh
+from dataloader.sample import Sample, SampleFields as sf
 import utils.io
 import utils.image_2d
 import utils.transform_3d

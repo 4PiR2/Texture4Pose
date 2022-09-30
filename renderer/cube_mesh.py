@@ -1,18 +1,26 @@
 import torch
+import torch.nn.functional as F
 from pytorch3d.ops.subdivide_meshes import SubdivideMeshes
 from pytorch3d.structures.meshes import Meshes
 
 
+# any closed obj: #faces + #verts - #edges == 2 && 3 * #faces == 2 * #edges
+#                 => #faces == 2 * (#verts - 2) && #edges == 3 * (#verts - 2)
+# any closed mesh: #verts[i] = #verts[i-1] + #edges[i-1]
+#                            = #verts[i-1] + 3 * #faces[i-1] // 2
+#                            = #verts[0] + (4 ** i - 1) * #faces[0] // 2
+#                            = (#verts[0] - 2) * 4 ** i + 2,
+#                  #faces[i] = #faces[0] * 4 ** i
 # sphere: #verts[i] = 10 * 4 ** i + 2, #faces[i] = 5 * 4 ** (i + 1)
 # cube: #verts[i] = 6 * 4 ** i + 2, #faces[i] = 3 * 4 ** (i + 1)
-# tetrahedron: #verts[i] = 2 * 4 ** i + 2, #faces[i] = 4 ** (i + 1)
-# cylinderstrip: #verts[i] = 6 * 4 ** i + 2, #faces[i] = 2 * 4 ** (i + 1)
-# sphericon: #verts[i] = 2 ** (i + 2) + 2, #faces[i] = 2 ** (i + 3)
+# tetrahedron: #verts[i] = 2 * 4 ** i + 2, #faces[i] = 1 * 4 ** (i + 1)
+# cylinderstrip: #verts[i] = 4 * 4 ** i + 4 * 2 ** i, #faces[i] = 2 * 4 ** (i + 1)
+# sphericon: #verts[j, i] = 4 * 2 ** j * 4 ** i + 2, #faces[i] = 2 ** (j + 1) * 4 ** (i + 1)
 
 
-def _get_mesh(verts0, faces0, level: int = 0, device: torch.device = None):
-    if level < 0:
-        raise ValueError('level must be >= 0.')
+def _get_mesh(verts0, faces0, level: int = 0, device: torch.device = None) -> Meshes:
+    # if level < 0:
+    #     raise ValueError('level must be >= 0.')
     if device is None:
         device = torch.device('cpu')
     verts = torch.tensor(verts0, dtype=torch.float32, device=device)
@@ -24,7 +32,7 @@ def _get_mesh(verts0, faces0, level: int = 0, device: torch.device = None):
     return mesh
 
 
-def cube(level: int = 0, base: bool = True, device: torch.device = None):
+def cube(level: int = 0, base: bool = True, device: torch.device = None) -> Meshes:
     """
     Create verts and faces for a unit cube, with all faces oriented
     consistently.
@@ -70,7 +78,7 @@ def cube(level: int = 0, base: bool = True, device: torch.device = None):
     return _get_mesh(verts0, faces0, level, device)
 
 
-def tetrahedron(level: int = 0, device: torch.device = None):
+def tetrahedron(level: int = 0, device: torch.device = None) -> Meshes:
     verts0 = [
         [-1., -1., 1],
         [-1., 1., -1.],
@@ -86,7 +94,7 @@ def tetrahedron(level: int = 0, device: torch.device = None):
     return _get_mesh(verts0, faces0, level, device)
 
 
-def cylinder_strip(level: int = 0, device: torch.device = None):
+def cylinder_strip(level: int = 0, device: torch.device = None) -> Meshes:
     # no base
     if level == 0:
         mesh = cube(0, False, device)
@@ -107,7 +115,7 @@ def cylinder_strip(level: int = 0, device: torch.device = None):
     return Meshes(verts=[verts], faces=[faces])
 
 
-def sphericon(level: int = 0, device: torch.device = None) -> Meshes:
+def sphericon(res: int = 0, level: int = 0, device: torch.device = None) -> Meshes:
     verts0 = [
         [1., 0., 0.],
         [-1., 0., 0.],
@@ -116,7 +124,7 @@ def sphericon(level: int = 0, device: torch.device = None) -> Meshes:
         [0., 0., 1.],
         [0., 0., -1.],
     ]
-    theta = torch.linspace(0., torch.pi * .5, 2 ** level + 1, device=device)[1:-1]
+    theta = torch.linspace(0., torch.pi * .5, 2 ** res + 1, device=device)[1:-1]
     cos_theta, sin_theta, zeros_theta = theta.cos(), theta.sin(), torch.zeros_like(theta)
     verts = torch.cat([
         torch.tensor(verts0, device=device),
@@ -125,7 +133,7 @@ def sphericon(level: int = 0, device: torch.device = None) -> Meshes:
         torch.stack([zeros_theta, -cos_theta, -sin_theta], dim=-1),
         torch.stack([zeros_theta, sin_theta, -cos_theta], dim=-1),
     ], dim=0)
-    if level <= 0:
+    if res <= 0:
         faces = [[2, 4, 0], [2, 1, 4], [1, 2, 5], [1, 5, 3], [3, 4, 1], [3, 0, 4], [0, 3, 5], [0, 5, 2]]  # octahedron
     else:
         faces = []
@@ -154,4 +162,10 @@ def sphericon(level: int = 0, device: torch.device = None) -> Meshes:
                  [[0, i, i + 1] for i in range(len(theta) * 3 + 6, len(theta) * 4 + 5)] + \
                  [[0, len(theta) * 4 + 5, 2]]
     faces = torch.tensor(faces, device=device)
-    return Meshes(verts=[verts], faces=[faces])
+    mesh = _get_mesh(verts, faces, level=level, device=device)
+    verts1, faces1 = mesh.verts_packed(), mesh.faces_packed()
+    mask = verts1[:, -1] >= 0.
+    verts1[mask, ::2] = F.normalize(verts1[mask, ::2], dim=-1) * (1. - verts1[mask, 1:2].abs())
+    mask = ~mask
+    verts1[mask, 1:] = F.normalize(verts1[mask, 1:], dim=-1) * (1. - verts1[mask, 0:1].abs())
+    return Meshes(verts=[verts1], faces=[faces1])

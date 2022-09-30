@@ -164,7 +164,7 @@ class RegularMesh(ObjMesh):
             radius = 2. ** .5
             diameter = radius * 2.
         elif obj_id == 105 or name == 'sphericon':
-            mesh = renderer.cube_mesh.sphericon(level=level)
+            mesh = renderer.cube_mesh.sphericon(res=0, level=level)
             radius = 1.
             diameter = 2.
         else:

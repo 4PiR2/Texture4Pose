@@ -145,7 +145,8 @@ class SampleFiltererIDP(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, request_args: list[str] = None, delete_args: list[str] = None,
                  fn: Callable[[Any], torch.Tensor] = None, *other_dps: IterDataPipe,
                  required_attributes: list[str] = None):
-        super().__init__(src_dp, request_args, delete_args=delete_args, fn=fn, *other_dps, required_attributes=required_attributes)
+        super().__init__(src_dp, request_args, delete_args=delete_args, fn=fn, *other_dps,
+                         required_attributes=required_attributes)
 
     def map_fn(self, sample: Sample, *other_data) -> Sample:
         mask: torch.Tensor = \

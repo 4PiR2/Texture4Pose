@@ -9,12 +9,7 @@ from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor, Mo
 import config.const as cc
 from dataloader.data_module import LitDataModule
 from dataloader.sample import Sample
-from models.cdpn.cdpn import CDPN
-from models.cdpn.cdpn2 import CDPN2
-from models.drn.drn import DRN
-# from models.gdr.gdrn import GDRN
 from models.gdr2.gdrn import GDRN
-from models.surfemb.surfemb import SurfEmb
 import realworld.charuco_board
 import realworld.print_unroll
 from utils.ckpt_io import CkptIO

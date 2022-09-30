@@ -5,12 +5,12 @@ import pytorch3d.ops
 import pytorch3d.transforms
 import torch
 import torch.nn.functional as F
+from pytorch3d.renderer import TexturesVertex
 from pytorch3d.structures import Meshes
 from torch.utils.data import functional_datapipe
 import torchvision.transforms as T
 import torchvision.transforms.functional as vF
 
-import config.const as cc
 from dataloader.obj_mesh import ObjMesh, RegularMesh
 from dataloader.datapipe.helper import SampleMapperIDP, SampleFiltererIDP
 from dataloader.sample import SampleFields as sf
@@ -32,10 +32,10 @@ class _(SampleMapperIDP):
             objects[obj_id] = RegularMesh(dtype=self.dtype, device=self.device, obj_id=int(obj_id),
                                           name=obj_list[obj_id] if isinstance(obj_list, dict) else None, level=5)
             mesh = objects[obj_id].mesh
-            objects_eval[obj_id] = Meshes(
-                verts=pytorch3d.ops.sample_points_from_meshes(meshes=mesh, num_samples=len(mesh.verts_packed())),
-                faces=torch.empty(1, 0, 3, dtype=torch.int, device=self.device)
-            )
+            verts, normals = pytorch3d.ops.sample_points_from_meshes(
+                meshes=mesh, num_samples=mesh.num_verts_per_mesh()[0], return_normals=True)
+            objects_eval[obj_id] = Meshes(verts=verts, faces=torch.empty(1, 0, 3, dtype=torch.int, device=self.device),
+                                          textures=TexturesVertex(normals))
 
         self.objects: dict[int, ObjMesh] = {**self.objects, **objects}
         self.objects_eval: dict[int, ObjMesh] = {**self.objects_eval, **objects_eval}
