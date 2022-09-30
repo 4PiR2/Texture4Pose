@@ -7,15 +7,23 @@ from pytorch3d.structures.meshes import Meshes
 # any closed obj: #faces + #verts - #edges == 2 && 3 * #faces == 2 * #edges
 #                 => #faces == 2 * (#verts - 2) && #edges == 3 * (#verts - 2)
 # any closed mesh: #verts[i] = #verts[i-1] + #edges[i-1]
-#                            = #verts[i-1] + 3 * #faces[i-1] // 2
-#                            = #verts[0] + (4 ** i - 1) * #faces[0] // 2
+#                            = 4 * (#verts[i-1] - 2) + 2
 #                            = (#verts[0] - 2) * 4 ** i + 2,
 #                  #faces[i] = #faces[0] * 4 ** i
-# sphere: #verts[i] = 10 * 4 ** i + 2, #faces[i] = 5 * 4 ** (i + 1)
-# cube: #verts[i] = 6 * 4 ** i + 2, #faces[i] = 3 * 4 ** (i + 1)
-# tetrahedron: #verts[i] = 2 * 4 ** i + 2, #faces[i] = 1 * 4 ** (i + 1)
-# cylinderstrip: #verts[i] = 4 * 4 ** i + 4 * 2 ** i, #faces[i] = 2 * 4 ** (i + 1)
-# sphericon: #verts[j, i] = 4 * 2 ** j * 4 ** i + 2, #faces[i] = 2 ** (j + 1) * 4 ** (i + 1)
+#                            = 2 * (#verts[0] - 2) * 4 ** i
+#                  #edges[i] = #edges[0] * 4 ** i
+#                            = 3 * (#verts[0] - 2) * 4 ** i
+# sphere: #verts[i] = 10 * 4 ** i + 2
+#         #faces[i] = 5 * 4 ** (i + 1)
+# cube: #verts[i] = 6 * 4 ** i + 2
+#       #faces[i] = 3 * 4 ** (i + 1)
+# tetrahedron: #verts[i] = 2 * 4 ** i + 2
+#              #faces[i] = 1 * 4 ** (i + 1)
+# cylinderstrip (not closed): #verts[i] = 4 * 4 ** i + 4 * 2 ** i
+#                             #faces[i] = 2 * 4 ** (i + 1)
+#                             #edges[i] = 3 * 4 ** (i + 1) + 4 * 2 ** i
+# sphericon: #verts[j, i] = 4 * 2 ** j * 4 ** i + 2
+#            #faces[j, i] = 2 ** (j + 1) * 4 ** (i + 1)
 
 
 def _get_mesh(verts0, faces0, level: int = 0, device: torch.device = None) -> Meshes:

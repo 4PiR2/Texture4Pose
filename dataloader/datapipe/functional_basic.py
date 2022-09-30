@@ -3,10 +3,10 @@ from typing import Union
 
 import pytorch3d.ops
 import pytorch3d.transforms
-import torch
-import torch.nn.functional as F
 from pytorch3d.renderer import TexturesVertex
 from pytorch3d.structures import Meshes
+import torch
+import torch.nn.functional as F
 from torch.utils.data import functional_datapipe
 import torchvision.transforms as T
 import torchvision.transforms.functional as vF

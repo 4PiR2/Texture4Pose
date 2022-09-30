@@ -1,10 +1,9 @@
-import torch
-import torch.nn.functional as F
 from pytorch3d.io import IO
-from pytorch3d.renderer import TexturesVertex
 from pytorch3d.renderer.mesh import TexturesBase
 from pytorch3d.structures import Meshes
 import pytorch3d.utils
+import torch
+import torch.nn.functional as F
 
 import config.const as cc
 import renderer.cube_mesh
