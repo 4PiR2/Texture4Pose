@@ -31,11 +31,14 @@ class _(SampleMapperIDP):
         for obj_id in obj_list:
             objects[obj_id] = RegularMesh(dtype=self.dtype, device=self.device, obj_id=int(obj_id),
                                           name=obj_list[obj_id] if isinstance(obj_list, dict) else None, level=5)
-            mesh = objects[obj_id].mesh
+            objects_eval[obj_id] = RegularMesh(dtype=self.dtype, device=self.device, obj_id=int(obj_id),
+                                               name=obj_list[obj_id] if isinstance(obj_list, dict) else None, level=5)
+            mesh = objects_eval[obj_id].mesh
             verts, normals = pytorch3d.ops.sample_points_from_meshes(
                 meshes=mesh, num_samples=mesh.num_verts_per_mesh()[0], return_normals=True)
-            objects_eval[obj_id] = Meshes(verts=verts, faces=torch.empty(1, 0, 3, dtype=torch.int, device=self.device),
-                                          textures=TexturesVertex(normals))
+            objects_eval[obj_id].mesh = Meshes(verts=verts,
+                                               faces=torch.empty(1, 1, 3, dtype=torch.int, device=self.device),
+                                               textures=TexturesVertex(normals))
 
         self.objects: dict[int, ObjMesh] = {**self.objects, **objects}
         self.objects_eval: dict[int, ObjMesh] = {**self.objects_eval, **objects_eval}

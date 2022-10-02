@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from utils.image_2d import visualize, show_tensor_hist
+# from utils.image_2d import visualize, show_tensor_hist
 
 
 class SineConvLayer(nn.Module):
@@ -29,7 +29,6 @@ class SineConvLayer(nn.Module):
     def forward(self, input, omega=None):
         if omega is None:
             omega = self.omega_0
-        # omega = 1.
         return torch.sin(omega * self.linear(input))
 
 
@@ -38,22 +37,21 @@ class SirenConv(nn.Module):
                  first_omega_0=1., hidden_omega_0=1.):
         super().__init__()
         assert hidden_layers > 0
-        self.omega = nn.Parameter(torch.tensor(0.))
-        self.net = []
-        self.net.append(SineConvLayer(in_features, hidden_features, is_first=True, omega_0=first_omega_0))
+        layers = []
+        layers.append(SineConvLayer(in_features, hidden_features, is_first=True, omega_0=first_omega_0))
         for i in range(hidden_layers - 1):
-            self.net.append(SineConvLayer(hidden_features, hidden_features, is_first=False, omega_0=hidden_omega_0))
+            layers.append(SineConvLayer(hidden_features, hidden_features, is_first=False, omega_0=hidden_omega_0))
         if outermost_linear:
             final_linear = nn.Conv2d(hidden_features, out_features, 1)
             with torch.no_grad():
                 final_linear.weight.uniform_(-np.sqrt(6. / hidden_features) / hidden_omega_0,
                                              np.sqrt(6. / hidden_features) / hidden_omega_0)
-            self.net.append(final_linear)
+            layers.append(final_linear)
         else:
-            self.net.append(SineConvLayer(hidden_features, out_features, is_first=False, omega_0=hidden_omega_0))
-        self.net = nn.Sequential(*self.net)
+            layers.append(SineConvLayer(hidden_features, out_features, is_first=False, omega_0=hidden_omega_0))
+        self.layers = nn.Sequential(*layers)
 
     def forward(self, x):
-        x = self.net(x)
+        x = self.layers(x)
         # show_tensor_hist(self.net[0].linear.weight, bins=50)
-        return x * .5 + .5
+        return (x * .5 + .5).clamp(min=0., max=1.)

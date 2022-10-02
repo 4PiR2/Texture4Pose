@@ -90,10 +90,10 @@ class EProPnPDemo(nn.Module):
         loss = loss_mc + 0.1 * loss_t + 0.1 * loss_r
         return loss
 
-    def forward_train(self, x3d, x2d, w2d, log_weight_scale, out_pose):
+    def forward_train(self, x3d, x2d, w2d, log_weight_scale, out_pose, camera=None):
         N, V, _ = x3d.shape
         w2d = self.forward_w2d(w2d, log_weight_scale)
-        self.camera.set_param(torch.eye(3, device=x3d.device).expand(N, -1, -1))
+        self.camera.set_param(torch.eye(3, device=x3d.device).expand(N, -1, -1) if camera is None else camera)
         self.cost_fun.set_param(x2d.detach(), w2d)  # compute dynamic delta
         pose_opt, cost, pose_opt_plus, pose_samples, pose_sample_logweights, cost_tgt = self.epropnp.monte_carlo_forward(
             x3d,
@@ -109,10 +109,10 @@ class EProPnPDemo(nn.Module):
         loss = self._compute_loss(pose_opt_plus, pose_sample_logweights, cost_tgt, norm_factor, out_pose)
         return pose_opt, cost, pose_opt_plus, pose_samples, pose_sample_logweights, cost_tgt, norm_factor, loss
 
-    def forward_test(self, x3d, x2d, w2d, log_weight_scale, fast_mode=False):
+    def forward_test(self, x3d, x2d, w2d, log_weight_scale, camera=None, fast_mode=False):
         N, V, _ = x3d.shape
         w2d = self.forward_w2d(w2d, log_weight_scale)
-        self.camera.set_param(torch.eye(3, device=x3d.device).expand(N, -1, -1))
+        self.camera.set_param(torch.eye(3, device=x3d.device).expand(N, -1, -1) if camera is None else camera)
         self.cost_fun.set_param(x2d.detach(), w2d)
         # returns a mode of the distribution
         pose_opt, _, _, _ = self.epropnp(

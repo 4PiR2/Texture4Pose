@@ -30,8 +30,8 @@ _fields_str = [
     'obj_id', 'obj_size', 'obj_diameter', 'cam_K', 'cam_K_orig', 'gt_cam_R_m2c', 'gt_cam_t_m2c', 'bbox',
     'gt_bbox_vis', 'gt_vis_ratio',
     'img', 'img_roi', 'coord_2d', 'coord_2d_roi', 'gt_coord_3d', 'gt_coord_3d_roi', 'gt_normal', 'gt_normal_roi',
-    'gt_mask_vis', 'gt_mask_vis_roi', 'gt_mask_obj', 'gt_light_texel', 'gt_texel_roi', 'gt_light_specular',
-    'gt_light_specular_roi', 'gt_zbuf', 'gt_texel', 'gt_light_texel_roi', 'gt_bg', 'gt_bg_roi',
+    'gt_mask_vis', 'gt_mask_vis_roi', 'gt_mask_obj', 'gt_mask_obj_roi', 'gt_light_texel', 'gt_texel_roi',
+    'gt_light_specular', 'gt_light_specular_roi', 'gt_zbuf', 'gt_texel', 'gt_light_texel_roi', 'gt_bg', 'gt_bg_roi',
     'pred_cam_R_m2c', 'pred_cam_t_m2c', 'pred_cam_t_m2c_site', 'pred_coord_3d_roi', 'pred_coord_3d_roi_normalized',
     'pred_mask_vis_roi', 'pred_weight_2d', 'pnp_cam_R_m2c', 'pnp_cam_t_m2c', 'pnp_inlier_roi',
 ]

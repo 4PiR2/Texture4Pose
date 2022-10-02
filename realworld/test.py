@@ -16,9 +16,9 @@ def show_ndarray(img):
 
 
 if __name__ == '__main__':
-    from utils.image_2d import visualize
-    img = realworld.print_unroll.unroll_sphericon(.05, dpi=300)
-    visualize(img)
+    # from utils.image_2d import visualize
+    # img = realworld.print_unroll.unroll_sphericon(.05, dpi=300)
+    # visualize(img)
 
     from renderer.cube_mesh import sphericon
     from pytorch3d.renderer import TexturesVertex

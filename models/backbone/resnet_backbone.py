@@ -1,3 +1,4 @@
+import torch
 from torch import nn
 import torchvision
 
@@ -16,7 +17,7 @@ class ResnetBackbone(nn.Module):
                                             bias=self.backbone.conv1.bias is not None)
         self.backbone.fc = nn.Sequential()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         backbone = self.backbone
 
         x = backbone.conv1(x)

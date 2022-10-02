@@ -40,11 +40,49 @@ dataset = dict(
     sphericon_align_y=5.,
 )
 
-augmentation = dict(  # torchvision.transforms.ColorJitter
-    brightness=.5,
-    contrast=.5,
-    saturation=.5,
-    hue=.5
+augmentation = dict(
+    match_background_histogram=dict(
+        blend_saturation=1.,
+        blend_light=1.,
+        p=.5,
+    ),
+    coarse_dropout=dict(
+        num_holes=10,
+        width=8,
+        p=.5,
+    ),
+    debayer=dict(
+        permute_channel=True,
+        p=.5,
+    ),
+    motion_blur=dict(
+        kernel_size=(1., 9.),
+        p=.5,
+    ),
+    gaussian_blur=dict(
+        sigma=(1., 3.),
+        p=.5,
+    ),
+    sharpen=dict(
+        sharpness_factor=(1., 3.),
+        p=.5,
+    ),
+    iso_noise=dict(
+        color_shift=.05,
+        intensity=.1,
+        p=.5,
+    ),
+    gauss_noise=dict(
+        sigma=.1,
+        p=.5,
+    ),
+    color_jitter=dict(
+        brightness=.5,
+        contrast=.5,
+        saturation=.5,
+        hue=.5,
+        p=.5,
+    )
 )
 
 dataloader = dict(
@@ -54,8 +92,9 @@ dataloader = dict(
 )
 
 model = dict(
-    gdr_mode=True,
     img_input_size=256,
     pnp_input_size=64,
-    pretrain='../GDR-Net/output/gdrn/lm_train_full_wo_region/a6_cPnP_lm13/model_final.pth',
+    texture_mode='siren',  # [None, 'default', 'xyz', 'vertex', 'mlp', 'siren', 'cb']
+    pnp_mode='epro',  # [None, 'ransac', 'gdrn', 'epro']
+    eval_augmentation=True,
 )

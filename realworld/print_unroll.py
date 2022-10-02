@@ -1,11 +1,11 @@
 import torch
 
-from models.gdr2.gdrn import GDRN
+from models.main_model import MainModel
 import utils.image_2d
 import utils.print_paper
 
 
-def unroll_cylinder_strip(scale: float = .05, margin: float = .01, border: int = 1, dpi: int = 72, model: GDRN = None):
+def unroll_cylinder_strip(scale: float = .05, margin: float = .01, border: int = 1, dpi: int = 72, model: MainModel = None):
     """
 
     :param scale: float
@@ -128,7 +128,7 @@ def _unroll_canonical_sphericon(canonical_coord_2d: torch.Tensor) -> tuple[torch
     return coord_3d, normal, mask
 
 
-def unroll_sphericon(scale: float, theta: float = -.9, dpi: int = 72, model: GDRN = None):
+def unroll_sphericon(scale: float, theta: float = -.9, dpi: int = 72, model: MainModel = None):
     """
 
     :param scale: float

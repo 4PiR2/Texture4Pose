@@ -1,15 +1,10 @@
-import pickle
-
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor, ModelCheckpoint
 
-import config.const as cc
 from dataloader.data_module import LitDataModule
-from dataloader.sample import Sample
-from models.gdr2.gdrn import GDRN
+from models.main_model import MainModel
 import realworld.charuco_board
 import realworld.print_unroll
 from utils.ckpt_io import CkptIO
@@ -103,12 +98,12 @@ def main():
 
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_138/checkpoints/last.ckpt'
+    ckpt_path = 'outputs/lightning_logs_1/version_138/checkpoints/last.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)
 
-    model = GDRN(cfg, datamodule.dataset.objects, datamodule.dataset.objects_eval)
+    model = MainModel(cfg, datamodule.dataset.objects, datamodule.dataset.objects_eval)
 
     # state_dict = torch.load('outputs/lightning_logs/version_34/checkpoints/epoch=0037-val_metric=0.0432.ckpt')['state_dict']
     # state_dict2 = {}
@@ -132,7 +127,6 @@ def main():
     exit(1)
 
     from dataloader.pose_dataset import real_scene_regular_obj_dp
-    from utils.image_2d import visualize
     dp = real_scene_regular_obj_dp(path='/data/real_exp/i12P_26mm', obj_list={104: 'cylinderstrip'},)
     # with open('/home/user/Desktop/x.pkl', 'rb') as f:
     #     x = pickle.load(f)
