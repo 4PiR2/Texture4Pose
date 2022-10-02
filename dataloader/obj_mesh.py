@@ -94,16 +94,18 @@ class ObjMesh:
         distances = torch.linalg.vector_norm(errors, ord=p, dim=-1)  # [..., V]
         return distances.mean(dim=-1)  # [...]
 
-    def average_projected_distance(self, cam_K: torch.Tensor, R1: torch.Tensor, R2: torch.Tensor,
-                                   t1: torch.Tensor = None, t2: torch.Tensor = None, p: int = 2) -> torch.Tensor:
+    @staticmethod
+    def compute_average_projected_distance(verts, cam_K: torch.Tensor, R1: torch.Tensor, R2: torch.Tensor,
+        t1: torch.Tensor = None, t2: torch.Tensor = None, p: int = 2) -> torch.Tensor:
         """
         average projected distance (in pixel)
         https://github.com/ybkscht/EfficientPose/blob/main/eval/common.py
 
+        :param verts: [..., V, 3]
         :param cam_K: [..., 3, 3]
         :param R1: [..., 3, 3]
-        :param t1: [..., 3]
         :param R2: [..., 3, 3]
+        :param t1: [..., 3]
         :param t2: [..., 3]
         :param p: int
         :return: [...]
@@ -116,7 +118,6 @@ class ObjMesh:
             t2 = torch.zeros_like(R1[..., 0])
         P1 = cam_K @ torch.cat([R1, t1[..., None]], dim=-1)  # [..., 3, 4]
         P2 = cam_K @ torch.cat([R2, t2[..., None]], dim=-1)  # [..., 3, 4]
-        verts = self.mesh.verts_packed().to(dtype=self.dtype).expand(*R1.shape[:-2], -1, -1)  # [..., V, 3]
         verts = torch.cat([verts, torch.ones_like(verts[..., -1:])], dim=-1)  # [..., V, 4]
         pv1 = verts @ P1.transpose(-2, -1)  # [..., V, 3]
         pv2 = verts @ P2.transpose(-2, -1)  # [..., V, 3]
@@ -124,6 +125,11 @@ class ObjMesh:
         pv2 = pv2[..., :2] / pv2[..., 2:]  # [..., V, 2]
         distances = torch.linalg.vector_norm(pv1 - pv2, ord=p, dim=-1)  # [..., V]
         return distances.mean(dim=-1)  # [...]
+
+    def average_projected_distance(self, cam_K: torch.Tensor, R1: torch.Tensor, R2: torch.Tensor,
+                                   t1: torch.Tensor = None, t2: torch.Tensor = None, p: int = 2) -> torch.Tensor:
+        verts = self.mesh.verts_packed().to(dtype=self.dtype).expand(*R1.shape[:-2], -1, -1)  # [..., V, 3]
+        return self.compute_average_projected_distance(verts, cam_K, R1, R2, t1, t2, p)
 
 
 class BOPMesh(ObjMesh):

@@ -95,11 +95,22 @@ model = dict(
     img_input_size=256,
     pnp_input_size=64,
     texture_mode='siren',  # [None, 'default', 'xyz', 'vertex', 'mlp', 'siren', 'cb']
-    pnp_mode='epro',  # [None, 'ransac', 'gdrn', 'epro']
+    pnp_mode='epro',  # [None, 'sanity', 'ransac', 'gdrn', 'epro']
     eval_augmentation=True,
+    up_sampling=dict(
+        num_hidden=256,
+    ),
+    texture=dict(
+        texture_use_normal_input=False,
+        siren_first_omega_0=30.,
+        siren_hidden_omega_0=30.,
+    ),
     pnp=dict(
         epro_use_world_measurement=False,
         epro_loss_weight=.02,
+        gdrn_teacher_force=True,
+        gdrn_run_ransac_baseline=False,
+        gdrn_pnp_pretrain=False,
     ),
 )
 

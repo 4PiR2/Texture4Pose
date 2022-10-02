@@ -71,8 +71,9 @@ class Loss(nn.Module):
                 loss[i] /= obj.diameter
         return loss
 
-    def t_site_center_loss(self, gt_cam_t_m2c_site: torch.Tensor, pred_cam_t_m2c_site: torch.Tensor,
-                           loss_mode: str = 'L1') -> torch.Tensor:
+    @staticmethod
+    def t_site_center_loss(gt_cam_t_m2c_site: torch.Tensor, pred_cam_t_m2c_site: torch.Tensor, loss_mode: str = 'L1') \
+            -> torch.Tensor:
         """
         :param pred_cam_t_m2c_site: [N, 3]
         :return: [N]
@@ -88,18 +89,14 @@ class Loss(nn.Module):
             raise NotImplementedError
         return loss
 
-    def t_site_depth_loss(self, gt_cam_t_m2c_site: torch.Tensor, pred_cam_t_m2c_site: torch.Tensor,
-                          loss_mode: str = 'L1', div_diameter: bool = True, obj_id: torch.Tensor = None) \
-            -> torch.Tensor:
+    @staticmethod
+    def t_site_depth_loss(gt_cam_t_m2c_site: torch.Tensor, pred_cam_t_m2c_site: torch.Tensor,
+                          loss_mode: str = 'L1') -> torch.Tensor:
         """
         :param pred_cam_t_m2c_site: [N, 3]
         :return: [N]
         """
         loss = torch.abs(pred_cam_t_m2c_site[:, 2] - gt_cam_t_m2c_site[:, 2])
-        if div_diameter:
-            for i in range(len(loss)):
-                obj = self.objects_eval[int(obj_id[i])]
-                loss[i] /= obj.diameter
         if loss_mode == 'L1':
             pass
         elif loss_mode == 'SL1':
@@ -110,7 +107,8 @@ class Loss(nn.Module):
             raise NotImplementedError
         return loss
 
-    def coord_3d_loss(self, gt_coord_3d_roi_normalized: torch.Tensor, gt_mask_vis_roi:torch.Tensor,
+    @staticmethod
+    def coord_3d_loss(gt_coord_3d_roi_normalized: torch.Tensor, gt_mask_vis_roi:torch.Tensor,
                       pred_coord_3d_roi_normalized: torch.Tensor) -> torch.Tensor:
         """
         :param pred_coord_3d_roi_normalized: [..., 3(XYZ), H, W]
@@ -121,7 +119,8 @@ class Loss(nn.Module):
         loss /= gt_mask_vis_roi.sum(dim=[-3, -2, -1])
         return loss
 
-    def mask_loss(self, gt_mask_vis_roi: torch.Tensor, pred_mask_vis_roi: torch.Tensor, loss_mode: str = 'BCE') -> torch.Tensor:
+    @staticmethod
+    def mask_loss(gt_mask_vis_roi: torch.Tensor, pred_mask_vis_roi: torch.Tensor, loss_mode: str = 'BCE') -> torch.Tensor:
         """
         :param pred_mask_vis_roi: [..., 1, H, W]
         :param loss_mode: 'BCE', 'L1'

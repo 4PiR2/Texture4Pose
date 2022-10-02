@@ -18,12 +18,14 @@ from models.backbone.up_sampling_backbone import UpSamplingBackbone
 from models.epropnp.demo import EProPnPDemo
 from models.eval.loss import Loss
 from models.eval.score import Score
+from models.head.conv_pnp_net import ConvPnPNet
 from models.head.epropnp_head import EPHead
 from models.head.geo_head import GeoHead
 from models.texture_net.siren_conv import SirenConv
 from models.texture_net.texture_net_p import TextureNetP
 from models.texture_net.texture_net_v import TextureNetV
 from renderer.scene import Scene
+import utils.transform_3d
 
 
 class MainModel(pl.LightningModule):
@@ -36,8 +38,14 @@ class MainModel(pl.LightningModule):
         self.opt_cfg = cfg.optimizer
         self.eval_augmentation: bool = cfg.model.eval_augmentation
         self.match_background_histogram_cfg = cfg.augmentation.match_background_histogram
-        self.epro_use_world_measurement: bool = cfg.model.pnp.epro_use_world_measurement
-        self.epro_loss_weight: float = cfg.model.pnp.epro_loss_weight
+        self.texture_use_normal_input: bool = cfg.model.texture.texture_use_normal_input
+        if self.pnp_mode == 'epro':
+            self.epro_use_world_measurement: bool = cfg.model.pnp.epro_use_world_measurement
+            self.epro_loss_weight: float = cfg.model.pnp.epro_loss_weight
+        elif self.pnp_mode == 'gdrn':
+            self.gdrn_teacher_force: bool = cfg.model.pnp.gdrn_teacher_force
+            self.gdrn_run_ransac_baseline: bool = cfg.model.pnp.gdrn_run_ransac_baseline
+            self.gdrn_pnp_pretrain: bool = cfg.model.pnp.gdrn_pnp_pretrain
 
         self.transform = T.Compose([
             A.CoarseDropout(**cfg.augmentation.coarse_dropout),
@@ -61,11 +69,13 @@ class MainModel(pl.LightningModule):
                     positional_encoding=[2. ** i for i in range(8)], use_cosine_positional_encoding=True)
             elif self.texture_mode == 'siren':
                 self.texture_net_p = SirenConv(in_features=3, out_features=3, hidden_features=128, hidden_layers=2,
-                                               outermost_linear=False, first_omega_0=30., hidden_omega_0=30.)
+                                               outermost_linear=False,
+                                               first_omega_0=cfg.model.texture.siren_first_omega_0,
+                                               hidden_omega_0=cfg.model.texture.siren_hidden_omega_0)
             else:
                 self.texture_net_p = None
 
-        num_hidden = 256
+        num_hidden = cfg.model.up_sampling.num_hidden
         self.resnet_backbone = ResnetBackbone(in_channels=3)
         self.up_sampling_backbone = UpSamplingBackbone(in_channels=512, num_layers=6, hidden_channels=num_hidden,
                                                        kernel_size=3)
@@ -74,13 +84,12 @@ class MainModel(pl.LightningModule):
         if self.pnp_mode == 'epro':
             self.secondary_head = EPHead(in_channels=num_hidden, kernel_size=1)
             self.pnp_net = EProPnPDemo()
-        elif self.pnp_mode == 'gdrn':
+        elif self.pnp_mode in ['gdrn', 'ransac']:
             self.secondary_head = GeoHead(in_channels=num_hidden, out_channels=1, kernel_size=1)
-            # self.pnp_net =
-            raise NotImplementedError
-        elif self.pnp_mode == 'ransac':
-            self.secondary_head = GeoHead(in_channels=num_hidden, out_channels=1, kernel_size=1)
-            self.pnp_net = None
+            if self.pnp_mode == 'gdrn':
+                self.pnp_net = ConvPnPNet(in_channels=3+2, featdim=128, num_layers=3, num_gn_groups=32)
+            else:
+                self.pnp_net = None
         else:
             self.secondary_head=None
             self.pnp_net = None
@@ -121,7 +130,7 @@ class MainModel(pl.LightningModule):
     def forward_texture(self, sample: Sample = None, texture_mode: str = None, coord_3d_normalized: torch.Tensor = None,
                         normal: torch.Tensor = None, mask: torch.Tensor = None) -> torch.Tensor:
         if sample is not None:
-            coord_3d_normalized = sample.gt_coord_3d_roi_normalized
+            coord_3d_normalized = sample.get(sf.gt_coord_3d_roi_normalized)
             normal = sample.get(sf.gt_normal_roi)
             mask = sample.get(sf.gt_mask_vis_roi)
         if texture_mode is None:
@@ -131,6 +140,8 @@ class MainModel(pl.LightningModule):
             if self.texture_net_p is not None:
                 N, _, H, W = mask.shape
                 input_feature_map = coord_3d_normalized * 2. - 1.
+                if self.texture_use_normal_input:
+                    input_feature_map = torch.cat([input_feature_map, normal], dim=-3)
                 input_feature = input_feature_map.permute(0, 2, 3, 1)[mask[:, 0]][..., None, None]
                 # [NHW, C, 1, 1]
                 output_feature_map = torch.ones(N, H, W, 3, dtype=input_feature.dtype, device=input_feature.device)
@@ -149,24 +160,28 @@ class MainModel(pl.LightningModule):
         return texel
 
     def forward(self, sample: Sample):
-        self.forward_texture(sample)
+        if hasattr(self, 'gdrn_pnp_pretrain') and self.gdrn_pnp_pretrain:
+            sample.get_gt_coord_3d_roi_normalized()
+            self.forward_texture(sample)
 
-        if self.training or self.eval_augmentation:
-            sample.set(sf.img_roi, augmentations.color_augmentation.match_background_histogram(
-                sample.get(sf.img_roi), sample.get(sf.gt_mask_vis_roi), **self.match_background_histogram_cfg
-            ))
-            sample.set(sf.img_roi,
-                       self.transform(sample.get(sf.img_roi)))
+            if self.training or self.eval_augmentation:
+                sample.set(sf.img_roi, augmentations.color_augmentation.match_background_histogram(
+                    sample.get(sf.img_roi), sample.get(sf.gt_mask_vis_roi), **self.match_background_histogram_cfg
+                ))
+                sample.set(sf.img_roi,
+                           self.transform(sample.get(sf.img_roi)))
 
-        sample.set(sf.gt_mask_vis_roi,
-                   vF.resize(sample.get(sf.gt_mask_obj_roi), [self.pnp_input_size]))  # mask: vis changed to obj
-        sample.set(sf.gt_coord_3d_roi,
-                   vF.resize(sample.get(sf.gt_coord_3d_roi), [self.pnp_input_size]) * sample.get(sf.gt_mask_vis_roi))
-        sample.set(sf.coord_2d_roi,
-                   vF.resize(sample.get(sf.coord_2d_roi), [self.pnp_input_size]))
+            sample.set(sf.gt_mask_vis_roi,
+                       vF.resize(sample.get(sf.gt_mask_obj_roi), [self.pnp_input_size]))  # mask: vis changed to obj
+            sample.set(sf.gt_coord_3d_roi, vF.resize(sample.get(sf.gt_coord_3d_roi),
+                                                     [self.pnp_input_size]) * sample.get(sf.gt_mask_vis_roi))
+            sample.get_gt_coord_3d_roi_normalized()
+            sample.set(sf.coord_2d_roi,
+                       vF.resize(sample.get(sf.coord_2d_roi), [self.pnp_input_size]))
 
-        features = self.up_sampling_backbone(self.resnet_backbone(sample.get(sf.img_roi)))
-        sample.set(sf.pred_coord_3d_roi_normalized, self.coord_3d_head(features))
+            features = self.up_sampling_backbone(self.resnet_backbone(sample.get(sf.img_roi)))
+            sample.set(sf.pred_coord_3d_roi_normalized, self.coord_3d_head(features))
+            sample.get_pred_coord_3d_roi()
 
         if self.pnp_mode == 'epro':
             w2d_raw, log_weight_scale = self.secondary_head(features)
@@ -193,8 +208,32 @@ class MainModel(pl.LightningModule):
             sample.set(sf.pred_cam_t_m2c, pose_opt[:, :3])
             sample.set(sf.pred_cam_R_m2c, pytorch3d.transforms.quaternion_to_matrix(pose_opt[:, 3:]))
 
-        elif self.pnp_mode == 'ransac':
-            sample.compute_pnp(sanity_check_mode=False, store=True, ransac=True)
+        elif self.pnp_mode in ['gdrn', 'ransac']:
+            sample.set(sf.pred_mask_vis_roi, self.secondary_head(features))
+            if self.pnp_mode == 'gdrn':
+                sample.get_gt_cam_t_m2c_site()
+                if self.gdrn_teacher_force or self.gdrn_pnp_pretrain:
+                    if self.training or self.gdrn_pnp_pretrain:
+                        coord_3d_roi = sample.get(sf.gt_coord_3d_roi)
+                    else:
+                        coord_3d_roi = sample.get(sf.pred_coord_3d_roi) * (sample.get(sf.pred_mask_vis_roi) > .5)
+                else:
+                    coord_3d_roi = sample.get(sf.pred_coord_3d_roi)
+                pred_cam_R_m2c_6d, pred_cam_t_m2c_site = self.pnp_net(
+                    torch.cat([coord_3d_roi, sample.get(sf.coord_2d_roi)], dim=-3))
+                sample.set(sf.pred_cam_t_m2c_site, pred_cam_t_m2c_site)
+                sample.get_pred_cam_t_m2c()
+                pred_cam_R_m2c_allo = pytorch3d.transforms.rotation_6d_to_matrix(pred_cam_R_m2c_6d)
+                if self.training and self.gdrn_teacher_force:
+                    allo2ego = utils.transform_3d.rot_allo2ego(sample.get(sf.gt_cam_t_m2c))
+                else:
+                    allo2ego = utils.transform_3d.rot_allo2ego(sample.get(sf.pred_cam_t_m2c))
+                sample.set(sf.pred_cam_R_m2c, allo2ego @ pred_cam_R_m2c_allo)
+            if self.pnp_mode == 'ransac' or self.gdrn_run_ransac_baseline:
+                sample.compute_pnp(sanity_check_mode=False, store=True, ransac=True, erode_min=5., erode_max=torch.inf)
+
+        elif self.pnp_mode == 'sanity':
+            sample.compute_pnp(sanity_check_mode=True, store=True, ransac=True)
 
         return sample
 
@@ -217,8 +256,8 @@ class MainModel(pl.LightningModule):
         if (batch_idx + 1) % (self.trainer.log_every_n_steps * 999) == 1:
             self._log_sample_visualizations(sample)
         if self.pnp_mode is not None:
-            re, te, add, proj = self.score(sample)
-            metric_dict = {'re(deg)': re, 'te(cm)': te, 'ad(d)': add, 'proj': proj}
+            re, te, ad, pj, pv = self.score(sample)
+            metric_dict = {'re(deg)': re, 'te(cm)': te, 'ad(d)': ad, 'pj(px)': pj, 'pv(px)': pv}
             return metric_dict
 
     def validation_epoch_end(self, outputs: EPOCH_OUTPUT) -> None:
@@ -230,7 +269,7 @@ class MainModel(pl.LightningModule):
             quantiles = metrics.quantile(q, dim=1).T
             for i in range(len(keys)):
                 self.log(keys[i], {f'%{int((q[j] * 100.).round())}': float(quantiles[i, j]) for j in range(len(q))})
-            self.log('val_metric', metrics[2].mean())  # mean add score, for model selection
+            self.log('val_metric', metrics[-1].mean())  # mean add score, for model selection
         else:
             self.log('val_metric', 1. / (self.current_epoch + 1.))  # mean add score, for model selection
 

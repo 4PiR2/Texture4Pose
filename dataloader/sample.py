@@ -3,7 +3,6 @@ from collections import namedtuple
 from typing import Callable, Optional, Union
 
 import torch
-import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -161,13 +160,13 @@ class Sample:
         return utils.transform_3d.t_site_to_t(cam_t_m2c_site, bbox, cam_K, obj_diameter)
         # [N, 3]
 
-    @property
-    def gt_cam_t_m2c_site(self) -> torch.Tensor:
-        gt_cam_t_m2c = self.get(sf.gt_cam_t_m2c)
-        return self._get_cam_t_m2c_site(gt_cam_t_m2c)  # [N, 3]
+    def get_gt_cam_t_m2c_site(self) -> torch.Tensor:
+        gt_cam_t_m2c_site = self._get_cam_t_m2c_site(self.get(sf.gt_cam_t_m2c))  # [N, 3]
+        self.set(sf.gt_cam_t_m2c_site, gt_cam_t_m2c_site)
+        return gt_cam_t_m2c_site  # [N, 3]
 
     def get_pred_cam_t_m2c(self) -> torch.Tensor:
-        pred_cam_t_m2c = self._get_cam_t_m2c(self.get(sf.pred_cam_t_m2c_site))
+        pred_cam_t_m2c = self._get_cam_t_m2c(self.get(sf.pred_cam_t_m2c_site))  # [N, 3]
         self.set(sf.pred_cam_t_m2c, pred_cam_t_m2c)
         return pred_cam_t_m2c  # [N, 3]
 
@@ -179,15 +178,16 @@ class Sample:
         obj_size = self.get(sf.obj_size)
         return utils.transform_3d.denormalize_coord_3d(coord_3d_roi_normalized, obj_size)  # [N, 3(XYZ), H, W]
 
-    @property
-    def gt_coord_3d_roi_normalized(self) -> torch.Tensor:
-        gt_coord_3d_roi = self.get(sf.gt_coord_3d_roi)
-        return self._get_coord_3d_roi_normalized(gt_coord_3d_roi)  # [N, 3(XYZ), H, W]
+    def get_gt_coord_3d_roi_normalized(self) -> torch.Tensor:
+        gt_coord_3d_roi_normalized = self._get_coord_3d_roi_normalized(self.get(sf.gt_coord_3d_roi))
+        # [N, 3(XYZ), H, W]
+        self.set(sf.gt_coord_3d_roi_normalized, gt_coord_3d_roi_normalized)
+        return gt_coord_3d_roi_normalized  # [N, 3(XYZ), H, W]
 
-    @property
-    def pred_coord_3d_roi(self) -> torch.Tensor:
-        pred_coord_3d_roi_normalized = self.get(sf.pred_coord_3d_roi_normalized)
-        return self._get_coord_3d_roi(pred_coord_3d_roi_normalized)  # [N, 3(XYZ), H, W]
+    def get_pred_coord_3d_roi(self) -> torch.Tensor:
+        pred_coord_3d_roi = self._get_coord_3d_roi(self.get(sf.pred_coord_3d_roi_normalized))  # [N, 3(XYZ), H, W]
+        self.set(sf.pred_coord_3d_roi, pred_coord_3d_roi)
+        return pred_coord_3d_roi
 
     def visualize(self, return_figs: bool = False, max_samples: int = None) -> Optional[list[Figure]]:
         figs = []

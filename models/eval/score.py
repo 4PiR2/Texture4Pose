@@ -23,14 +23,17 @@ class Score(nn.Module):
 
         re = self.relative_angle(gt_cam_R_m2c, pred_cam_R_m2c, degree=True)
         te = self.relative_dist(gt_cam_t_m2c, pred_cam_t_m2c, cm=True)
-        add = self.add_score(obj_id, gt_cam_R_m2c, gt_cam_t_m2c, pred_cam_R_m2c, pred_cam_t_m2c, div_diameter=True)
-        proj = self.proj_dist(obj_id, cam_K, gt_cam_R_m2c, gt_cam_t_m2c, pred_cam_R_m2c, pred_cam_t_m2c)
-        return re, te, add, proj
+        ad = self.add_score(obj_id, gt_cam_R_m2c, gt_cam_t_m2c, pred_cam_R_m2c, pred_cam_t_m2c, div_diameter=True)
+        pj = self.proj_dist(obj_id, cam_K, gt_cam_R_m2c, gt_cam_t_m2c, pred_cam_R_m2c, pred_cam_t_m2c)
+        pv = self.proj_dist_visible(cam_K, sample.get(sf.gt_coord_3d_roi), sample.get(sf.gt_mask_vis_roi),
+                                    gt_cam_R_m2c, gt_cam_t_m2c, pred_cam_R_m2c, pred_cam_t_m2c)
+        return re, te, ad, pj, pv
 
     def add_score(self, obj_id: torch.Tensor, gt_cam_R_m2c: torch.Tensor, gt_cam_t_m2c: torch.Tensor,
                   pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor, div_diameter: bool = True) \
             -> torch.Tensor:
         """
+        ADD
         :param objects_eval: dict[int, ObjMesh]
         :param pred_cam_R_m2c: [N, 3, 3]
         :param pred_cam_t_m2c: [N, 3]
@@ -50,6 +53,7 @@ class Score(nn.Module):
                   gt_cam_t_m2c: torch.Tensor, pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor) \
             -> torch.Tensor:
         """
+        PROJ
         :param objects_eval: dict[int, ObjMesh]
         :param pred_cam_R_m2c: [N, 3, 3]
         :param pred_cam_t_m2c: [N, 3]
@@ -63,10 +67,11 @@ class Score(nn.Module):
                                                      pred_cam_t_m2c[i], gt_cam_t_m2c[i])
         return dist
 
-    def relative_angle(self, gt_cam_R_m2c: torch.Tensor, pred_cam_R_m2c: torch.Tensor, degree: bool = False) \
+    @staticmethod
+    def relative_angle(gt_cam_R_m2c: torch.Tensor, pred_cam_R_m2c: torch.Tensor, degree: bool = False) \
             -> torch.Tensor:
         """
-
+        RE
         :param pred_cam_R_m2c: [..., 3, 3]
         :param degree: bool, use 360 degrees
         :return: [...]
@@ -78,9 +83,10 @@ class Score(nn.Module):
             angle *= 180. / torch.pi  # 360 degrees
         return angle  # [...]
 
-    def relative_dist(self, gt_cam_t_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor, cm: bool = False) -> torch.Tensor:
+    @staticmethod
+    def relative_dist(gt_cam_t_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor, cm: bool = False) -> torch.Tensor:
         """
-
+        TE
         :param pred_cam_t_m2c: [.., 3]
         :param cm: bool, use cm instead of meter
         :return:
@@ -89,3 +95,15 @@ class Score(nn.Module):
         if cm:
             dist *= 100.  # cm
         return dist  # [...]
+
+    @staticmethod
+    def proj_dist_visible(cam_K: torch.Tensor, gt_coord_3d_roi: torch.Tensor, gt_mask_vis_roi: torch.Tensor,
+                          gt_cam_R_m2c: torch.Tensor, gt_cam_t_m2c: torch.Tensor,
+                          pred_cam_R_m2c: torch.Tensor, pred_cam_t_m2c: torch.Tensor) -> torch.Tensor:
+        N = len(pred_cam_R_m2c)
+        dist = torch.empty(N, dtype=pred_cam_R_m2c.dtype, device=pred_cam_R_m2c.device)
+        for i in range(N):
+            verts = gt_coord_3d_roi[i].permute(1, 2, 0)[gt_mask_vis_roi[i, 0]]
+            dist[i] = ObjMesh.compute_average_projected_distance(verts, cam_K[i], gt_cam_R_m2c[i], pred_cam_R_m2c[i],
+                                                                 gt_cam_t_m2c[i], pred_cam_t_m2c[i], p=2)
+        return dist
