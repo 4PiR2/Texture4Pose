@@ -27,7 +27,7 @@ dataset = dict(
     occlusion_size_max=.125,
     num_occlusion_per_obj=1,
     min_occlusion_vis_ratio=.5,
-    cylinder_strip_thresh_theta=15. * .0174532925199,  # 15 degree
+    cylinder_strip_thresh_theta=15. * .0174532925199,  # 15 degrees
     real_img_ext='heic',
     charuco_w_square=7,
     charuco_h_square=10,
@@ -114,17 +114,20 @@ model = dict(
     ),
 )
 
-backbone_lr = 3e-5
-
 optimizer = dict(
     mode='adam',
     lr=dict(
-        resnet_backbone=backbone_lr,
-        up_sampling_backbone=backbone_lr,
-        coord_3d_head=backbone_lr,
-        texture_net_p=0e-5,
-        # texture_net_v=1e-2,
+        resnet_backbone=3e-5,
+        up_sampling_backbone=3e-5,
+        coord_3d_head=3e-5,
+        texture_net_p=1e-5,
+        texture_net_v=1e-2,
         secondary_head=3e-5,
         pnp_net=1e-5,
-    )
+    ),
+)
+
+scheduler = dict(
+    step_size=100,
+    gamma=.1,
 )

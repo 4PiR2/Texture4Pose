@@ -36,9 +36,13 @@ class MainModel(pl.LightningModule):
         self.texture_mode: str = cfg.model.texture_mode
         self.pnp_mode: str = cfg.model.pnp_mode
         self.opt_cfg = cfg.optimizer
+        self.sch_cfg = cfg.scheduler
         self.eval_augmentation: bool = cfg.model.eval_augmentation
         self.match_background_histogram_cfg = cfg.augmentation.match_background_histogram
         self.texture_use_normal_input: bool = cfg.model.texture.texture_use_normal_input
+        if self.texture_mode == 'siren':
+            self.siren_first_omega_0 = cfg.model.texture.siren_first_omega_0
+            self.siren_hidden_omega_0 = cfg.model.texture.siren_hidden_omega_0
         if self.pnp_mode == 'epro':
             self.epro_use_world_measurement: bool = cfg.model.pnp.epro_use_world_measurement
             self.epro_loss_weight: float = cfg.model.pnp.epro_loss_weight
@@ -70,8 +74,8 @@ class MainModel(pl.LightningModule):
             elif self.texture_mode == 'siren':
                 self.texture_net_p = SirenConv(in_features=3, out_features=3, hidden_features=128, hidden_layers=2,
                                                outermost_linear=False,
-                                               first_omega_0=cfg.model.texture.siren_first_omega_0,
-                                               hidden_omega_0=cfg.model.texture.siren_hidden_omega_0)
+                                               first_omega_0=self.siren_first_omega_0,
+                                               hidden_omega_0=self.siren_hidden_omega_0)
             else:
                 self.texture_net_p = None
 
@@ -106,17 +110,24 @@ class MainModel(pl.LightningModule):
              'name': 'up_sampling_backbone'},
             {'params': self.coord_3d_head.parameters(), 'lr': self.opt_cfg.lr.coord_3d_head, 'name': 'coord_3d_head'},
         ]
-        if self.texture_mode in ['mlp', 'siren']:
+        if self.texture_mode == 'mlp':
             params.append({'params': self.texture_net_p.parameters(), 'lr': self.opt_cfg.lr.texture_net_p,
                            'name': 'texture_p'})
+        elif self.texture_mode == 'siren':
+            params.append({'params': self.texture_net_p.first_layer.parameters(),
+                           # 'lr': self.opt_cfg.lr.texture_net_p * (self.siren_hidden_omega_0 / self.siren_first_omega_0),
+                           'lr': self.opt_cfg.lr.texture_net_p,
+                           'name': 'siren_first'})
+            params.append({'params': self.texture_net_p.rest_layers.parameters(), 'lr': self.opt_cfg.lr.texture_net_p,
+                           'name': 'siren_rest'})
         elif self.texture_mode == 'vertex':
             params.append({'params': self.texture_net_v.parameters(), 'lr': self.opt_cfg.lr.texture_net_v,
                            'name': 'texture_v'})
-        if self.secondary_head is not None:
+        if self.pnp_mode in ['gdrn', 'ransac']:
             params.append({'params': self.secondary_head.parameters(), 'lr': self.opt_cfg.lr.secondary_head,
                            'name': 'secondary_head'})
-        if self.pnp_mode == 'gdrn':
-            params.append({'params': self.pnp_net.parameters(), 'lr': self.opt_cfg.lr.pnp_net, 'name': 'pnp_net'})
+            if self.pnp_mode == 'gdrn':
+                params.append({'params': self.pnp_net.parameters(), 'lr': self.opt_cfg.lr.pnp_net, 'name': 'pnp_net'})
         if self.opt_cfg.mode == 'adam':
             opt = torch.optim.Adam
         elif self.opt_cfg.mode == 'sgd':
@@ -124,7 +135,8 @@ class MainModel(pl.LightningModule):
         else:
             raise NotImplementedError
         optimizer = opt(params, lr=0.)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=.1)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.sch_cfg.step_size,
+                                                    gamma=self.sch_cfg.gamma)
         return [optimizer], [scheduler]
 
     def forward_texture(self, sample: Sample = None, texture_mode: str = None, coord_3d_normalized: torch.Tensor = None,
@@ -160,7 +172,7 @@ class MainModel(pl.LightningModule):
         return texel
 
     def forward(self, sample: Sample):
-        if hasattr(self, 'gdrn_pnp_pretrain') and self.gdrn_pnp_pretrain:
+        if not (hasattr(self, 'gdrn_pnp_pretrain') and self.gdrn_pnp_pretrain):
             sample.get_gt_coord_3d_roi_normalized()
             self.forward_texture(sample)
 

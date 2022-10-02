@@ -49,9 +49,11 @@ class SirenConv(nn.Module):
             layers.append(final_linear)
         else:
             layers.append(SineConvLayer(hidden_features, out_features, is_first=False, omega_0=hidden_omega_0))
-        self.layers = nn.Sequential(*layers)
+        self.first_layer = layers[0]
+        self.rest_layers = nn.Sequential(*layers[1:])
 
     def forward(self, x):
-        x = self.layers(x)
+        x = self.first_layer(x)
+        x = self.rest_layers(x)
         # show_tensor_hist(self.net[0].linear.weight, bins=50)
         return (x * .5 + .5).clamp(min=0., max=1.)

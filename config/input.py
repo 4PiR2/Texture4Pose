@@ -17,3 +17,17 @@ dataloader = dict(
     train_epoch_len=500 * 1,
     val_epoch_len=(200 + dataset['num_obj'] - 1) // dataset['num_obj'],
 )
+
+_base_lr = 3e-5
+
+optimizer = dict(
+    lr=dict(
+        resnet_backbone=_base_lr,
+        up_sampling_backbone=_base_lr,
+        coord_3d_head=_base_lr,
+        texture_net_p=_base_lr / 1.,
+        texture_net_v=1e-2,
+        secondary_head=_base_lr,
+        pnp_net=_base_lr / 1.,
+    )
+)
