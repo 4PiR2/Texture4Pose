@@ -97,4 +97,23 @@ model = dict(
     texture_mode='siren',  # [None, 'default', 'xyz', 'vertex', 'mlp', 'siren', 'cb']
     pnp_mode='epro',  # [None, 'ransac', 'gdrn', 'epro']
     eval_augmentation=True,
+    pnp=dict(
+        epro_use_world_measurement=False,
+        epro_loss_weight=.02,
+    ),
+)
+
+backbone_lr = 3e-5
+
+optimizer = dict(
+    mode='adam',
+    lr=dict(
+        resnet_backbone=backbone_lr,
+        up_sampling_backbone=backbone_lr,
+        coord_3d_head=backbone_lr,
+        texture_net_p=0e-5,
+        # texture_net_v=1e-2,
+        secondary_head=3e-5,
+        pnp_net=1e-5,
+    )
 )

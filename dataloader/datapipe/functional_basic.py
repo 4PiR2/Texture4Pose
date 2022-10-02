@@ -51,11 +51,13 @@ class _(SampleMapperIDP):
 @functional_datapipe('set_mesh_info')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
-        super().__init__(src_dp, [sf.obj_id], [sf.obj_size, sf.obj_diameter], required_attributes=['objects'])
+        super().__init__(src_dp, [sf.obj_id], [sf.obj_size, sf.obj_diameter],
+                         required_attributes=['dtype', 'device', 'objects'])
 
     def main(self, obj_id: torch.Tensor):
         obj_size = torch.stack([self.objects[int(i)].size for i in obj_id], dim=0)  # extents: [N, 3(XYZ)]
-        obj_diameter = torch.tensor([self.objects[int(i)].diameter for i in obj_id])  # [N]
+        obj_diameter = torch.tensor([self.objects[int(i)].diameter for i in obj_id],
+                                    dtype=self.dtype, device=self.device)  # [N]
         return obj_size, obj_diameter
 
 

@@ -98,7 +98,7 @@ def main():
 
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
-    ckpt_path = 'outputs/lightning_logs_1/version_138/checkpoints/last.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_148/checkpoints/last.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)
@@ -117,8 +117,8 @@ def main():
     # if cfg.model.pretrain is not None:
     #     model.load_pretrain(cfg.model.pretrain)
 
-    # model = GDRN.load_from_checkpoint(ckpt_path, strict=True,
-    #     cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
+    model = MainModel.load_from_checkpoint(ckpt_path, strict=True,
+        cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
 
     model = model.to(cfg.device, dtype=cfg.dtype)
     trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)

@@ -33,8 +33,11 @@ class MainModel(pl.LightningModule):
         self.pnp_input_size: int = cfg.model.pnp_input_size
         self.texture_mode: str = cfg.model.texture_mode
         self.pnp_mode: str = cfg.model.pnp_mode
+        self.opt_cfg = cfg.optimizer
         self.eval_augmentation: bool = cfg.model.eval_augmentation
         self.match_background_histogram_cfg = cfg.augmentation.match_background_histogram
+        self.epro_use_world_measurement: bool = cfg.model.pnp.epro_use_world_measurement
+        self.epro_loss_weight: float = cfg.model.pnp.epro_loss_weight
 
         self.transform = T.Compose([
             A.CoarseDropout(**cfg.augmentation.coarse_dropout),
@@ -62,19 +65,21 @@ class MainModel(pl.LightningModule):
             else:
                 self.texture_net_p = None
 
+        num_hidden = 256
         self.resnet_backbone = ResnetBackbone(in_channels=3)
-        self.up_sampling_backbone = UpSamplingBackbone(in_channels=512, num_layers=6, num_filters=256, kernel_size=3)
-        self.coord_3d_head = GeoHead(in_channels=256, out_channels=3, kernel_size=1)
+        self.up_sampling_backbone = UpSamplingBackbone(in_channels=512, num_layers=6, hidden_channels=num_hidden,
+                                                       kernel_size=3)
+        self.coord_3d_head = GeoHead(in_channels=num_hidden, out_channels=3, kernel_size=1)
 
         if self.pnp_mode == 'epro':
-            self.secondary_head = EPHead(in_channels=256, kernel_size=1)
+            self.secondary_head = EPHead(in_channels=num_hidden, kernel_size=1)
             self.pnp_net = EProPnPDemo()
         elif self.pnp_mode == 'gdrn':
-            self.secondary_head = GeoHead(in_channels=256, out_channels=1, kernel_size=1)
+            self.secondary_head = GeoHead(in_channels=num_hidden, out_channels=1, kernel_size=1)
             # self.pnp_net =
             raise NotImplementedError
         elif self.pnp_mode == 'ransac':
-            self.secondary_head = GeoHead(in_channels=256, out_channels=1, kernel_size=1)
+            self.secondary_head = GeoHead(in_channels=num_hidden, out_channels=1, kernel_size=1)
             self.pnp_net = None
         else:
             self.secondary_head=None
@@ -86,13 +91,30 @@ class MainModel(pl.LightningModule):
 
     def configure_optimizers(self):
         params = [
-            {'params': self.resnet_backbone.parameters(), 'lr': 3e-5, 'name': 'resnet_backbone'},
-            {'params': self.up_sampling_backbone.parameters(), 'lr': 3e-5, 'name': 'up_sampling_backbone'},
-            {'params': self.coord_3d_head.parameters(), 'lr': 3e-5, 'name': 'coord_3d_head'},
+            {'params': self.resnet_backbone.parameters(), 'lr': self.opt_cfg.lr.resnet_backbone,
+             'name': 'resnet_backbone'},
+            {'params': self.up_sampling_backbone.parameters(), 'lr': self.opt_cfg.lr.up_sampling_backbone,
+             'name': 'up_sampling_backbone'},
+            {'params': self.coord_3d_head.parameters(), 'lr': self.opt_cfg.lr.coord_3d_head, 'name': 'coord_3d_head'},
         ]
         if self.texture_mode in ['mlp', 'siren']:
-            params.append({'params': self.texture_net_p.parameters(), 'lr': 1e-5, 'name': 'texture_p'})
-        optimizer = torch.optim.Adam(params, lr=0e0)
+            params.append({'params': self.texture_net_p.parameters(), 'lr': self.opt_cfg.lr.texture_net_p,
+                           'name': 'texture_p'})
+        elif self.texture_mode == 'vertex':
+            params.append({'params': self.texture_net_v.parameters(), 'lr': self.opt_cfg.lr.texture_net_v,
+                           'name': 'texture_v'})
+        if self.secondary_head is not None:
+            params.append({'params': self.secondary_head.parameters(), 'lr': self.opt_cfg.lr.secondary_head,
+                           'name': 'secondary_head'})
+        if self.pnp_mode == 'gdrn':
+            params.append({'params': self.pnp_net.parameters(), 'lr': self.opt_cfg.lr.pnp_net, 'name': 'pnp_net'})
+        if self.opt_cfg.mode == 'adam':
+            opt = torch.optim.Adam
+        elif self.opt_cfg.mode == 'sgd':
+            opt = torch.optim.SGD
+        else:
+            raise NotImplementedError
+        optimizer = opt(params, lr=0.)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=.1)
         return [optimizer], [scheduler]
 
@@ -127,12 +149,6 @@ class MainModel(pl.LightningModule):
         return texel
 
     def forward(self, sample: Sample):
-        # if self.training:
-        #     with torch.no_grad():
-        #         # weight_params = self.texture_net_p.layers[0][0].weight
-        #         weight_params = self.texture_net_p.net[0].linear.weight
-        #         weight_params *= .9999
-
         self.forward_texture(sample)
 
         if self.training or self.eval_augmentation:
@@ -150,8 +166,7 @@ class MainModel(pl.LightningModule):
                    vF.resize(sample.get(sf.coord_2d_roi), [self.pnp_input_size]))
 
         features = self.up_sampling_backbone(self.resnet_backbone(sample.get(sf.img_roi)))
-        pred_coord_3d_roi_normalized = self.coord_3d_head(features)
-        sample.set(sf.pred_coord_3d_roi_normalized, pred_coord_3d_roi_normalized)
+        sample.set(sf.pred_coord_3d_roi_normalized, self.coord_3d_head(features))
 
         if self.pnp_mode == 'epro':
             w2d_raw, log_weight_scale = self.secondary_head(features)
@@ -162,16 +177,19 @@ class MainModel(pl.LightningModule):
                 sample.set(sf.pred_weight_2d, pred_weight_2d / pred_weight_2d.max())
             x3d = sample.get(sf.pred_coord_3d_roi).permute(0, 2, 3, 1).reshape(N, -1, 3)
             x2d = sample.get(sf.coord_2d_roi).permute(0, 2, 3, 1).reshape(N, -1, 2)
+            if not self.epro_use_world_measurement:
+                x2d = (sample.get(sf.cam_K)[:, None]
+                       @ torch.cat([x2d, torch.ones_like(x2d[..., :1])], dim=-1)[..., None])[..., :-1, 0]
             w2d = w2d_raw.permute(0, 2, 3, 1).reshape(N, -1, 2)
             if self.training:
                 out_pose = torch.cat([sample.get(sf.gt_cam_t_m2c),
                                       pytorch3d.transforms.matrix_to_quaternion(sample.get(sf.gt_cam_R_m2c))], dim=-1)
                 pose_opt, *_, ep_loss = self.pnp_net.forward_train(x3d, x2d, w2d, log_weight_scale, out_pose,
-                                                                   sample.get(sf.cam_K))
+                                            None if self.epro_use_world_measurement else sample.get(sf.cam_K))
                 sample.tmp_eploss = ep_loss
             else:
-                pose_opt = self.pnp_net.forward_test(x3d, x2d, w2d, log_weight_scale, sample.get(sf.cam_K),
-                                                     fast_mode=False)
+                pose_opt = self.pnp_net.forward_test(x3d, x2d, w2d, log_weight_scale,
+                               None if self.epro_use_world_measurement else sample.get(sf.cam_K), fast_mode=False)
             sample.set(sf.pred_cam_t_m2c, pose_opt[:, :3])
             sample.set(sf.pred_cam_R_m2c, pytorch3d.transforms.quaternion_to_matrix(pose_opt[:, 3:]))
 
@@ -187,7 +205,7 @@ class MainModel(pl.LightningModule):
             sample.gt_coord_3d_roi_normalized, sample.gt_mask_vis_roi, sample.pred_coord_3d_roi_normalized).mean()
 
         if self.pnp_mode == 'epro':
-            loss_dict['epro'] = sample.tmp_eploss * .0
+            loss_dict['epro'] = sample.tmp_eploss * self.epro_loss_weight
             del sample.tmp_eploss
 
         loss_dict['total'] = sum(loss_dict.values())
@@ -214,7 +232,6 @@ class MainModel(pl.LightningModule):
                 self.log(keys[i], {f'%{int((q[j] * 100.).round())}': float(quantiles[i, j]) for j in range(len(q))})
             self.log('val_metric', metrics[2].mean())  # mean add score, for model selection
         else:
-            # or use self.global_step
             self.log('val_metric', 1. / (self.current_epoch + 1.))  # mean add score, for model selection
 
     def _log_sample_visualizations(self, sample: Sample) -> None:

@@ -1,5 +1,3 @@
-from typing import Union
-
 import cv2
 from matplotlib.axes import Axes
 import numpy as np
@@ -12,46 +10,49 @@ def normalize_cam_K(cam_K: torch.Tensor) -> torch.Tensor:
     return cam_K / cam_K[..., -1:, -1:]
 
 
-def t_to_t_site(t: torch.Tensor, bbox: torch.Tensor, r: Union[torch.Tensor, float] = 1., cam_K: torch.Tensor = None) \
-        -> torch.Tensor:
+def t_to_t_site(t: torch.Tensor, bbox: torch.Tensor, cam_K: torch.Tensor, obj_diameter: torch.Tensor) -> torch.Tensor:
     """
     :param t: [..., 3]
     :param bbox: [..., 4(XYWH)]
-    :param r: [...], crop_size / max(W, H)
-    :param cam_K: cam_K: [..., 3, 3]
+    :param cam_K: [..., 3, 3]
+    :param obj_diameter: [...]
     :return: [..., 3]
     """
-    # r *= 3.1037e+03 / 572.4114
-    if cam_K is not None:
-        # if bbox is in image space
-        cam_K = normalize_cam_K(cam_K)
-        t = (t[..., None, :] @ cam_K.transpose(-2, -1))[..., 0, :]  # [..., 3], (ox * tz, oy * tz, tz) = t.T @ K.T
-    t_site = t.clone()
-    t_site[..., :2] = (t[..., :2] / t[..., 2:] - bbox[..., :2]) / bbox[..., 2:]
-    # (dx, dy, .) = ((ox - cx) / w, (oy - cy) / h, .)
-    t_site[..., 2] /= r  # (., ., dz) = (., ., tz / r)
-    return t_site
+    K_bbox = torch.zeros(*bbox.shape[:-1], 3, 3, dtype=bbox.dtype, device=bbox.device)
+    K_bbox[..., 0, 0] = bbox[..., 2]
+    K_bbox[..., 1, 1] = bbox[..., 3]
+    K_bbox[..., -1, -1] = 1.
+    K_bbox[..., :-1, -1] = bbox[..., :2]
+    f = (cam_K[..., 0, 0] * cam_K[..., 1, 1]) ** .5  # focal_length * cam_K[-1, -1]
+    s = (bbox[..., 2] * bbox[..., 3]) ** .5
+    fd_s = f * obj_diameter / s
+    delta_t = torch.linalg.solve(K_bbox, cam_K @ t[..., None])[..., 0]  # (t_site_x, t_site_y, 1.) * t_z * cam_K[-1, -1]
+    t_site_xy = delta_t[..., :-1] / delta_t[..., -1:]
+    t_site_z = fd_s / delta_t[..., -1]
+    return torch.cat([t_site_xy, t_site_z[..., None]], dim=-1)
 
 
-def t_site_to_t(t_site: torch.Tensor, bbox: torch.Tensor, r: Union[torch.Tensor, float] = 1.,
-                cam_K: torch.Tensor = None) -> torch.Tensor:
+def t_site_to_t(t_site: torch.Tensor, bbox: torch.Tensor, cam_K: torch.Tensor, obj_diameter: torch.Tensor) \
+        -> torch.Tensor:
     """
     :param t_site: [..., 3]
     :param bbox: [..., 4(XYWH)]
-    :param r: [...], crop_size / max(W, H)
     :param cam_K: [..., 3, 3]
+    :param obj_diameter: [...]
     :return: [..., 3]
     """
-    # r *= 3.1037e+03 / 572.4114
-    t = t_site.clone()
-    t[..., :2] = (t_site[..., :2] * bbox[..., 2:] + bbox[..., :2]) * t_site[..., 2:]
-    # (ox * dz, oy * dz, dz) = ((dx * w + cx) * dz, (dy * h + cy) * dz, dz)
-    t *= r[..., None]  # (ox * tz, oy * tz, tz)
-    if cam_K is not None:
-        # if bbox is in image space
-        cam_K = normalize_cam_K(cam_K)
-        t = torch.linalg.solve(cam_K, t[..., None])[..., 0]  # [..., 3], (inv(K) @ t).T
-    return t
+    K_bbox = torch.zeros(*bbox.shape[:-1], 3, 3, dtype=bbox.dtype, device=bbox.device)
+    K_bbox[..., 0, 0] = bbox[..., 2]
+    K_bbox[..., 1, 1] = bbox[..., 3]
+    K_bbox[..., -1, -1] = 1.
+    K_bbox[..., :-1, -1] = bbox[..., :2]
+    f = (cam_K[..., 0, 0] * cam_K[..., 1, 1]) ** .5  # focal_length * cam_K[-1, -1]
+    s = (bbox[..., 2] * bbox[..., 3]) ** .5
+    fd_s = f * obj_diameter / s
+    delta_t_z = fd_s / t_site[..., -1]  # t_z * cam_K[-1, -1]
+    delta_t = torch.cat([t_site[..., :-1], torch.ones_like(t_site[..., -1:])], dim=-1) * delta_t_z[..., None]
+    # (t_site_x, t_site_y, 1.) * t_z * cam_K[-1, -1]
+    return torch.linalg.solve(cam_K, K_bbox @ delta_t[..., None])[..., 0]
 
 
 def rot_allo2ego(translation: torch.Tensor) -> torch.Tensor:

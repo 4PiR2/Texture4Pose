@@ -153,12 +153,12 @@ class Sample:
         return feature_roi_size / crop_size  # [N]
 
     def _get_cam_t_m2c_site(self, cam_t_m2c: torch.Tensor) -> torch.Tensor:
-        bbox, cam_K = self.get([sf.bbox, sf.cam_K])
-        return utils.transform_3d.t_to_t_site(cam_t_m2c, bbox, self.roi_zoom_in_ratio, cam_K)  # [N, 3]
+        bbox, cam_K, obj_diameter = self.get([sf.bbox, sf.cam_K, sf.obj_diameter])
+        return utils.transform_3d.t_to_t_site(cam_t_m2c, bbox, cam_K, obj_diameter)  # [N, 3]
 
     def _get_cam_t_m2c(self, cam_t_m2c_site: torch.Tensor) -> torch.Tensor:
-        bbox, cam_K = self.get([sf.bbox, sf.cam_K])
-        return utils.transform_3d.t_site_to_t(cam_t_m2c_site, bbox, self.roi_zoom_in_ratio, cam_K)
+        bbox, cam_K, obj_diameter = self.get([sf.bbox, sf.cam_K, sf.obj_diameter])
+        return utils.transform_3d.t_site_to_t(cam_t_m2c_site, bbox, cam_K, obj_diameter)
         # [N, 3]
 
     @property
