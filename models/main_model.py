@@ -1,3 +1,4 @@
+import os
 from typing import Optional
 
 import pytorch3d.transforms
@@ -25,24 +26,25 @@ from models.texture_net.siren_conv import SirenConv
 from models.texture_net.texture_net_p import TextureNetP
 from models.texture_net.texture_net_v import TextureNetV
 from renderer.scene import Scene
+from utils.config import Config
 import utils.transform_3d
 
 
 class MainModel(pl.LightningModule):
-    def __init__(self, cfg, objects: dict[int, ObjMesh] = None, objects_eval: dict[int, ObjMesh] = None):
+    def __init__(self, cfg: Config, objects: dict[int, ObjMesh] = None, objects_eval: dict[int, ObjMesh] = None):
         super().__init__()
-        # self.cfg = cfg
+        self.cfg: Config = cfg
         self.pnp_input_size: int = cfg.model.pnp_input_size
         self.texture_mode: str = cfg.model.texture_mode
         self.pnp_mode: str = cfg.model.pnp_mode
-        self.opt_cfg = cfg.optimizer
-        self.sch_cfg = cfg.scheduler
+        self.opt_cfg: Config = cfg.optimizer
+        self.sch_cfg: Config = cfg.scheduler
         self.eval_augmentation: bool = cfg.model.eval_augmentation
-        self.match_background_histogram_cfg = cfg.augmentation.match_background_histogram
+        self.match_background_histogram_cfg: Config = cfg.augmentation.match_background_histogram
         self.texture_use_normal_input: bool = cfg.model.texture.texture_use_normal_input
         if self.texture_mode == 'siren':
-            self.siren_first_omega_0 = cfg.model.texture.siren_first_omega_0
-            self.siren_hidden_omega_0 = cfg.model.texture.siren_hidden_omega_0
+            self.siren_first_omega_0: float = cfg.model.texture.siren_first_omega_0
+            self.siren_hidden_omega_0: float = cfg.model.texture.siren_hidden_omega_0
         if self.pnp_mode == 'epro':
             self.epro_use_world_measurement: bool = cfg.model.pnp.epro_use_world_measurement
             self.epro_loss_weight: float = cfg.model.pnp.epro_loss_weight
@@ -88,15 +90,10 @@ class MainModel(pl.LightningModule):
         if self.pnp_mode == 'epro':
             self.secondary_head = EPHead(in_channels=num_hidden, kernel_size=1)
             self.pnp_net = EProPnPDemo()
-        elif self.pnp_mode in ['gdrn', 'ransac']:
+        elif self.pnp_mode == 'ransac':
             self.secondary_head = GeoHead(in_channels=num_hidden, out_channels=1, kernel_size=1)
-            if self.pnp_mode == 'gdrn':
-                self.pnp_net = ConvPnPNet(in_channels=3+2, featdim=128, num_layers=3, num_gn_groups=32)
-            else:
-                self.pnp_net = None
-        else:
-            self.secondary_head=None
-            self.pnp_net = None
+        elif self.pnp_mode == 'gdrn':
+            self.pnp_net = ConvPnPNet(in_channels=3+2, featdim=128, num_layers=3, num_gn_groups=32)
 
         self.objects_eval = objects_eval if objects_eval is not None else objects
         self.loss = Loss(objects_eval if objects_eval is not None else objects)
@@ -110,6 +107,7 @@ class MainModel(pl.LightningModule):
              'name': 'up_sampling_backbone'},
             {'params': self.coord_3d_head.parameters(), 'lr': self.opt_cfg.lr.coord_3d_head, 'name': 'coord_3d_head'},
         ]
+
         if self.texture_mode == 'mlp':
             params.append({'params': self.texture_net_p.parameters(), 'lr': self.opt_cfg.lr.texture_net_p,
                            'name': 'texture_p'})
@@ -123,11 +121,13 @@ class MainModel(pl.LightningModule):
         elif self.texture_mode == 'vertex':
             params.append({'params': self.texture_net_v.parameters(), 'lr': self.opt_cfg.lr.texture_net_v,
                            'name': 'texture_v'})
-        if self.pnp_mode in ['gdrn', 'ransac']:
+
+        if self.pnp_mode in ['epro', 'ransac']:
             params.append({'params': self.secondary_head.parameters(), 'lr': self.opt_cfg.lr.secondary_head,
                            'name': 'secondary_head'})
-            if self.pnp_mode == 'gdrn':
-                params.append({'params': self.pnp_net.parameters(), 'lr': self.opt_cfg.lr.pnp_net, 'name': 'pnp_net'})
+        elif self.pnp_mode == 'gdrn':
+            params.append({'params': self.pnp_net.parameters(), 'lr': self.opt_cfg.lr.pnp_net, 'name': 'pnp_net'})
+
         if self.opt_cfg.mode == 'adam':
             opt = torch.optim.Adam
         elif self.opt_cfg.mode == 'sgd':
@@ -135,6 +135,7 @@ class MainModel(pl.LightningModule):
         else:
             raise NotImplementedError
         optimizer = opt(params, lr=0.)
+
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.sch_cfg.step_size,
                                                     gamma=self.sch_cfg.gamma)
         return [optimizer], [scheduler]
@@ -252,8 +253,8 @@ class MainModel(pl.LightningModule):
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:
         sample = self.forward(sample)
         loss_dict = {}
-        loss_dict['loss_coord_3d'] = self.loss.coord_3d_loss(
-            sample.gt_coord_3d_roi_normalized, sample.gt_mask_vis_roi, sample.pred_coord_3d_roi_normalized).mean()
+        loss_dict['loss_coord_3d'] = self.loss.coord_3d_loss(sample.get(sf.gt_coord_3d_roi_normalized),
+            sample.get(sf.gt_mask_vis_roi), sample.get(sf.pred_coord_3d_roi_normalized)).mean()
 
         if self.pnp_mode == 'epro':
             loss_dict['epro'] = sample.tmp_eploss * self.epro_loss_weight
@@ -265,12 +266,17 @@ class MainModel(pl.LightningModule):
 
     def validation_step(self, sample: Sample, batch_idx: int) -> Optional[STEP_OUTPUT]:
         sample: Sample = self.forward(sample)
-        if (batch_idx + 1) % (self.trainer.log_every_n_steps * 999) == 1:
+        # if (batch_idx + 1) % (self.trainer.log_every_n_steps * 999) == 1:
+        if not batch_idx:
             self._log_sample_visualizations(sample)
         if self.pnp_mode is not None:
             re, te, ad, pj, pv = self.score(sample)
             metric_dict = {'re(deg)': re, 'te(cm)': te, 'ad(d)': ad, 'pj(px)': pj, 'pv(px)': pv}
-            return metric_dict
+        else:
+            loss_coord_3d = self.loss.coord_3d_loss(sample.get(sf.gt_coord_3d_roi_normalized),
+                                sample.get(sf.gt_mask_vis_roi), sample.get(sf.pred_coord_3d_roi_normalized))
+            metric_dict = {'loss3d': loss_coord_3d}
+        return metric_dict
 
     def validation_epoch_end(self, outputs: EPOCH_OUTPUT) -> None:
         if outputs:
@@ -298,6 +304,8 @@ class MainModel(pl.LightningModule):
 
     def on_train_start(self):
         writer: SummaryWriter = self.logger.experiment
+        writer.add_text('cfg', self.cfg.pretty_text, global_step=0)
+        self.cfg.dump(os.path.join(self.trainer.log_dir, 'cfg.txt'), pretty_text=False)
         for key in dir(self):
             if key.startswith('_'):
                 continue

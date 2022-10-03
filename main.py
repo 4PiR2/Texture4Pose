@@ -57,10 +57,8 @@ def print_sphericon_a3():
 
 
 def main():
-    # print_sphericon_a3()
     def setup(args=None) -> Config:
-        """Create configs and perform basic setups."""
-        cfg = Config.fromfile('config/input.py')
+        cfg = Config.fromfile('config/top.py')
         if args is not None:
             cfg.merge_from_dict(args)
         return cfg

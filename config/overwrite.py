@@ -1,4 +1,4 @@
-_base_ = './pipeline.py'
+_base_ = './default.py'
 
 dataset = dict(
     scene_src=3 * 0,  # 0: random (for training), 3: real exp (for testing)
@@ -25,9 +25,9 @@ optimizer = dict(
         resnet_backbone=_base_lr,
         up_sampling_backbone=_base_lr,
         coord_3d_head=_base_lr,
-        texture_net_p=_base_lr / 1.,
+        texture_net_p=_base_lr / 3.,
         texture_net_v=1e-2,
         secondary_head=_base_lr,
-        pnp_net=_base_lr / 1.,
+        pnp_net=_base_lr / 3.,
     )
 )

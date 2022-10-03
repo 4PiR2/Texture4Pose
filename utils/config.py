@@ -758,21 +758,12 @@ class Config:
         super(Config, self).__setattr__('_filename', _filename)
         super(Config, self).__setattr__('_text', _text)
 
-    def dump(self, file=None):
-        cfg_dict = super(Config, self).__getattribute__('_cfg_dict').to_dict()
-        if self.filename.endswith('.py'):
-            if file is None:
-                return self.pretty_text
-            else:
-                with open(file, 'w', encoding='utf-8') as f:
-                    f.write(self.pretty_text)
-        else:
-            import mmcv
-            if file is None:
-                file_format = self.filename.split('.')[-1]
-                return mmcv.dump(cfg_dict, file_format=file_format)
-            else:
-                mmcv.dump(cfg_dict, file)
+    def dump(self, file=None, pretty_text: bool = True):
+        text = self.pretty_text if pretty_text else self.text
+        if file is not None:
+            with open(file, 'w', encoding='utf-8') as f:
+                f.write(text)
+        return text
 
     def merge_from_dict(self, options, allow_list_keys=True):
         """Merge list into cfg_dict.
