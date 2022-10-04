@@ -1,9 +1,10 @@
 import torch
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor
 
 from dataloader.data_module import LitDataModule
 from models.main_model import MainModel
+from utils.ckpt_io import CkptIO
 from utils.config import Config
 
 
@@ -20,7 +21,7 @@ def omega_scan():
 
     cfg.model.texture_mode = 'siren'
     cfg.model.pnp_mode = None
-    for omega in [30, 1, 60, 15]:
+    for omega in [2 ** -i for i in [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]]:
         trainer = Trainer(
             accelerator='auto',
             devices=1 if torch.cuda.is_available() else None,
@@ -29,6 +30,7 @@ def omega_scan():
                 TQDMProgressBar(refresh_rate=1),
                 LearningRateMonitor(logging_interval='step', log_momentum=False),
             ],
+            plugins=[CkptIO()],
             default_root_dir='outputs',
             log_every_n_steps=10,
         )

@@ -1,5 +1,4 @@
 # From https://vsitzmann.github.io/siren/ (MIT License)
-import numpy as np
 import torch
 from torch import nn
 
@@ -13,23 +12,23 @@ class SineConvLayer(nn.Module):
         self.omega_0 = omega_0
         self.is_first = is_first
         self.in_features = in_features
-        self.linear = nn.Conv2d(in_features, out_features, 1, bias=bias)
+        self.linear = nn.Conv2d(in_features, out_features, 1, bias=bias and not is_first)
         self.init_weights()
 
     def init_weights(self):
         with torch.no_grad():
             if self.is_first:
-                self.linear.weight.uniform_(-1. / self.in_features,
-                                            1. / self.in_features)
+                # bound = 1. / self.in_features
+                bound = 3. / torch.tensor(self.in_features).sqrt()
                 # for input uniform(-r, r), init should be uniform(-3 / (r * sqrt(n)), 3 / (r * sqrt(n)))
             else:
-                self.linear.weight.uniform_(-np.sqrt(6. / self.in_features) / self.omega_0,
-                                            np.sqrt(6. / self.in_features) / self.omega_0)
+                bound = torch.tensor(6. / self.in_features).sqrt() / self.omega_0
+            self.linear.weight.uniform_(-bound, bound)
 
     def forward(self, input, omega=None):
         if omega is None:
             omega = self.omega_0
-        return torch.sin(omega * self.linear(input))
+        return torch.sin(.5 * torch.pi * omega * self.linear(input))
 
 
 class SirenConv(nn.Module):
@@ -44,8 +43,8 @@ class SirenConv(nn.Module):
         if outermost_linear:
             final_linear = nn.Conv2d(hidden_features, out_features, 1)
             with torch.no_grad():
-                final_linear.weight.uniform_(-np.sqrt(6. / hidden_features) / hidden_omega_0,
-                                             np.sqrt(6. / hidden_features) / hidden_omega_0)
+                bound = torch.tensor(6. / hidden_features).sqrt() / hidden_omega_0
+                final_linear.weight.uniform_(-bound, bound)
             layers.append(final_linear)
         else:
             layers.append(SineConvLayer(hidden_features, out_features, is_first=False, omega_0=hidden_omega_0))

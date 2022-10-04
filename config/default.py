@@ -102,8 +102,8 @@ model = dict(
     ),
     texture=dict(
         texture_use_normal_input=False,
-        siren_first_omega_0=30.,
-        siren_hidden_omega_0=30.,
+        siren_first_omega_0=20.,
+        siren_hidden_omega_0=20.,
     ),
     pnp=dict(
         epro_use_world_measurement=False,
@@ -120,10 +120,10 @@ optimizer = dict(
         resnet_backbone=3e-5,
         up_sampling_backbone=3e-5,
         coord_3d_head=3e-5,
-        texture_net_p=1e-5,
+        texture_net_p=3e-6,
         texture_net_v=1e-2,
         secondary_head=3e-5,
-        pnp_net=1e-5,
+        pnp_net=3e-6,
     ),
 )
 

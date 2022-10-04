@@ -185,7 +185,9 @@ class MainModel(pl.LightningModule):
                            self.transform(sample.get(sf.img_roi)))
 
             sample.set(sf.gt_mask_vis_roi,
-                       vF.resize(sample.get(sf.gt_mask_obj_roi), [self.pnp_input_size]))  # mask: vis changed to obj
+                       vF.resize(sample.get(sf.gt_mask_vis_roi), [self.pnp_input_size]))
+            sample.set(sf.gt_mask_obj_roi,
+                       vF.resize(sample.get(sf.gt_mask_obj_roi), [self.pnp_input_size]))
             sample.set(sf.gt_coord_3d_roi, vF.resize(sample.get(sf.gt_coord_3d_roi),
                                                      [self.pnp_input_size]) * sample.get(sf.gt_mask_vis_roi))
             sample.get_gt_coord_3d_roi_normalized()
@@ -253,7 +255,7 @@ class MainModel(pl.LightningModule):
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:
         sample = self.forward(sample)
         loss_dict = {}
-        loss_dict['loss_coord_3d'] = self.loss.coord_3d_loss(sample.get(sf.gt_coord_3d_roi_normalized),
+        loss_dict['coord_3d'] = self.loss.coord_3d_loss(sample.get(sf.gt_coord_3d_roi_normalized),
             sample.get(sf.gt_mask_vis_roi), sample.get(sf.pred_coord_3d_roi_normalized)).mean()
 
         if self.pnp_mode == 'epro':
@@ -305,7 +307,7 @@ class MainModel(pl.LightningModule):
     def on_train_start(self):
         writer: SummaryWriter = self.logger.experiment
         writer.add_text('cfg', self.cfg.pretty_text, global_step=0)
-        self.cfg.dump(os.path.join(self.trainer.log_dir, 'cfg.txt'), pretty_text=False)
+        self.cfg.dump(os.path.join(self.trainer.log_dir, 'cfg.txt'), pretty_text=True)
         for key in dir(self):
             if key.startswith('_'):
                 continue
