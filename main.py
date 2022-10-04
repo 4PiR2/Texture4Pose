@@ -96,7 +96,7 @@ def main():
 
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_156/checkpoints/epoch=9-step=5000.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_175/checkpoints/epoch=9-step=5000.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)

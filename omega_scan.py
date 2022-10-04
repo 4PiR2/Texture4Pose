@@ -21,7 +21,7 @@ def omega_scan():
 
     cfg.model.texture_mode = 'siren'
     cfg.model.pnp_mode = None
-    for omega in [2 ** -i for i in [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]]:
+    for omega in [2 ** i for i in [6, 5, 4, 3, 2, 1, 0, -1, -2, -3, -4, -5, -6]]:
         trainer = Trainer(
             accelerator='auto',
             devices=1 if torch.cuda.is_available() else None,

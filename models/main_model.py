@@ -184,15 +184,13 @@ class MainModel(pl.LightningModule):
                 sample.set(sf.img_roi,
                            self.transform(sample.get(sf.img_roi)))
 
-            sample.set(sf.gt_mask_vis_roi,
-                       vF.resize(sample.get(sf.gt_mask_vis_roi), [self.pnp_input_size]))
-            sample.set(sf.gt_mask_obj_roi,
-                       vF.resize(sample.get(sf.gt_mask_obj_roi), [self.pnp_input_size]))
-            sample.set(sf.gt_coord_3d_roi, vF.resize(sample.get(sf.gt_coord_3d_roi),
-                                                     [self.pnp_input_size]) * sample.get(sf.gt_mask_vis_roi))
+            resize = lambda tag: vF.resize(sample.get(tag), [self.pnp_input_size], vF.InterpolationMode.NEAREST)
+            sample.set(sf.gt_mask_vis_roi, resize(sf.gt_mask_vis_roi))
+            sample.set(sf.gt_mask_obj_roi, resize(sf.gt_mask_obj_roi))
+            sample.set(sf.gt_coord_3d_roi, resize(sf.gt_coord_3d_roi) * sample.get(sf.gt_mask_vis_roi))
             sample.get_gt_coord_3d_roi_normalized()
-            sample.set(sf.coord_2d_roi,
-                       vF.resize(sample.get(sf.coord_2d_roi), [self.pnp_input_size]))
+            sample.set(sf.gt_normal_roi, resize(sf.gt_normal_roi) * sample.get(sf.gt_mask_vis_roi))
+            sample.set(sf.coord_2d_roi, resize(sf.coord_2d_roi))
 
             features = self.up_sampling_backbone(self.resnet_backbone(sample.get(sf.img_roi)))
             sample.set(sf.pred_coord_3d_roi_normalized, self.coord_3d_head(features))

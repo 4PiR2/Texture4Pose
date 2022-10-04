@@ -18,7 +18,7 @@ dataloader = dict(
 
 model = dict(
     texture=dict(
-        siren_first_omega_0=1.,
+        siren_first_omega_0=2.,
     ),
 )
 
