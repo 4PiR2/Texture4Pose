@@ -4,7 +4,6 @@ from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor
 
 from dataloader.data_module import LitDataModule
 from models.main_model import MainModel
-from utils.ckpt_io import CkptIO
 from utils.config import Config
 
 
@@ -30,9 +29,9 @@ def omega_scan():
                 TQDMProgressBar(refresh_rate=1),
                 LearningRateMonitor(logging_interval='step', log_momentum=False),
             ],
-            plugins=[CkptIO()],
             default_root_dir='outputs',
             log_every_n_steps=10,
+            num_sanity_val_steps=-1,
         )
         cfg.model.texture.siren_first_omega_0 = omega
         model = MainModel(cfg, datamodule.dataset.objects, datamodule.dataset.objects_eval)

@@ -3,8 +3,8 @@ _base_ = './default.py'
 dataset = dict(
     scene_src=3 * 0,  # 0: random (for training), 3: real exp (for testing)
     # obj_list={101: 'sphere', },
-    obj_list={104: 'cylinderstrip', },
-    # obj_list={105: 'sphericon', },
+    # obj_list={104: 'cylinderstrip', },
+    obj_list={105: 'sphericon', },
     num_obj=16,
     num_occlusion_per_obj=2,
     occlusion_size_max=.5,
@@ -17,7 +17,11 @@ dataloader = dict(
 )
 
 model = dict(
+    # texture_mode='xyz',
+    texture_mode='siren',
+    # pnp_mode=None,
     texture=dict(
+        texture_use_normal_input=True,
         siren_first_omega_0=2.,
     ),
 )

@@ -74,8 +74,8 @@ class MainModel(pl.LightningModule):
                 self.texture_net_p = TextureNetP(in_channels=3, out_channels=3, n_layers=3, hidden_size=128,
                     positional_encoding=[2. ** i for i in range(8)], use_cosine_positional_encoding=True)
             elif self.texture_mode == 'siren':
-                self.texture_net_p = SirenConv(in_features=3, out_features=3, hidden_features=128, hidden_layers=2,
-                                               outermost_linear=False,
+                self.texture_net_p = SirenConv(in_features=3 + self.texture_use_normal_input * 3, out_features=3,
+                                               hidden_features=128, hidden_layers=2, outermost_linear=False,
                                                first_omega_0=self.siren_first_omega_0,
                                                hidden_omega_0=self.siren_hidden_omega_0)
             else:
@@ -290,6 +290,16 @@ class MainModel(pl.LightningModule):
             self.log('val_metric', metrics[-1].mean())  # mean add score, for model selection
         else:
             self.log('val_metric', 1. / (self.current_epoch + 1.))  # mean add score, for model selection
+        additional_ckpt_component_names = ['texture_net_v', 'texture_net_p']
+        for component_name in additional_ckpt_component_names:
+            if hasattr(self, component_name):
+                component = getattr(self, component_name)
+                if component is None:
+                    break
+                component_path = os.path.join(self.trainer.log_dir, f'checkpoints_{component_name}')
+                os.makedirs(component_path, exist_ok=True)
+                torch.save(self.texture_net_p, os.path.join(component_path,
+                                                            f'epoch={self.current_epoch}-step={self.global_step}.ckpt'))
 
     def _log_sample_visualizations(self, sample: Sample) -> None:
         writer: SummaryWriter = self.logger.experiment
