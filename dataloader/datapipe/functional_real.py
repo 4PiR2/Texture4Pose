@@ -118,6 +118,8 @@ class _(SampleMapperIDP):
                          [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c], required_attributes=['dtype', 'device', 'objects', 'board'])
         self._size_true: float = scale_true * 2.
         square_length = self.board.board.getSquareLength()
+        # rot = pytorch3d.transforms.euler_angles_to_matrix(
+        #     torch.tensor([n * .5 * torch.pi, 0., 0.], dtype=self.dtype, device=self.device), 'ZYX')
         self._dt: torch.Tensor = torch.tensor(
             [align_x * square_length + scale_true, align_y * square_length, scale_true],
             dtype=self.dtype, device=self.device)  # (dx + r, dy, h * .5)

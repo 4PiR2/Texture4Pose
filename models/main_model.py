@@ -168,8 +168,9 @@ class MainModel(pl.LightningModule):
             if sample is not None:
                 if texel is not None:
                     sample.set(sf.gt_texel_roi, texel)
-                sample.set(sf.img_roi, (sample.get(sf.gt_light_texel_roi) * sample.get(sf.gt_texel_roi) +
-                                        sample.get(sf.gt_light_specular_roi)).clamp(0., 1.))
+                if hasattr(sample, sf.gt_light_texel_roi) and hasattr(sample, sf.gt_light_specular_roi):
+                    sample.set(sf.img_roi, (sample.get(sf.gt_light_texel_roi) * sample.get(sf.gt_texel_roi) +
+                                            sample.get(sf.gt_light_specular_roi)).clamp(0., 1.))
         return texel
 
     def forward(self, sample: Sample):
@@ -248,6 +249,7 @@ class MainModel(pl.LightningModule):
         elif self.pnp_mode == 'sanity':
             sample.compute_pnp(sanity_check_mode=True, store=True, ransac=True)
 
+        # sample.visualize()
         return sample
 
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:
@@ -295,7 +297,7 @@ class MainModel(pl.LightningModule):
             if hasattr(self, component_name):
                 component = getattr(self, component_name)
                 if component is None:
-                    break
+                    continue
                 component_path = os.path.join(self.trainer.log_dir, f'checkpoints_{component_name}')
                 os.makedirs(component_path, exist_ok=True)
                 torch.save(self.texture_net_p, os.path.join(component_path,
