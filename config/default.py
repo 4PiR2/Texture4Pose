@@ -24,7 +24,7 @@ dataset = dict(
     num_obj=None,
     repeated_sample_obj=True,
     occlusion_size_min=.125,
-    occlusion_size_max=.125,
+    occlusion_size_max=.5,
     num_occlusion_per_obj=1,
     min_occlusion_vis_ratio=.5,
     occlusion_probability=.1,
@@ -102,7 +102,7 @@ model = dict(
         num_hidden=256,
     ),
     texture=dict(
-        texture_use_normal_input=False,
+        texture_use_normal_input=True,
         siren_first_omega_0=20.,
         siren_hidden_omega_0=20.,
     ),

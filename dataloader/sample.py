@@ -25,7 +25,7 @@ def not_none(l):
 
 _fields_str = [
     'N', 'gt_cam_t_m2c_site', 'gt_coord_3d_roi_normalized',
-    'o_scene', 'o_item',
+    'o_scene', 'o_item', 'code_info',
     'obj_id', 'obj_size', 'obj_diameter', 'cam_K', 'cam_K_orig', 'gt_cam_R_m2c', 'gt_cam_t_m2c', 'bbox',
     'gt_bbox_vis', 'gt_vis_ratio',
     'img', 'img_roi', 'coord_2d', 'coord_2d_roi', 'gt_coord_3d', 'gt_coord_3d_roi', 'gt_normal', 'gt_normal_roi',

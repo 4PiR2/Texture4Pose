@@ -51,7 +51,7 @@ def _fetch_exif_data(exif_data, gps: bool = False):
 
 
 def imread(filename: str, size: tuple[int, int] = None, opencv_bgr: bool = True):
-    im = Image.open(filename)
+    im = Image.open(filename).convert('RGB')
     try:
         exif = im.getexif()
         orientation = int(exif[274])
