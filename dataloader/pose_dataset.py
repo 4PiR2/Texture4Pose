@@ -27,7 +27,7 @@ def random_scene_any_obj_dp0(  # scene_src == 0: random (cropping based, obsolet
     vis_ratio_filter_threshold=.5, max_dzi_ratio=.25, bbox_zoom_out_ratio=1.5, light_max_saturation=1.,
     light_ambient_range=(.5, 1.), light_diffuse_range=(0., .3), light_specular_range=(0., .2),
     light_shininess_range=(40, 80), num_obj=None, repeated_sample_obj=False, occlusion_size_min=.125,
-    occlusion_size_max=.5, num_occlusion_per_obj=1, min_occlusion_vis_ratio=.5,
+    occlusion_size_max=.5, num_occlusion_per_obj=1, min_occlusion_vis_ratio=.5, occlusion_probability=.1,
     cylinder_strip_thresh_theta=15. * torch.pi / 180., **kwargs,
 ):
     dp = SampleSource(dtype=dtype, device=device, scene_mode=scene_mode, img_render_size=img_render_size)
@@ -46,7 +46,7 @@ def random_scene_any_obj_dp0(  # scene_src == 0: random (cropping based, obsolet
     dp = dp.crop_roi_basic(out_size=crop_out_size, delete_original=True)
     dp = dp.rand_occlude(occlusion_size_min=occlusion_size_min, occlusion_size_max=occlusion_size_max,
                          num_occlusion_per_obj=num_occlusion_per_obj, min_occlusion_vis_ratio=min_occlusion_vis_ratio,
-                         batch_occlusion=1)
+                         batch_occlusion=1, p=occlusion_probability)
     dp = dp.rand_lights(light_max_saturation=light_max_saturation, light_ambient_range=light_ambient_range,
                         light_diffuse_range=light_diffuse_range, light_specular_range=light_specular_range,
                         light_shininess_range=light_shininess_range)
@@ -66,7 +66,7 @@ def random_scene_any_obj_dp(  # scene_src == 0: random (adaptive camera intrinsi
     bbox_zoom_out_ratio=1.5, light_max_saturation=1., light_ambient_range=(.5, 1.), light_diffuse_range=(0., .3),
     light_specular_range=(0., .2), light_shininess_range=(40, 80), num_obj=None, repeated_sample_obj=False,
     occlusion_size_min=.125, occlusion_size_max=.5, num_occlusion_per_obj=1, min_occlusion_vis_ratio=.5,
-    cylinder_strip_thresh_theta=15. * torch.pi / 180., **kwargs,
+    occlusion_probability=.1, cylinder_strip_thresh_theta=15. * torch.pi / 180., **kwargs,
 ):
     dp = SampleSource(dtype=dtype, device=device, scene_mode=False, img_render_size=crop_out_size)
     dp = dataloader.datapipe.functional_bop.init_objects(dp, obj_list=obj_list, path=path)
@@ -85,7 +85,7 @@ def random_scene_any_obj_dp(  # scene_src == 0: random (adaptive camera intrinsi
     dp = dp.normalize_normal()
     dp = dp.rand_occlude(occlusion_size_min=occlusion_size_min, occlusion_size_max=occlusion_size_max,
                          num_occlusion_per_obj=num_occlusion_per_obj, min_occlusion_vis_ratio=min_occlusion_vis_ratio,
-                         batch_occlusion=1)
+                         batch_occlusion=1, p=occlusion_probability)
     dp = dp.rand_lights(light_max_saturation=light_max_saturation, light_ambient_range=light_ambient_range,
                         light_diffuse_range=light_diffuse_range, light_specular_range=light_specular_range,
                         light_shininess_range=light_shininess_range)

@@ -6,7 +6,7 @@ dataset = dict(
     obj_list={104: 'cylinderstrip', },
     # obj_list={105: 'sphericon', },
     num_obj=16,
-    num_occlusion_per_obj=2,
+    num_occlusion_per_obj=1,
     occlusion_size_max=.5,
 )
 
@@ -17,8 +17,8 @@ dataloader = dict(
 )
 
 model = dict(
-    # texture_mode='xyz',
-    texture_mode='siren',
+    texture_mode='xyz',
+    # texture_mode='siren',
     # pnp_mode=None,
     eval_augmentation=True and dataset['scene_src'] != 3,
     texture=dict(

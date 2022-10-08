@@ -277,7 +277,8 @@ class _(SampleMapperIDP):
 @functional_datapipe('rand_occlude')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, occlusion_size_min: float = .125, occlusion_size_max: float = .5,
-                 num_occlusion_per_obj: int = 2, min_occlusion_vis_ratio: float = .5, batch_occlusion: int = None):
+                 num_occlusion_per_obj: int = 2, min_occlusion_vis_ratio: float = .5, batch_occlusion: int = None,
+                 p: float = 1.):
         super().__init__(src_dp, [sf.gt_mask_vis_roi], [sf.gt_mask_vis_roi])
         # rectangular occlusion
         self._occlusion_size_min: float = occlusion_size_min
@@ -285,6 +286,7 @@ class _(SampleMapperIDP):
         self._num_occlusion_per_obj: int = num_occlusion_per_obj
         self._min_occlusion_vis_ratio: float = min_occlusion_vis_ratio
         self._B: int = batch_occlusion
+        self._p: float = p
 
     def main(self, gt_mask_vis_roi: torch.Tensor):
         if self._occlusion_size_max <= 0.:
@@ -297,6 +299,8 @@ class _(SampleMapperIDP):
             while True:
                 gt_mask_vis_roi_occ[i:i + B] = gt_mask_vis_roi[i:i + B]
                 for _ in range(self._num_occlusion_per_obj):
+                    if torch.rand(1) > self._p:
+                        continue
                     wh = torch.rand(B, 2) * (self._occlusion_size_max - self._occlusion_size_min) \
                          + self._occlusion_size_min
                     x0y0 = torch.rand(B, 2) * (1. - wh)

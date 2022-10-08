@@ -47,7 +47,8 @@ class MainModel(pl.LightningModule):
             self.siren_hidden_omega_0: float = cfg.model.texture.siren_hidden_omega_0
         if self.pnp_mode == 'epro':
             self.epro_use_world_measurement: bool = cfg.model.pnp.epro_use_world_measurement
-            self.epro_loss_weight: float = cfg.model.pnp.epro_loss_weight
+            self.epro_loss_weights: list[float] = cfg.model.pnp.epro_loss_weights
+            self.epro_loss_weight_step: int = cfg.model.pnp.epro_loss_weight_step
         elif self.pnp_mode == 'gdrn':
             self.gdrn_teacher_force: bool = cfg.model.pnp.gdrn_teacher_force
             self.gdrn_run_ransac_baseline: bool = cfg.model.pnp.gdrn_run_ransac_baseline
@@ -259,7 +260,9 @@ class MainModel(pl.LightningModule):
             sample.get(sf.gt_mask_vis_roi), sample.get(sf.pred_coord_3d_roi_normalized)).mean()
 
         if self.pnp_mode == 'epro':
-            loss_dict['epro'] = sample.tmp_eploss * self.epro_loss_weight
+            epro_loss_weight = self.epro_loss_weights[min(self.current_epoch // self.epro_loss_weight_step,
+                                                          len(self.epro_loss_weights))]
+            loss_dict['epro'] = sample.tmp_eploss * epro_loss_weight
             del sample.tmp_eploss
 
         loss_dict['total'] = sum(loss_dict.values())
