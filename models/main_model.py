@@ -45,6 +45,8 @@ class MainModel(pl.LightningModule):
         if self.texture_mode == 'siren':
             self.siren_first_omega_0: float = cfg.model.texture.siren_first_omega_0
             self.siren_hidden_omega_0: float = cfg.model.texture.siren_hidden_omega_0
+        elif self.texture_mode == 'cb':
+            self.cb_num_cycles: int = cfg.model.texture.cb_num_cycles
         if self.pnp_mode == 'epro':
             self.epro_use_world_measurement: bool = cfg.model.pnp.epro_use_world_measurement
             self.epro_loss_weights: list[float] = cfg.model.pnp.epro_loss_weights
@@ -164,8 +166,7 @@ class MainModel(pl.LightningModule):
             elif texture_mode == 'xyz':
                 texel = coord_3d_normalized
             elif texture_mode == 'cb':
-                n_cb_cycle = 4
-                texel = (coord_3d_normalized * (n_cb_cycle * 2)).int() % 2
+                texel = (coord_3d_normalized * (self.cb_num_cycles * 2)).int() % 2
             if sample is not None:
                 if texel is not None:
                     sample.set(sf.gt_texel_roi, texel)
@@ -261,7 +262,7 @@ class MainModel(pl.LightningModule):
 
         if self.pnp_mode == 'epro':
             epro_loss_weight = self.epro_loss_weights[min(self.current_epoch // self.epro_loss_weight_step,
-                                                          len(self.epro_loss_weights))]
+                                                          len(self.epro_loss_weights) - 1)]
             loss_dict['epro'] = sample.tmp_eploss * epro_loss_weight
             del sample.tmp_eploss
 

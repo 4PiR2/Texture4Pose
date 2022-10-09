@@ -9,6 +9,7 @@ import torchvision.transforms.functional as vF
 
 from dataloader.datapipe.helper import SampleMapperIDP
 from dataloader.sample import SampleFields as sf
+import realworld.barcode
 import realworld.charuco_board
 import utils.image_2d
 import utils.io
@@ -86,7 +87,7 @@ class _(SampleMapperIDP):
 @functional_datapipe('estimate_pose')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
-        super().__init__(src_dp, [sf.gt_bg, sf.cam_K_orig, sf.o_item], [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c], [sf.o_item],
+        super().__init__(src_dp, [sf.gt_bg, sf.cam_K_orig, sf.o_item], [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c],
                          required_attributes=['board', 'scene_gt'])
 
     def main(self, gt_bg: torch.Tensor, cam_K_orig: torch.Tensor, o_item: int):
@@ -110,24 +111,57 @@ class _(SampleMapperIDP):
         return gt_cam_R_m2c, gt_cam_t_m2c
 
 
+@functional_datapipe('get_code_info')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP, assert_success: bool = False):
+        super().__init__(src_dp, [sf.gt_bg, sf.cam_K_orig, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c, sf.o_item], [sf.code_info],
+                         [sf.o_item], required_attributes=['scene_gt'])
+        self._assert_success: bool = assert_success
+
+    def main(self, gt_bg: torch.Tensor, cam_K_orig: torch.Tensor, gt_cam_R_m2c: torch.Tensor,
+             gt_cam_t_m2c: torch.Tensor, o_item: int):
+        assert len(gt_bg) == 1
+        points = torch.tensor([[[-.5, -.5], [-.5, 1.]],
+                               [[1., -.5], [1., 1.]]],
+                              dtype=gt_bg.dtype, device=gt_bg.device).reshape(-1, 2)
+        points = torch.cat([points, torch.zeros_like(points[:, :1]), torch.ones_like(points[:, :1])], dim=-1)
+        P = cam_K_orig @ torch.cat([gt_cam_R_m2c, gt_cam_t_m2c[..., None]], dim=-1)
+        points_proj = points @ P.transpose(-2, -1)
+        points_proj = points_proj[..., :-1] / points_proj[..., -1:]
+        img_new = realworld.barcode.correct_image(points_proj, gt_bg, w=1000, h=1000)
+        code_info = realworld.barcode.decode_barcode(img_new, use_zbar=False)
+        if self._assert_success:
+            for i in range(len(code_info)):
+                if code_info[i] is None:
+                    print(o_item)
+                    print(self.scene_gt[o_item])
+                    utils.image_2d.visualize(gt_bg[i])
+                    raise RuntimeError
+        return code_info
+
+
 @functional_datapipe('offset_pose_cylinder')
 class _(SampleMapperIDP):
     # details: see weekly report meeting0812
     def __init__(self, src_dp: SampleMapperIDP, scale_true: float, align_x: float, align_y: float):
-        super().__init__(src_dp, [sf.obj_id, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c, sf.obj_size],
+        super().__init__(src_dp, [sf.obj_id, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c, sf.obj_size, sf.code_info],
                          [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c], required_attributes=['dtype', 'device', 'objects', 'board'])
         self._size_true: float = scale_true * 2.
         square_length = self.board.board.getSquareLength()
-        # rot = pytorch3d.transforms.euler_angles_to_matrix(
-        #     torch.tensor([n * .5 * torch.pi, 0., 0.], dtype=self.dtype, device=self.device), 'ZYX')
+        self._dR: torch.Tensor = torch.eye(3, dtype=self.dtype, device=self.device)
+        self._dR_x_180: torch.Tensor = pytorch3d.transforms.euler_angles_to_matrix(
+            torch.tensor([torch.pi, 0., 0.], dtype=self.dtype, device=self.device), 'ZYX') @ self._dR
         self._dt: torch.Tensor = torch.tensor(
             [align_x * square_length + scale_true, align_y * square_length, scale_true],
             dtype=self.dtype, device=self.device)  # (dx + r, dy, h * .5)
 
-    def main(self, obj_id: torch.Tensor, gt_cam_R_m2c: torch.Tensor, gt_cam_t_m2c: torch.Tensor, obj_size: torch.Tensor):
+    def main(self, obj_id: torch.Tensor, gt_cam_R_m2c: torch.Tensor, gt_cam_t_m2c: torch.Tensor, obj_size: torch.Tensor,
+             code_info: list):
         m = obj_id == 104
         gt_cam_t_m2c[m] = \
             (gt_cam_t_m2c[m] + (gt_cam_R_m2c[m] @ self._dt[..., None])[..., 0]) * (obj_size[m, :1] / self._size_true)
+        dR = torch.stack([self._dR_x_180 if info is not None and int(info[6]) > 0 else self._dR for info in code_info])
+        gt_cam_R_m2c[m] = gt_cam_R_m2c[m] @ dR
         return gt_cam_R_m2c, gt_cam_t_m2c
 
 
@@ -141,6 +175,8 @@ class _(SampleMapperIDP):
         self._dR: torch.Tensor = torch.tensor([[-.5 ** .5, .5 ** .5, 0.],
                                                [0., 0., -1.],
                                                [-.5 ** .5, -.5 ** .5, 0.]], dtype=self.dtype, device=self.device)
+        self._dR_x_180: torch.Tensor = pytorch3d.transforms.euler_angles_to_matrix(
+            torch.tensor([torch.pi, 0., 0.], dtype=self.dtype, device=self.device), 'ZYX') @ self._dR
         self._dt: torch.Tensor = torch.tensor(
             [align_x * square_length + .5 ** .5 * scale_true, align_y * square_length, .5 ** .5 * scale_true],
             dtype=self.dtype, device=self.device)  # (dx + r * sqrt(1/2), dy, r * sqrt(1/2))
@@ -149,7 +185,8 @@ class _(SampleMapperIDP):
         m = obj_id == 105
         gt_cam_t_m2c[m] = \
             (gt_cam_t_m2c[m] + (gt_cam_R_m2c[m] @ self._dt[..., None])[..., 0]) * (obj_size[m, :1] / self._size_true)
-        gt_cam_R_m2c[m] = gt_cam_R_m2c[m] @ self._dR
+        dR = torch.stack([self._dR_x_180 if info is not None and int(info[6]) > 0 else self._dR for info in code_info])
+        gt_cam_R_m2c[m] = gt_cam_R_m2c[m] @ dR
         return gt_cam_R_m2c, gt_cam_t_m2c
 
 

@@ -16,14 +16,21 @@ def print_board():
     realworld.charuco_board.ChArUcoBoard(7, 10, .04).to_paper_pdf('/home/user/Desktop/1.pdf', paper_size='a3')
 
 
-def print_cylinder_strip():
+def print_cylinder_strip(model=None):
     dpi = 300
-    img_84 = realworld.print_unroll.unroll_cylinder_strip(scale=.042, dpi=dpi)
-    img_82 = realworld.print_unroll.unroll_cylinder_strip(scale=.041, dpi=dpi)
-    img = utils.print_paper.make_grid(img_84, (1, 2), margin=.05)
-    img[..., :img_84.shape[-1]] = 1.
-    img[..., :img_82.shape[-2], :img_82.shape[-1]] = img_82
-    utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/4.pdf', dpi=dpi)
+    img_0 = realworld.print_unroll.unroll_cylinder_strip(scale=.0402, dpi=dpi, model=None)
+    img_1 = realworld.print_unroll.unroll_cylinder_strip(scale=.0402, dpi=dpi, model=model)
+    img_2 = realworld.print_unroll.unroll_cylinder_strip(scale=.0402, dpi=dpi, model=None, margin=0.)
+    cb_num_cycles = 2
+    img_2 = (img_2 * (cb_num_cycles * 2)).int() % 2
+    img_2bg = torch.ones_like(img_0)
+    img_2bg[..., :img_2.shape[-2], :img_2.shape[-1]] = img_2
+    margin = .05
+    white_space = torch.ones_like(img_0)[..., :int(img_0.shape[-1] * margin) + 1]
+    img_3 = img_0
+    img = torch.cat([img_0, white_space, img_1, white_space, img_2bg, white_space, img_3], dim=-1)
+    img = img.transpose(-2, -1).flip(dims=[-1])
+    utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/c2.pdf', dpi=dpi, paper_size='a3')
 
 
 def spectrum_analysis():
@@ -78,7 +85,7 @@ def main():
     trainer = Trainer(
         accelerator='auto',
         devices=1 if torch.cuda.is_available() else None,
-        max_epochs=120,
+        max_epochs=10,
         callbacks=[
             TQDMProgressBar(refresh_rate=1),
             LearningRateMonitor(logging_interval='step', log_momentum=False),
@@ -98,7 +105,7 @@ def main():
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
     # ckpt_path = 'outputs/lightning_logs/version_184/checkpoints/epoch=9-step=5000.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_183/checkpoints/epoch=0119-val_metric=3.9340.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_217/checkpoints/epoch=0116-val_metric=0.9897.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)
@@ -117,12 +124,13 @@ def main():
     # if cfg.model.pretrain is not None:
     #     model.load_pretrain(cfg.model.pretrain)
 
-    # model = MainModel.load_from_checkpoint(ckpt_path, strict=False,
-    #     cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
+    model = MainModel.load_from_checkpoint(ckpt_path, strict=False,
+        cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
 
+    # print_cylinder_strip(model)
     model = model.to(cfg.device, dtype=cfg.dtype)
-    # trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
-    trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
+    trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
+    # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
 
     exit(1)
 

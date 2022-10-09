@@ -33,7 +33,7 @@ dataset = dict(
     charuco_w_square=7,
     charuco_h_square=10,
     charuco_square_length=.04,
-    cylinder_scale_true=.042,
+    cylinder_scale_true=.04,
     cylinder_align_x=3.,
     cylinder_align_y=5.,
     sphericon_scale_true=.05,
@@ -103,8 +103,9 @@ model = dict(
     ),
     texture=dict(
         texture_use_normal_input=True,
-        siren_first_omega_0=20.,
+        siren_first_omega_0=1.,
         siren_hidden_omega_0=20.,
+        cb_num_cycles=2,
     ),
     pnp=dict(
         epro_use_world_measurement=False,

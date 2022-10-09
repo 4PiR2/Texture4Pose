@@ -15,12 +15,14 @@ dataloader = dict(
 )
 
 model = dict(
-    texture_mode='xyz',
-    # texture_mode='siren',
+    # texture_mode='xyz',
+    texture_mode='siren',
+    # texture_mode='cb',
     # pnp_mode=None,
     eval_augmentation=True and dataset['scene_src'] != 3,
     texture=dict(
-        siren_first_omega_0=2.,
+        siren_first_omega_0=1.,
+        cb_num_cycles=2,
     ),
 )
 

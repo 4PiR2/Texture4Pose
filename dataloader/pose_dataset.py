@@ -156,7 +156,7 @@ def bop_scene_bop_obj_dp(  # scene_src == 2: load pics from bop (cropping based)
 def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intrinsics)
     path=None, obj_list=None, dtype=cc.dtype, device=cc.device, crop_out_size=256, bbox_zoom_out_ratio=1.5,
     real_img_ext='heic', charuco_w_square=7, charuco_h_square=10, charuco_square_length=.04, cam_K=cc.real_cam_K,
-    cylinder_scale_true=.042, cylinder_align_x=3., cylinder_align_y=5., sphericon_scale_true=.05, sphericon_align_x=3.,
+    cylinder_scale_true=.04, cylinder_align_x=3., cylinder_align_y=5., sphericon_scale_true=.05, sphericon_align_x=3.,
     sphericon_align_y=5., **kwargs,
 ):
     assert len(obj_list) == 1
@@ -168,6 +168,7 @@ def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intr
     dp = dp.set_calib_camera(w_square=charuco_w_square, h_square=charuco_h_square, square_length=charuco_square_length,
                              cam_K=cam_K)
     dp = dp.estimate_pose()
+    dp = dp.get_code_info(assert_success=True)
     dp = dp.set_mesh_info()
     dp = dp.offset_pose_cylinder(scale_true=cylinder_scale_true, align_x=cylinder_align_x, align_y=cylinder_align_y)
     dp = dp.offset_pose_sphericon(scale_true=sphericon_scale_true, align_x=sphericon_align_x, align_y=sphericon_align_y)
