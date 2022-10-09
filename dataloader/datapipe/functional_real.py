@@ -145,12 +145,13 @@ class _(SampleMapperIDP):
     # details: see weekly report meeting0812
     def __init__(self, src_dp: SampleMapperIDP, scale_true: float, align_x: float, align_y: float):
         super().__init__(src_dp, [sf.obj_id, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c, sf.obj_size, sf.code_info],
-                         [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c], required_attributes=['dtype', 'device', 'objects', 'board'])
+                         [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c],
+                         required_attributes=['dtype', 'device', 'objects', 'board'])
         self._size_true: float = scale_true * 2.
         square_length = self.board.board.getSquareLength()
         self._dR: torch.Tensor = torch.eye(3, dtype=self.dtype, device=self.device)
         self._dR_x_180: torch.Tensor = pytorch3d.transforms.euler_angles_to_matrix(
-            torch.tensor([torch.pi, 0., 0.], dtype=self.dtype, device=self.device), 'ZYX') @ self._dR
+            torch.tensor([0., 0., torch.pi], dtype=self.dtype, device=self.device), 'ZYX') @ self._dR
         self._dt: torch.Tensor = torch.tensor(
             [align_x * square_length + scale_true, align_y * square_length, scale_true],
             dtype=self.dtype, device=self.device)  # (dx + r, dy, h * .5)
@@ -168,20 +169,22 @@ class _(SampleMapperIDP):
 @functional_datapipe('offset_pose_sphericon')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, scale_true: float, align_x: float, align_y: float):
-        super().__init__(src_dp, [sf.obj_id, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c, sf.obj_size],
-                         [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c], required_attributes=['dtype', 'device', 'objects', 'board'])
+        super().__init__(src_dp, [sf.obj_id, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c, sf.obj_size, sf.code_info],
+                         [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c],
+                         required_attributes=['dtype', 'device', 'objects', 'board'])
         self._size_true: float = scale_true * 2.
         square_length = self.board.board.getSquareLength()
         self._dR: torch.Tensor = torch.tensor([[-.5 ** .5, .5 ** .5, 0.],
                                                [0., 0., -1.],
                                                [-.5 ** .5, -.5 ** .5, 0.]], dtype=self.dtype, device=self.device)
         self._dR_x_180: torch.Tensor = pytorch3d.transforms.euler_angles_to_matrix(
-            torch.tensor([torch.pi, 0., 0.], dtype=self.dtype, device=self.device), 'ZYX') @ self._dR
+            torch.tensor([0., 0., torch.pi], dtype=self.dtype, device=self.device), 'ZYX') @ self._dR
         self._dt: torch.Tensor = torch.tensor(
             [align_x * square_length + .5 ** .5 * scale_true, align_y * square_length, .5 ** .5 * scale_true],
             dtype=self.dtype, device=self.device)  # (dx + r * sqrt(1/2), dy, r * sqrt(1/2))
 
-    def main(self, obj_id: torch.Tensor, gt_cam_R_m2c: torch.Tensor, gt_cam_t_m2c: torch.Tensor, obj_size: torch.Tensor):
+    def main(self, obj_id: torch.Tensor, gt_cam_R_m2c: torch.Tensor, gt_cam_t_m2c: torch.Tensor, obj_size: torch.Tensor,
+             code_info: list):
         m = obj_id == 105
         gt_cam_t_m2c[m] = \
             (gt_cam_t_m2c[m] + (gt_cam_R_m2c[m] @ self._dt[..., None])[..., 0]) * (obj_size[m, :1] / self._size_true)
