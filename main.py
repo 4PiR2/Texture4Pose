@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import torch
+import tqdm
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor, ModelCheckpoint
 
@@ -104,8 +105,9 @@ def main():
 
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
     # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_184/checkpoints/epoch=9-step=5000.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_217/checkpoints/epoch=0116-val_metric=0.9897.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_201/checkpoints/epoch=0116-val_metric=2.5696.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_217/checkpoints/epoch=0116-val_metric=0.9897.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_219/checkpoints/epoch=9-step=5000.ckpt'
     ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)
@@ -136,16 +138,14 @@ def main():
 
     from dataloader.pose_dataset import real_scene_regular_obj_dp
     dp = real_scene_regular_obj_dp(path='/data/real_exp/i12P_26mm', obj_list={104: 'cylinderstrip'},)
-    # with open('/home/user/Desktop/x.pkl', 'rb') as f:
-    #     x = pickle.load(f)
     model.eval()
     with torch.no_grad():
         i = 0
-        for y in dp:
+        for y in tqdm.tqdm(dp):
             y = model(y)
             fig = y.visualize(return_figs=True)[0]
-            fig.savefig(f'/home/user/Desktop/f{i}.png')
-            fig.show()
+            fig.savefig(f'/home/user/Desktop/tmp/f{i}.png')
+            # fig.show()
             i += 1
 
 

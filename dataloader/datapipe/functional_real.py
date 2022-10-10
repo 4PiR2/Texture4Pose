@@ -132,7 +132,7 @@ class _(SampleMapperIDP):
         code_info = realworld.barcode.decode_barcode(img_new, use_zbar=False)
         if self._assert_success:
             for i in range(len(code_info)):
-                if code_info[i] is None:
+                if code_info[i] is None or len(code_info[i]) <= 0:
                     print(o_item)
                     print(self.scene_gt[o_item])
                     utils.image_2d.visualize(gt_bg[i])

@@ -16,8 +16,8 @@ dataloader = dict(
 
 model = dict(
     # texture_mode='xyz',
-    texture_mode='siren',
-    # texture_mode='cb',
+    # texture_mode='siren',
+    texture_mode='cb',
     # pnp_mode=None,
     eval_augmentation=True and dataset['scene_src'] != 3,
     texture=dict(
