@@ -42,16 +42,16 @@ class MainModel(pl.LightningModule):
         self.eval_augmentation: bool = cfg.model.eval_augmentation
         self.match_background_histogram_cfg: Config = cfg.augmentation.match_background_histogram
         self.texture_use_normal_input: bool = cfg.model.texture.texture_use_normal_input
-        if self.texture_mode == 'siren':
+        if self.texture_mode in ['siren', 'scb']:
             self.siren_first_omega_0: float = cfg.model.texture.siren_first_omega_0
             self.siren_hidden_omega_0: float = cfg.model.texture.siren_hidden_omega_0
-        elif self.texture_mode == 'cb':
+        if self.texture_mode in ['cb', 'scb']:
             self.cb_num_cycles: int = cfg.model.texture.cb_num_cycles
         if self.pnp_mode == 'epro':
             self.epro_use_world_measurement: bool = cfg.model.pnp.epro_use_world_measurement
             self.epro_loss_weights: list[float] = cfg.model.pnp.epro_loss_weights
             self.epro_loss_weight_step: int = cfg.model.pnp.epro_loss_weight_step
-        elif self.pnp_mode == 'gdrn':
+        if self.pnp_mode == 'gdrn':
             self.gdrn_teacher_force: bool = cfg.model.pnp.gdrn_teacher_force
             self.gdrn_run_ransac_baseline: bool = cfg.model.pnp.gdrn_run_ransac_baseline
             self.gdrn_pnp_pretrain: bool = cfg.model.pnp.gdrn_pnp_pretrain
@@ -76,7 +76,7 @@ class MainModel(pl.LightningModule):
             if self.texture_mode == 'mlp':
                 self.texture_net_p = TextureNetP(in_channels=3, out_channels=3, n_layers=3, hidden_size=128,
                     positional_encoding=[2. ** i for i in range(8)], use_cosine_positional_encoding=True)
-            elif self.texture_mode == 'siren':
+            elif self.texture_mode in ['siren', 'scb']:
                 self.texture_net_p = SirenConv(in_features=3 + self.texture_use_normal_input * 3, out_features=3,
                                                hidden_features=128, hidden_layers=2, outermost_linear=False,
                                                first_omega_0=self.siren_first_omega_0,
@@ -93,9 +93,9 @@ class MainModel(pl.LightningModule):
         if self.pnp_mode == 'epro':
             self.secondary_head = EPHead(in_channels=num_hidden, kernel_size=1)
             self.pnp_net = EProPnPDemo()
-        elif self.pnp_mode == 'ransac':
+        if self.pnp_mode == 'ransac':
             self.secondary_head = GeoHead(in_channels=num_hidden, out_channels=1, kernel_size=1)
-        elif self.pnp_mode == 'gdrn':
+        if self.pnp_mode == 'gdrn':
             self.pnp_net = ConvPnPNet(in_channels=3+2, featdim=128, num_layers=3, num_gn_groups=32)
 
         self.objects_eval = objects_eval if objects_eval is not None else objects
@@ -114,21 +114,21 @@ class MainModel(pl.LightningModule):
         if self.texture_mode == 'mlp':
             params.append({'params': self.texture_net_p.parameters(), 'lr': self.opt_cfg.lr.texture_net_p,
                            'name': 'texture_p'})
-        elif self.texture_mode == 'siren':
+        if self.texture_mode in ['siren', 'scb']:
             params.append({'params': self.texture_net_p.first_layer.parameters(),
                            # 'lr': self.opt_cfg.lr.texture_net_p * (self.siren_hidden_omega_0 / self.siren_first_omega_0),
                            'lr': self.opt_cfg.lr.texture_net_p,
                            'name': 'siren_first'})
             params.append({'params': self.texture_net_p.rest_layers.parameters(), 'lr': self.opt_cfg.lr.texture_net_p,
                            'name': 'siren_rest'})
-        elif self.texture_mode == 'vertex':
+        if self.texture_mode == 'vertex':
             params.append({'params': self.texture_net_v.parameters(), 'lr': self.opt_cfg.lr.texture_net_v,
                            'name': 'texture_v'})
 
         if self.pnp_mode in ['epro', 'ransac']:
             params.append({'params': self.secondary_head.parameters(), 'lr': self.opt_cfg.lr.secondary_head,
                            'name': 'secondary_head'})
-        elif self.pnp_mode == 'gdrn':
+        if self.pnp_mode == 'gdrn':
             params.append({'params': self.pnp_net.parameters(), 'lr': self.opt_cfg.lr.pnp_net, 'name': 'pnp_net'})
 
         if self.opt_cfg.mode == 'adam':
@@ -163,10 +163,18 @@ class MainModel(pl.LightningModule):
                 output_feature_map = torch.ones(N, H, W, 3, dtype=input_feature.dtype, device=input_feature.device)
                 output_feature_map[mask[:, 0]] = self.texture_net_p(input_feature)[..., 0, 0]
                 texel = output_feature_map.permute(0, 3, 1, 2)
-            elif texture_mode == 'xyz':
+            if texture_mode == 'xyz':
                 texel = coord_3d_normalized
-            elif texture_mode == 'cb':
-                texel = (coord_3d_normalized * (self.cb_num_cycles * 2)).int() % 2
+            if texture_mode in ['cb', 'scb']:
+                checkerboard = (coord_3d_normalized * (self.cb_num_cycles * 2)).int() % 2
+                if texture_mode == 'cb':
+                    texel = checkerboard
+                else:
+                    checkerboard_bw = checkerboard.sum(dim=-3, keepdim=True) % 2
+                    # texel = checkerboard * texel + (1. - checkerboard) * (1. - texel)
+                    # texel = ((texel + checkerboard) * .5).clamp(min=0., max=1.)
+                    # texel = (texel + checkerboard_bw * .5) % 1.
+                    texel = checkerboard_bw * texel + (1. - checkerboard_bw) * (1. - texel)
             if sample is not None:
                 if texel is not None:
                     sample.set(sf.gt_texel_roi, texel)
