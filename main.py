@@ -65,6 +65,19 @@ def print_sphericon_a3():
 
 
 def main():
+    # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
+    # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_201/checkpoints/epoch=0116-val_metric=2.5696.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_217/checkpoints/epoch=0116-val_metric=0.9897.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_232/checkpoints/epoch=0012-val_metric=0.5679.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_236/checkpoints/last.ckpt'
+    ckpt_path = None
+
+    only_load_weights = True
+    max_epochs = 10
+    do_fit = True
+    do_val = False
+
     def setup(args=None) -> Config:
         cfg = Config.fromfile('config/top.py')
         if args is not None:
@@ -81,12 +94,10 @@ def main():
         save_last=True,
     )
 
-    # profiler = PyTorchProfiler(filename='profile', emit_nvtx=False)
-
     trainer = Trainer(
         accelerator='auto',
         devices=1 if torch.cuda.is_available() else None,
-        max_epochs=10,
+        max_epochs=max_epochs,
         callbacks=[
             TQDMProgressBar(refresh_rate=1),
             LearningRateMonitor(logging_interval='step', log_momentum=False),
@@ -96,23 +107,16 @@ def main():
         default_root_dir='outputs',
         log_every_n_steps=10,
         num_sanity_val_steps=-1,
-        # profiler=profiler,
-        # gradient_clip_val=0.,
-        # gradient_clip_algorithm='value',
-        # stochastic_weight_avg=True,
-        # terminate_on_nan=True,
     )
-
-    # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
-    # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_201/checkpoints/epoch=0116-val_metric=2.5696.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_217/checkpoints/epoch=0116-val_metric=0.9897.ckpt'
-    ckpt_path = 'outputs/lightning_logs/version_219/checkpoints/epoch=9-step=5000.ckpt'
-    ckpt_path_n = None
 
     datamodule = LitDataModule(cfg)
 
-    model = MainModel(cfg, datamodule.dataset.objects, datamodule.dataset.objects_eval)
+    if only_load_weights and ckpt_path is not None:
+        model = MainModel.load_from_checkpoint(ckpt_path, strict=False,
+            cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
+    else:
+        model = MainModel(cfg, datamodule.dataset.objects, datamodule.dataset.objects_eval)
+
 
     # state_dict = torch.load('outputs/lightning_logs/version_34/checkpoints/epoch=0037-val_metric=0.0432.ckpt')['state_dict']
     # state_dict2 = {}
@@ -126,13 +130,13 @@ def main():
     # if cfg.model.pretrain is not None:
     #     model.load_pretrain(cfg.model.pretrain)
 
-    model = MainModel.load_from_checkpoint(ckpt_path, strict=False,
-        cfg=cfg, objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval)
-
     # print_cylinder_strip(model)
+
     model = model.to(cfg.device, dtype=cfg.dtype)
-    trainer.fit(model, ckpt_path=ckpt_path_n, datamodule=datamodule)
-    # trainer.validate(model, ckpt_path=ckpt_path, datamodule=datamodule)
+    if do_fit:
+        trainer.fit(model, ckpt_path=None if only_load_weights else ckpt_path, datamodule=datamodule)
+    if do_val:
+        trainer.validate(model, ckpt_path=None if only_load_weights else ckpt_path, datamodule=datamodule)
 
     exit(1)
 

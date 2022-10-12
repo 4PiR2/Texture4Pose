@@ -36,6 +36,7 @@ class MainModel(pl.LightningModule):
         self.cfg: Config = cfg
         self.pnp_input_size: int = cfg.model.pnp_input_size
         self.texture_mode: str = cfg.model.texture_mode
+        self.freeze_texture_net_p: bool = cfg.model.freeze_texture_net_p
         self.pnp_mode: str = cfg.model.pnp_mode
         self.opt_cfg: Config = cfg.optimizer
         self.sch_cfg: Config = cfg.scheduler
@@ -114,7 +115,7 @@ class MainModel(pl.LightningModule):
         if self.texture_mode == 'mlp':
             params.append({'params': self.texture_net_p.parameters(), 'lr': self.opt_cfg.lr.texture_net_p,
                            'name': 'texture_p'})
-        if self.texture_mode in ['siren', 'scb']:
+        if self.texture_mode in ['siren', 'scb'] and not self.freeze_texture_net_p:
             params.append({'params': self.texture_net_p.first_layer.parameters(),
                            # 'lr': self.opt_cfg.lr.texture_net_p * (self.siren_hidden_omega_0 / self.siren_first_omega_0),
                            'lr': self.opt_cfg.lr.texture_net_p,
@@ -174,7 +175,8 @@ class MainModel(pl.LightningModule):
                     # texel = checkerboard * texel + (1. - checkerboard) * (1. - texel)
                     # texel = ((texel + checkerboard) * .5).clamp(min=0., max=1.)
                     # texel = (texel + checkerboard_bw * .5) % 1.
-                    texel = checkerboard_bw * texel + (1. - checkerboard_bw) * (1. - texel)
+                    texel = checkerboard * texel
+                    # texel = checkerboard_bw * texel
             if sample is not None:
                 if texel is not None:
                     sample.set(sf.gt_texel_roi, texel)
@@ -186,7 +188,13 @@ class MainModel(pl.LightningModule):
     def forward(self, sample: Sample):
         if not (hasattr(self, 'gdrn_pnp_pretrain') and self.gdrn_pnp_pretrain):
             sample.get_gt_coord_3d_roi_normalized()
-            self.forward_texture(sample)
+
+            if self.freeze_texture_net_p:
+                self.texture_net_p.eval()
+                with torch.no_grad():
+                    self.forward_texture(sample)
+            else:
+                self.forward_texture(sample)
 
             if self.training or self.eval_augmentation:
                 sample.set(sf.img_roi, augmentations.color_augmentation.match_background_histogram(

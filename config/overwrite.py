@@ -17,13 +17,19 @@ dataloader = dict(
 model = dict(
     # texture_mode='xyz',
     # texture_mode='siren',
-    texture_mode='cb',
+    # texture_mode='cb',
+    texture_mode='scb',
+    freeze_texture_net_p=False,
     # pnp_mode=None,
     eval_augmentation=True and dataset['scene_src'] != 3,
     texture=dict(
         siren_first_omega_0=1.,
         cb_num_cycles=2,
     ),
+    pnp=dict(
+        epro_loss_weights=[.02, 1.],
+        # epro_loss_weights=[1.],
+    )
 )
 
 _base_lr = 3e-5
