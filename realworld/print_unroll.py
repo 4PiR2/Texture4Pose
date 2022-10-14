@@ -30,10 +30,12 @@ def unroll_cylinder_strip(scale: float = .05, margin: float = .01, border: int =
     coord_3d[2] = torch.linspace(-.5 * h, .5 * h, W)
     img = torch.zeros(3, H + margin, W + border * 2)
     if model is not None:
-        img[:, :H, border: border + W] = model.forward_texture(
-            # texture_mode='xyz',
-            coord_3d_normalized=coord_3d[None] * .5 + .5, normal=normal[None], mask=torch.ones(1, 1, H, W, dtype=torch.bool)
-        )
+        model.eval()
+        with torch.no_grad():
+            img[:, :H, border: border + W] = model.forward_texture(
+                # texture_mode='xyz',
+                coord_3d_normalized=coord_3d[None] * .5 + .5, normal=normal[None], mask=torch.ones(1, 1, H, W, dtype=torch.bool)
+            )
     else:
         img[:, :H, border: border + W] = coord_3d * .5 + .5
     img[:, H:] = img[:, H - 1: H]
@@ -137,9 +139,9 @@ def unroll_sphericon(scale: float, theta: float = -.9, dpi: int = 72, model: Mai
     :return:
     """
     _alpha = torch.pi / (2. * 2. ** .5)
-    _x0 = (1.5 * 2. ** .5 - float(torch.tensor(2. * _alpha).cos())) * scale
+    _x0 = (1.5 - float(torch.tensor(2. * _alpha).cos())) * 2. ** .5 * scale
     _y0 = 2. ** .5 * scale
-    _angle = torch.tensor(theta - _alpha)
+    _angle = torch.tensor(theta + _alpha - .5 * torch.pi)
     _box = torch.tensor([[_x0, _y0], [-_x0, _y0], [-_x0, -_y0], [_x0, -_y0]]) @ \
           torch.tensor([[_angle.cos(), -_angle.sin()], [_angle.sin(), _angle.cos()]]).T
     _wh = _box.max(dim=0)[0] - _box.min(dim=0)[0]
@@ -165,10 +167,12 @@ def unroll_sphericon(scale: float, theta: float = -.9, dpi: int = 72, model: Mai
     mask = mask[..., _y_min:_y_max, _x_min:_x_max]
 
     if model is not None:
-        img = model.forward_texture(
-            # texture_mode='xyz',
-            coord_3d_normalized=coord_3d[None] * .5 + .5, normal=normal[None], mask=mask[None]
-        )
+        model.eval()
+        with torch.no_grad():
+            img = model.forward_texture(
+                # texture_mode='xyz',
+                coord_3d_normalized=coord_3d[None] * .5 + .5, normal=normal[None], mask=mask[None]
+            )
     else:
         img = coord_3d * .5 + .5
         img[~mask.expand(3, -1, -1)] = 1.

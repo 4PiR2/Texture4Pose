@@ -171,7 +171,7 @@ class MainModel(pl.LightningModule):
                 if texture_mode == 'cb':
                     texel = checkerboard
                 else:
-                    checkerboard_bw = checkerboard.sum(dim=-3, keepdim=True) % 2
+                    # checkerboard_bw = checkerboard.sum(dim=-3, keepdim=True) % 2
                     # texel = checkerboard * texel + (1. - checkerboard) * (1. - texel)
                     # texel = ((texel + checkerboard) * .5).clamp(min=0., max=1.)
                     # texel = (texel + checkerboard_bw * .5) % 1.
