@@ -39,6 +39,9 @@ dataset = dict(
     sphericon_scale_true=.05,
     sphericon_align_x=3.,
     sphericon_align_y=5.,
+    num_pose_augmentation=1,
+    pose_augmentation_keep_first=0,
+    pose_augmentation_depth_max_try=100,
 )
 
 augmentation = dict(
@@ -108,6 +111,8 @@ model = dict(
         siren_hidden_omega_0=20.,
         cb_num_cycles=2,
     ),
+    coord_3d_loss_weights=[1.],
+    coord_3d_loss_weight_step=1,
     pnp=dict(
         epro_use_world_measurement=False,
         epro_loss_weights=[.02, 1.],

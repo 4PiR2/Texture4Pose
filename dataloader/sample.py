@@ -27,7 +27,7 @@ _fields_str = [
     'N', 'gt_cam_t_m2c_site', 'gt_coord_3d_roi_normalized',
     'o_scene', 'o_item', 'code_info',
     'obj_id', 'obj_size', 'obj_diameter', 'cam_K', 'cam_K_orig', 'gt_cam_R_m2c', 'gt_cam_t_m2c', 'bbox',
-    'gt_bbox_vis', 'gt_vis_ratio',
+    'gt_bbox_vis', 'gt_vis_ratio', 'gt_cam_R_m2c_aug',
     'img', 'img_roi', 'coord_2d', 'coord_2d_roi', 'gt_coord_3d', 'gt_coord_3d_roi', 'gt_normal', 'gt_normal_roi',
     'gt_mask_vis', 'gt_mask_vis_roi', 'gt_mask_obj', 'gt_mask_obj_roi', 'gt_light_texel', 'gt_texel_roi',
     'gt_light_specular', 'gt_light_specular_roi', 'gt_zbuf', 'gt_texel', 'gt_light_texel_roi', 'gt_bg', 'gt_bg_roi',
@@ -101,7 +101,11 @@ class Sample:
                 else:
                     setattr(out, key, value.clone())
             else:
-                setattr(out, key, copy.deepcopy(value))
+                value_copy = copy.deepcopy(value)
+                try:
+                    setattr(out, key, value_copy)
+                except AttributeError:  # is a property
+                    pass
         return out
 
     def get(self, keys: Union[list[str], str], assertion: bool = True):
@@ -144,12 +148,13 @@ class Sample:
                      [pnp_cam_R_m2c, pnp_cam_t_m2c, pnp_inliers_roi])
         return pnp_cam_R_m2c, pnp_cam_t_m2c, pnp_inliers_roi
 
-    @property
-    def roi_zoom_in_ratio(self) -> torch.Tensor:
+    def get_roi_zoom_in_ratio(self) -> torch.Tensor:
         feature_roi, bbox = self.get([sf.img_roi, sf.bbox])
         feature_roi_size = max(feature_roi.shape[-2:])
         crop_size = utils.image_2d.get_dzi_crop_size(bbox)
-        return feature_roi_size / crop_size  # [N]
+        roi_zoom_in_ratio = feature_roi_size / crop_size  # [N]
+        self.set('roi_zoom_in_ratio', roi_zoom_in_ratio)
+        return roi_zoom_in_ratio
 
     def _get_cam_t_m2c_site(self, cam_t_m2c: torch.Tensor) -> torch.Tensor:
         bbox, cam_K, obj_diameter = self.get([sf.bbox, sf.cam_K, sf.obj_diameter])

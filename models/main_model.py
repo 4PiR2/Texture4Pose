@@ -43,6 +43,8 @@ class MainModel(pl.LightningModule):
         self.eval_augmentation: bool = cfg.model.eval_augmentation
         self.match_background_histogram_cfg: Config = cfg.augmentation.match_background_histogram
         self.texture_use_normal_input: bool = cfg.model.texture.texture_use_normal_input
+        self.coord_3d_loss_weights: list[float] = cfg.model.coord_3d_loss_weights
+        self.coord_3d_loss_weight_step: int = cfg.model.coord_3d_loss_weight_step
         if self.texture_mode in ['siren', 'scb']:
             self.siren_first_omega_0: float = cfg.model.texture.siren_first_omega_0
             self.siren_hidden_omega_0: float = cfg.model.texture.siren_hidden_omega_0
@@ -189,7 +191,7 @@ class MainModel(pl.LightningModule):
         if not (hasattr(self, 'gdrn_pnp_pretrain') and self.gdrn_pnp_pretrain):
             sample.get_gt_coord_3d_roi_normalized()
 
-            if self.freeze_texture_net_p:
+            if self.texture_net_p is not None and self.freeze_texture_net_p:
                 self.texture_net_p.eval()
                 with torch.no_grad():
                     self.forward_texture(sample)
@@ -273,8 +275,11 @@ class MainModel(pl.LightningModule):
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:
         sample = self.forward(sample)
         loss_dict = {}
+
+        coord_3d_loss_weight = self.coord_3d_loss_weights[min(self.current_epoch // self.coord_3d_loss_weight_step,
+                                                          len(self.coord_3d_loss_weights) - 1)]
         loss_dict['coord_3d'] = self.loss.coord_3d_loss(sample.get(sf.gt_coord_3d_roi_normalized),
-            sample.get(sf.gt_mask_vis_roi), sample.get(sf.pred_coord_3d_roi_normalized)).mean()
+            sample.get(sf.gt_mask_vis_roi), sample.get(sf.pred_coord_3d_roi_normalized)).mean() * coord_3d_loss_weight
 
         if self.pnp_mode == 'epro':
             epro_loss_weight = self.epro_loss_weights[min(self.current_epoch // self.epro_loss_weight_step,

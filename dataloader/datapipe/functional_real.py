@@ -146,7 +146,7 @@ class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, scale_true: float, align_x: float, align_y: float):
         super().__init__(src_dp, [sf.obj_id, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c, sf.obj_size, sf.code_info],
                          [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c],
-                         required_attributes=['dtype', 'device', 'objects', 'board'])
+                         required_attributes=['dtype', 'device', 'board'])
         self._size_true: float = scale_true * 2.
         square_length = self.board.board.getSquareLength()
         self._dR: torch.Tensor = torch.eye(3, dtype=self.dtype, device=self.device)
@@ -171,7 +171,7 @@ class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, scale_true: float, align_x: float, align_y: float):
         super().__init__(src_dp, [sf.obj_id, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c, sf.obj_size, sf.code_info],
                          [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c],
-                         required_attributes=['dtype', 'device', 'objects', 'board'])
+                         required_attributes=['dtype', 'device', 'board'])
         self._size_true: float = scale_true * 2.
         square_length = self.board.board.getSquareLength()
         self._dR: torch.Tensor = torch.tensor([[-.5 ** .5, .5 ** .5, 0.],
@@ -193,25 +193,68 @@ class _(SampleMapperIDP):
         return gt_cam_R_m2c, gt_cam_t_m2c
 
 
+@functional_datapipe('augment_pose')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP, keep_first: int = 0, t_depth_range: tuple[float, float] = (.5, 1.2),
+                 t_center_range: tuple[float, float] = (-.7, .7), cuboid: bool = False, depth_max_try: int = 100,
+                 batch: int = None):
+        super().__init__(src_dp, [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c],
+                         [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c, sf.gt_cam_R_m2c_aug])
+        self._keep_first: int = keep_first
+        self._t_depth_range: tuple[float, float] = t_depth_range
+        self._t_center_range: tuple[float, float] = t_center_range
+        self._cuboid: bool = cuboid
+        self._depth_max_try: int = int(depth_max_try)
+        self._B: int = batch
+
+    def main(self, gt_cam_R_m2c: torch.Tensor, gt_cam_t_m2c: torch.Tensor):
+        dtype = gt_cam_R_m2c.dtype
+        device = gt_cam_R_m2c.device
+        N = len(gt_cam_R_m2c)
+        B = self._B if self._B else N
+        gt_cam_R_m2c_aug = [torch.eye(3, dtype=dtype, device=device).expand(self._keep_first, -1, -1)]
+        for i in range(self._keep_first, N, B):
+            max_try_depth = self._depth_max_try
+            while True:
+                max_try_depth -= 1
+                dR = pytorch3d.transforms.random_rotations(B, dtype=dtype, device=device)
+                t = (dR @ gt_cam_t_m2c[i:i+B, ..., None])[..., 0]
+                if not self._cuboid:
+                    t[..., :-1] /= t[..., -1:]
+                if max_try_depth >= 0:
+                    t_depth_ok = (self._t_depth_range[0] <= t[..., -1]) & (t[..., -1] <= self._t_depth_range[-1])
+                else:
+                    t_depth_ok = t[..., -1] >= 0.
+                t_center_ok = (self._t_center_range[0] <= t[..., :-1]) & (t[..., :-1] <= self._t_center_range[-1])
+                if t_depth_ok.all() and t_center_ok.all():
+                    break
+            gt_cam_t_m2c[i:i+B] = (dR @ gt_cam_t_m2c[i:i+B, ..., None])[..., 0]
+            gt_cam_R_m2c[i:i+B] = dR @ gt_cam_R_m2c[i:i+B]
+            gt_cam_R_m2c_aug.append(dR)
+        return gt_cam_R_m2c, gt_cam_t_m2c, torch.cat(gt_cam_R_m2c_aug, dim=0)
+
+
 @functional_datapipe('crop_roi_real_bg')
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
         fields = [sf.gt_bg]
-        super().__init__(src_dp, [sf.bbox, sf.cam_K_orig] + fields, fields, required_attributes=['img_render_size'])
+        super().__init__(src_dp, [sf.coord_2d_roi, sf.gt_cam_R_m2c_aug, sf.cam_K_orig] + fields, fields, [sf.gt_cam_R_m2c_aug],
+                         required_attributes=['img_render_size'])
 
-    def main(self, bbox: torch.Tensor, cam_K_orig: torch.Tensor, gt_bg: torch.Tensor):
-        fx = cam_K_orig[..., 0, 0]
-        fy = cam_K_orig[..., 1, 1]
-        px = cam_K_orig[..., 0, -1]
-        py = cam_K_orig[..., 1, -1]
-        bbox = bbox.clone()
-        bbox[..., 0] = bbox[..., 0] * fx + px
-        bbox[..., 1] = bbox[..., 1] * fy + py
-        bbox[..., 2] *= fx
-        bbox[..., 3] *= fy
-        crop_size = utils.image_2d.get_dzi_crop_size(bbox)
-        crop = lambda img, mode: utils.image_2d.crop_roi(img, bbox, crop_size, self.img_render_size, mode)
-        return crop(gt_bg, 'bilinear')
+    def main(self, coord_2d_roi: torch.Tensor, gt_cam_R_m2c_aug: torch.Tensor, cam_K_orig: torch.Tensor,
+             gt_bg: torch.Tensor):
+        dtype = gt_bg.dtype
+        device = gt_bg.device
+        N, _, H, W = gt_bg.shape
+        grid_K = torch.tensor([[2. / (W - 1), 0., -1.],
+                               [0., 2. / (H - 1), -1.],
+                               [0., 0., 1.]], dtype=dtype, device=device)
+        coord_2d_homo = torch.cat([coord_2d_roi, torch.ones_like(coord_2d_roi[..., :1, :, :])], dim=-3)
+        grid_homo = (grid_K @ cam_K_orig @ gt_cam_R_m2c_aug.transpose(-2, -1) @ coord_2d_homo.reshape(N, 3, -1)) \
+            .reshape(N, 3, self.img_render_size, self.img_render_size)
+        grid = grid_homo[..., :-1, :, :] / grid_homo[..., -1:, :, :]
+        gt_bg = F.grid_sample(gt_bg, grid.permute(0, 2, 3, 1), mode='bilinear', align_corners=True)
+        return gt_bg
 
 
 @functional_datapipe('bg_as_real_img')

@@ -162,3 +162,21 @@ class SampleFiltererIDP(SampleMapperIDP):
             else:
                 setattr(sample, key, value)
         return sample
+
+
+@functional_datapipe('repeat_sample')
+class SampleRepeaterIDP(IterDataPipe[Sample]):
+    def __init__(self, src_dp: torchdata.datapipes.iter.IterDataPipe, repeat: int = 1, batch: bool = False):
+        super().__init__(src_dp)
+        self._repeat: int = repeat
+        self._batch: bool = batch
+
+    def __iter__(self) -> Sample:
+        dp = self.source_datapipes[0]
+        for sample in dp:
+            if self._batch:
+                batch = [sample.clone() for _ in range(self._repeat)]
+                yield Sample(*batch)
+            else:
+                for _ in range(self._repeat):
+                    yield sample.clone()

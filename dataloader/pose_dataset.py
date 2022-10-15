@@ -157,7 +157,8 @@ def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intr
     path=None, obj_list=None, dtype=cc.dtype, device=cc.device, crop_out_size=256, bbox_zoom_out_ratio=1.5,
     real_img_ext='heic', charuco_w_square=7, charuco_h_square=10, charuco_square_length=.04, cam_K=cc.real_cam_K,
     cylinder_scale_true=.04, cylinder_align_x=3., cylinder_align_y=5., sphericon_scale_true=.05, sphericon_align_x=3.,
-    sphericon_align_y=5., **kwargs,
+    sphericon_align_y=5., random_t_depth_range=(.5, 1.2), random_t_center_range=(-.7, .7), rand_t_inside_cuboid=False,
+    num_pose_augmentation=1, pose_augmentation_keep_first=0, pose_augmentation_depth_max_try=100, **kwargs,
 ):
     assert len(obj_list) == 1
     dp = SampleSource(dtype=dtype, device=device, scene_mode=False, img_render_size=crop_out_size)
@@ -172,16 +173,21 @@ def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intr
     dp = dp.set_mesh_info()
     dp = dp.offset_pose_cylinder(scale_true=cylinder_scale_true, align_x=cylinder_align_x, align_y=cylinder_align_y)
     dp = dp.offset_pose_sphericon(scale_true=sphericon_scale_true, align_x=sphericon_align_x, align_y=sphericon_align_y)
+    if num_pose_augmentation > 0:
+        dp = dp.repeat_sample(repeat=num_pose_augmentation, batch=True)
+        dp = dp.augment_pose(keep_first=pose_augmentation_keep_first, t_depth_range=random_t_depth_range,
+                             t_center_range=random_t_center_range, cuboid=rand_t_inside_cuboid,
+                             depth_max_try=pose_augmentation_depth_max_try, batch=1)
     dp = dp.gen_bbox_proj()
     dp = dp.dzi_bbox(max_dzi_ratio=0., bbox_zoom_out_ratio=bbox_zoom_out_ratio)
+    dp = dp.gen_coord_2d_bbox()
+    dp = dp.crop_roi_real_bg()
     dp = dp.set_roi_camera()
     dp = dp.render_scene()
     dp = dp.gen_mask()
     dp = dp.compute_vis_ratio()
-    dp = dp.crop_roi_real_bg()
     dp = dp.crop_roi_dummy(delete_original=True)
     dp = dp.bg_as_real_img(delete_original=True)
     dp = dp.normalize_normal()
-    dp = dp.gen_coord_2d_bbox()
     dp = dp.calibrate_bbox()
     return dp
