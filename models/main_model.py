@@ -181,6 +181,7 @@ class MainModel(pl.LightningModule):
                     # texel = checkerboard_bw * texel
             if sample is not None:
                 if texel is not None:
+                    texel = (texel + ~sample.get(sf.gt_mask_vis_roi)).clamp(min=0., max=1.)  # set background to white
                     sample.set(sf.gt_texel_roi, texel)
                 if hasattr(sample, sf.gt_light_texel_roi) and hasattr(sample, sf.gt_light_specular_roi):
                     sample.set(sf.img_roi, (sample.get(sf.gt_light_texel_roi) * sample.get(sf.gt_texel_roi) +
@@ -269,7 +270,7 @@ class MainModel(pl.LightningModule):
         elif self.pnp_mode == 'sanity':
             sample.compute_pnp(sanity_check_mode=True, store=True, ransac=True)
 
-        # sample.visualize()
+        sample.visualize()
         return sample
 
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:

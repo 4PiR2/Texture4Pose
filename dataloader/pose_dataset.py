@@ -158,7 +158,9 @@ def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intr
     real_img_ext='heic', charuco_w_square=7, charuco_h_square=10, charuco_square_length=.04, cam_K=cc.real_cam_K,
     cylinder_scale_true=.04, cylinder_align_x=3., cylinder_align_y=5., sphericon_scale_true=.05, sphericon_align_x=3.,
     sphericon_align_y=5., random_t_depth_range=(.5, 1.2), random_t_center_range=(-.7, .7), rand_t_inside_cuboid=False,
-    num_pose_augmentation=1, pose_augmentation_keep_first=0, pose_augmentation_depth_max_try=100, **kwargs,
+    num_pose_augmentation=1, pose_augmentation_keep_first=0, pose_augmentation_depth_max_try=100,
+    occlusion_size_min=.125, occlusion_size_max=.5, num_occlusion_per_obj=1, min_occlusion_vis_ratio=.5,
+    occlusion_probability_eval=0., **kwargs,
 ):
     assert len(obj_list) == 1
     dp = SampleSource(dtype=dtype, device=device, scene_mode=False, img_render_size=crop_out_size)
@@ -189,5 +191,9 @@ def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intr
     dp = dp.crop_roi_dummy(delete_original=True)
     dp = dp.bg_as_real_img(delete_original=True)
     dp = dp.normalize_normal()
+    dp = dp.rand_occlude(occlusion_size_min=occlusion_size_min, occlusion_size_max=occlusion_size_max,
+                         num_occlusion_per_obj=num_occlusion_per_obj, min_occlusion_vis_ratio=min_occlusion_vis_ratio,
+                         batch_occlusion=1, p=occlusion_probability_eval)
+    dp = dp.rand_occlude_apply_real()
     dp = dp.calibrate_bbox()
     return dp

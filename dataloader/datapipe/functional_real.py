@@ -264,3 +264,13 @@ class _(SampleMapperIDP):
 
     def main(self, gt_bg_roi: torch.Tensor):
         return gt_bg_roi
+
+
+@functional_datapipe('rand_occlude_apply_real')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP):
+        super().__init__(src_dp, [sf.img_roi, sf.gt_mask_vis_roi, sf.gt_mask_obj_roi], [sf.img_roi])
+
+    def main(self, img_roi: torch.Tensor, gt_mask_vis_roi: torch.Tensor, gt_mask_obj_roi: torch.Tensor):
+        occlusion = gt_mask_vis_roi ^ gt_mask_obj_roi
+        return img_roi * ~occlusion

@@ -42,6 +42,7 @@ dataset = dict(
     num_pose_augmentation=1,
     pose_augmentation_keep_first=0,
     pose_augmentation_depth_max_try=100,
+    occlusion_probability_eval=0.,
 )
 
 augmentation = dict(
