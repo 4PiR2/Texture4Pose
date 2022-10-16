@@ -166,14 +166,27 @@ def unroll_sphericon(scale: float, theta: float = -.9, dpi: int = 72, model: Mai
     normal = normal[..., _y_min:_y_max, _x_min:_x_max]
     mask = mask[..., _y_min:_y_max, _x_min:_x_max]
 
-    if model is not None:
+    if model == 'cb':
+        cb_num_cycles = 2
+        img = ((coord_3d + 1.) * cb_num_cycles).int() % 2
+    elif model is not None:
         model.eval()
         with torch.no_grad():
             img = model.forward_texture(
                 # texture_mode='xyz',
                 coord_3d_normalized=coord_3d[None] * .5 + .5, normal=normal[None], mask=mask[None]
-            )
+            )[0]
     else:
         img = coord_3d * .5 + .5
-        img[~mask.expand(3, -1, -1)] = 1.
+
+    mask = mask.expand(3, -1, -1)
+    img[~mask] = 1.
+
+    border = 1
+    if border > 0:
+        img[..., :-border] *= mask[..., :-border] | ~mask[..., border:]
+        img[..., border:] *= mask[..., border:] | ~mask[..., :-border]
+        img[..., :-border, :] *= mask[..., :-border, :] | ~mask[..., border:, :]
+        img[..., border:, :] *= mask[..., border:, :] | ~mask[..., :-border, :]
+
     return img

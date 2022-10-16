@@ -154,7 +154,7 @@ def bop_scene_bop_obj_dp(  # scene_src == 2: load pics from bop (cropping based)
 
 
 def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intrinsics)
-    path=None, obj_list=None, dtype=cc.dtype, device=cc.device, crop_out_size=256, bbox_zoom_out_ratio=1.5,
+    path=None, obj_list=None, dtype=cc.dtype, device=cc.device, crop_out_size=256, bbox_zoom_out_ratio=1.5, texture='',
     real_img_ext='heic', charuco_w_square=7, charuco_h_square=10, charuco_square_length=.04, cam_K=cc.real_cam_K,
     cylinder_scale_true=.04, cylinder_align_x=3., cylinder_align_y=5., sphericon_scale_true=.05, sphericon_align_x=3.,
     sphericon_align_y=5., random_t_depth_range=(.5, 1.2), random_t_center_range=(-.7, .7), rand_t_inside_cuboid=False,
@@ -165,7 +165,7 @@ def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intr
     assert len(obj_list) == 1
     dp = SampleSource(dtype=dtype, device=device, scene_mode=False, img_render_size=crop_out_size)
     dp = dataloader.datapipe.functional_bop.init_objects(dp, obj_list=obj_list, path=None)
-    dp = dp.load_real_scene(path=path, ext=real_img_ext)
+    dp = dp.load_real_scene(path=path, ext=real_img_ext, texture=texture)
     # dp = dp.rand_scene_id()
     dp = dp.set_real_scene()
     dp = dp.set_calib_camera(w_square=charuco_w_square, h_square=charuco_h_square, square_length=charuco_square_length,

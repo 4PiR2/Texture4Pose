@@ -32,7 +32,7 @@ class LitDataModule(pl.LightningDataModule):
                 raise NotImplementedError
             self.dataset: torch.utils.data.IterableDataset = dp(
                 dtype=self.cfg.dtype, device=self.cfg.device,
-                crop_out_size=self.cfg.model.img_input_size,
+                crop_out_size=self.cfg.model.img_input_size, texture=cfg.model.texture_mode,
                 **self.cfg.dataset
             )
             self.train_epoch_len: int = getattr(self.dataset, 'len')

@@ -36,15 +36,18 @@ class _(SampleMapperIDP):
 
 @functional_datapipe('load_real_scene')
 class _(SampleMapperIDP):
-    def __init__(self, src_dp: SampleMapperIDP, path: str, ext: str = 'heic'):
-        super().__init__(src_dp, [], [sf.o_item])
+    def __init__(self, src_dp: SampleMapperIDP, path: str, ext: str = 'heic', texture: str = ''):
+        super().__init__(src_dp, [], [sf.o_item], required_attributes=['objects_eval'])
         self.path = path
         self.ext: str = ext
         self.scene_gt: list[dict[str, Any]] = []
         for dir in os.listdir(path):
             if dir.startswith('0'):
-                for img_path in utils.io.list_img_from_dir(os.path.join(path, dir), self.ext):
-                    self.scene_gt.append({'obj_id': int(dir), 'img_path': img_path})
+                oid = int(dir)
+                if oid not in self.objects_eval:
+                    continue
+                for img_path in utils.io.list_img_from_dir(os.path.join(path, dir, texture), self.ext):
+                    self.scene_gt.append({'obj_id': oid, 'img_path': img_path})
         self._iterator = iter(range(self.len))
 
     @property
@@ -168,6 +171,7 @@ class _(SampleMapperIDP):
 
 @functional_datapipe('offset_pose_sphericon')
 class _(SampleMapperIDP):
+    # details: see weekly report meeting0930
     def __init__(self, src_dp: SampleMapperIDP, scale_true: float, align_x: float, align_y: float):
         super().__init__(src_dp, [sf.obj_id, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c, sf.obj_size, sf.code_info],
                          [sf.gt_cam_R_m2c, sf.gt_cam_t_m2c],
