@@ -41,7 +41,7 @@ dataset = dict(
     sphericon_align_y=5.,
     num_pose_augmentation=1,
     pose_augmentation_keep_first=0,
-    pose_augmentation_depth_max_try=100,
+    pose_augmentation_depth_max_try=0,
     occlusion_probability_eval=0.,
 )
 

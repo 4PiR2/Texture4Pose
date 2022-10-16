@@ -212,7 +212,7 @@ class _(SampleMapperIDP):
         device = gt_cam_R_m2c.device
         N = len(gt_cam_R_m2c)
         B = self._B if self._B else N
-        gt_cam_R_m2c_aug = [torch.eye(3, dtype=dtype, device=device).expand(self._keep_first, -1, -1)]
+        gt_cam_R_m2c_aug = [torch.eye(3, dtype=dtype, device=device).expand(min(self._keep_first, N), -1, -1)]
         for i in range(self._keep_first, N, B):
             max_try_depth = self._depth_max_try
             while True:

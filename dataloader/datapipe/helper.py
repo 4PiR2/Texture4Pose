@@ -174,7 +174,9 @@ class SampleRepeaterIDP(IterDataPipe[Sample]):
     def __iter__(self) -> Sample:
         dp = self.source_datapipes[0]
         for sample in dp:
-            if self._batch:
+            if self._repeat <= 0:
+                yield sample
+            elif self._batch:
                 batch = [sample.clone() for _ in range(self._repeat)]
                 yield Sample(*batch)
             else:

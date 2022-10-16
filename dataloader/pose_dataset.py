@@ -175,11 +175,10 @@ def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intr
     dp = dp.set_mesh_info()
     dp = dp.offset_pose_cylinder(scale_true=cylinder_scale_true, align_x=cylinder_align_x, align_y=cylinder_align_y)
     dp = dp.offset_pose_sphericon(scale_true=sphericon_scale_true, align_x=sphericon_align_x, align_y=sphericon_align_y)
-    if num_pose_augmentation > 0:
-        dp = dp.repeat_sample(repeat=num_pose_augmentation, batch=True)
-        dp = dp.augment_pose(keep_first=pose_augmentation_keep_first, t_depth_range=random_t_depth_range,
-                             t_center_range=random_t_center_range, cuboid=rand_t_inside_cuboid,
-                             depth_max_try=pose_augmentation_depth_max_try, batch=1)
+    dp = dp.repeat_sample(repeat=num_pose_augmentation, batch=True)
+    dp = dp.augment_pose(keep_first=pose_augmentation_keep_first if num_pose_augmentation > 0 else 1000,
+                         t_depth_range=random_t_depth_range, t_center_range=random_t_center_range,
+                         cuboid=rand_t_inside_cuboid, depth_max_try=pose_augmentation_depth_max_try, batch=1)
     dp = dp.gen_bbox_proj()
     dp = dp.dzi_bbox(max_dzi_ratio=0., bbox_zoom_out_ratio=bbox_zoom_out_ratio)
     dp = dp.gen_coord_2d_bbox()
