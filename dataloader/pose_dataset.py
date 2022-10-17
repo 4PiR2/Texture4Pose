@@ -160,7 +160,7 @@ def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intr
     sphericon_align_y=5., random_t_depth_range=(.5, 1.2), random_t_center_range=(-.7, .7), rand_t_inside_cuboid=False,
     num_pose_augmentation=1, pose_augmentation_keep_first=0, pose_augmentation_depth_max_try=100,
     occlusion_size_min=.125, occlusion_size_max=.5, num_occlusion_per_obj=1, min_occlusion_vis_ratio=.5,
-    occlusion_probability_eval=0., **kwargs,
+    occlusion_probability_eval=0., max_dzi_ratio_eval=0., **kwargs,
 ):
     assert len(obj_list) == 1
     dp = SampleSource(dtype=dtype, device=device, scene_mode=False, img_render_size=crop_out_size)
@@ -180,7 +180,7 @@ def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intr
                          t_depth_range=random_t_depth_range, t_center_range=random_t_center_range,
                          cuboid=rand_t_inside_cuboid, depth_max_try=pose_augmentation_depth_max_try, batch=1)
     dp = dp.gen_bbox_proj()
-    dp = dp.dzi_bbox(max_dzi_ratio=0., bbox_zoom_out_ratio=bbox_zoom_out_ratio)
+    dp = dp.dzi_bbox(max_dzi_ratio=max_dzi_ratio_eval, bbox_zoom_out_ratio=bbox_zoom_out_ratio)
     dp = dp.gen_coord_2d_bbox()
     dp = dp.crop_roi_real_bg()
     dp = dp.set_roi_camera()

@@ -5,7 +5,11 @@ dataset = dict(
     # obj_list={101: 'sphere', },
     obj_list={104: 'cylinderstrip', },
     # obj_list={105: 'sphericon', },
-    num_obj=16,
+    # num_obj=16,
+    num_obj=32,
+    num_pose_augmentation=8,
+    occlusion_probability_eval=0.,
+    max_dzi_ratio_eval=.25,
 )
 
 dataloader = dict(
@@ -15,20 +19,23 @@ dataloader = dict(
 )
 
 model = dict(
-    # texture_mode='xyz',
+    texture_mode='xyz',
     # texture_mode='siren',
     # texture_mode='cb',
-    texture_mode='scb',
-    freeze_texture_net_p=False,
+    # texture_mode='scb',
+    # freeze_texture_net_p=False,
+    freeze_texture_net_p=True,
     # pnp_mode=None,
     eval_augmentation=True and dataset['scene_src'] != 3,
     texture=dict(
         siren_first_omega_0=1.,
         cb_num_cycles=2,
     ),
+    coord_3d_loss_weights=[0.],
+    coord_3d_loss_weight_step=1,
     pnp=dict(
-        epro_loss_weights=[.02, 1.],
-        # epro_loss_weights=[1.],
+        # epro_loss_weights=[.02, 1.],
+        epro_loss_weights=[1.],
     )
 )
 

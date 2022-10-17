@@ -54,27 +54,27 @@ def print_sphericon():
     utils.print_paper.print_tensor_to_paper_pdf(img_100, '/home/user/Desktop/s1.pdf', dpi=dpi)
 
 
-def print_sphericon_a3():
+def print_sphericon_a3(model=None):
     dpi = 300
-    img_102 = realworld.print_unroll.unroll_sphericon(scale=.051, theta=.7, dpi=dpi)
-    img_100 = realworld.print_unroll.unroll_sphericon(scale=.05, theta=.7, dpi=dpi)
-    img = utils.print_paper.make_grid(img_102, (2, 1), margin=.05)
-    img[..., :img_102.shape[-2], :] = 1.
-    img[..., :img_100.shape[-2], :img_100.shape[-1]] = img_100
-    utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/s1.pdf', dpi=dpi, paper_size='a3')
+    img_0 = realworld.print_unroll.unroll_sphericon(scale=.05, theta=2.25, dpi=dpi, model=None)
+    img_1 = realworld.print_unroll.unroll_sphericon(scale=.05, theta=2.25, dpi=dpi, model=model)
+    img_2 = realworld.print_unroll.unroll_sphericon(scale=.05, theta=2.25, dpi=dpi, model='cb')
+    margin = .01
+    white_space = torch.ones_like(img_0)[..., :int(img_0.shape[-1] * margin) + 1]
+    img = torch.cat([img_1, white_space, img_2], dim=-1)
+    img = img.transpose(-2, -1).flip(dims=[-1])
+    utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/s2.pdf', dpi=dpi, paper_size='a3')
 
 
 def main():
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
-    # ckpt_path = 'outputs/lightning_logs/version_14/checkpoints/epoch=0017-val_metric=0.0334.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_201/checkpoints/epoch=0116-val_metric=2.5696.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_217/checkpoints/epoch=0116-val_metric=0.9897.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_232/checkpoints/epoch=0012-val_metric=0.5679.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_236/checkpoints/last.ckpt'
-    ckpt_path = None
+    ckpt_path = 'outputs/lightning_logs/version_201/checkpoints/epoch=0116-val_metric=2.5696.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_268/checkpoints/epoch=0043-val_metric=0.3965.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_273/checkpoints/epoch=0122-val_metric=0.4129.ckpt'
+    # ckpt_path = None
 
     only_load_weights = True
-    max_epochs = 10
+    max_epochs = 200
     do_fit = True
     do_val = False
 
@@ -131,6 +131,7 @@ def main():
     #     model.load_pretrain(cfg.model.pretrain)
 
     # print_cylinder_strip(model)
+    # print_sphericon_a3(model)
 
     model = model.to(cfg.device, dtype=cfg.dtype)
     if do_fit:

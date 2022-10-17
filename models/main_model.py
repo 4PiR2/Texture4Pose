@@ -307,6 +307,9 @@ class MainModel(pl.LightningModule):
         return metric_dict
 
     def validation_epoch_end(self, outputs: EPOCH_OUTPUT) -> None:
+        metrics_path = os.path.join(self.trainer.log_dir, f'metrics')
+        os.makedirs(metrics_path, exist_ok=True)
+        torch.save(outputs, os.path.join(metrics_path, f'epoch={self.current_epoch}-step={self.global_step}.pth'))
         if outputs:
             keys = list(outputs[0].keys())
             outputs = {key: torch.cat([output[key] for output in outputs], dim=0) for key in keys}
