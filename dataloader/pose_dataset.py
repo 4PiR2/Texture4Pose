@@ -95,6 +95,9 @@ def random_scene_any_obj_dp(  # scene_src == 0: random (adaptive camera intrinsi
     dp = dp.set_static_camera(cam_K=torch.eye(3), orig=True)
     dp = dp.calibrate_bbox()
     dp = dp.render_img()
+    dp = dp.compute_normal_sphere()
+    dp = dp.compute_normal_cylinder()
+    dp = dp.compute_normal_sphericon()
     return dp
 
 
@@ -195,4 +198,7 @@ def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intr
                          batch_occlusion=1, p=occlusion_probability_eval)
     dp = dp.rand_occlude_apply_real()
     dp = dp.calibrate_bbox()
+    dp = dp.compute_normal_sphere()
+    dp = dp.compute_normal_cylinder()
+    dp = dp.compute_normal_sphericon()
     return dp

@@ -14,6 +14,7 @@ import torchvision.transforms.functional as vF
 from dataloader.obj_mesh import ObjMesh, RegularMesh
 from dataloader.datapipe.helper import SampleMapperIDP, SampleFiltererIDP
 from dataloader.sample import SampleFields as sf
+import realworld.print_unroll
 from renderer.scene import Scene, NHWKC_to_NCHW, NCHW_to_NHWKC
 import utils.color
 import utils.io
@@ -599,3 +600,37 @@ class _(SampleMapperIDP):
         w = self.img_render_size
         x = w * .5
         return torch.tensor([x, x, w, w], dtype=self.dtype, device=self.device).expand(N, -1)
+
+
+@functional_datapipe('compute_normal_sphere')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP):
+        super().__init__(src_dp, [sf.obj_id, sf.gt_coord_3d_roi, sf.gt_normal_roi], [sf.gt_normal_roi])
+
+    def main(self, obj_id: torch.Tensor, gt_coord_3d_roi: torch.Tensor, gt_normal_roi: torch.Tensor) -> torch.Tensor:
+        m = obj_id == 101
+        gt_normal_roi[m] = F.normalize(gt_coord_3d_roi[m], dim=-3)
+        return gt_normal_roi
+
+
+@functional_datapipe('compute_normal_cylinder')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP):
+        super().__init__(src_dp, [sf.obj_id, sf.gt_coord_3d_roi, sf.gt_normal_roi], [sf.gt_normal_roi])
+
+    def main(self, obj_id: torch.Tensor, gt_coord_3d_roi: torch.Tensor, gt_normal_roi: torch.Tensor) -> torch.Tensor:
+        m = obj_id == 104
+        gt_normal_roi[m, :-1] = F.normalize(gt_coord_3d_roi[m, :-1, :, :], dim=-3)
+        gt_normal_roi[m, -1] = 0.
+        return gt_normal_roi
+
+
+@functional_datapipe('compute_normal_sphericon')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP):
+        super().__init__(src_dp, [sf.obj_id, sf.gt_coord_3d_roi, sf.gt_normal_roi], [sf.gt_normal_roi])
+
+    def main(self, obj_id: torch.Tensor, gt_coord_3d_roi: torch.Tensor, gt_normal_roi: torch.Tensor) -> torch.Tensor:
+        m = obj_id == 105
+        gt_normal_roi[m] = realworld.print_unroll.sphericon_coord_3d_to_normal(gt_coord_3d_roi[m])
+        return gt_normal_roi

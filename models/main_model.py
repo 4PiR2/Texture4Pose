@@ -214,7 +214,14 @@ class MainModel(pl.LightningModule):
             sample.set(sf.gt_normal_roi, resize(sf.gt_normal_roi) * sample.get(sf.gt_mask_vis_roi))
             sample.set(sf.coord_2d_roi, resize(sf.coord_2d_roi))
 
-            features = self.up_sampling_backbone(self.resnet_backbone(sample.get(sf.img_roi)))
+            freeze_resnet_backbone: bool = False
+            if freeze_resnet_backbone:
+                self.resnet_backbone.eval()
+                with torch.no_grad():
+                    features = self.resnet_backbone(sample.get(sf.img_roi))
+            else:
+                features = self.resnet_backbone(sample.get(sf.img_roi))
+            features = self.up_sampling_backbone(features)
             sample.set(sf.pred_coord_3d_roi_normalized, self.coord_3d_head(features))
             sample.get_pred_coord_3d_roi()
 

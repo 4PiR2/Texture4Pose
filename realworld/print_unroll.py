@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 from models.main_model import MainModel
 import utils.image_2d
@@ -55,79 +56,80 @@ def get_spectrum_info(y: torch.Tensor, freq_sample: float = None):
     return freq, amplitude, phase
 
 
-def _unroll_canonical_sphericon(canonical_coord_2d: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def sphericon_coord_3d_to_normal(coord_3d: torch.Tensor) -> torch.Tensor:
+    """
+
+    :param coord_3d: [..., 3, H, W]
+    :return: [..., 3, H, W]
+    """
+    normal_xz_z_pos = F.normalize(coord_3d[..., ::2, :, :], dim=-3) * .5 ** .5
+    normal_y_z_pos = torch.full_like(coord_3d[..., 1:2, :, :], .5 ** .5) * coord_3d[..., 1:2, :, :].sgn()
+    normal_z_pos = torch.cat([normal_xz_z_pos[..., :1, :, :], normal_y_z_pos, normal_xz_z_pos[..., -1:, :, :]], dim=-3)
+    normal_yz_z_neg = F.normalize(coord_3d[..., 1:, :, :], dim=-3) * .5 ** .5
+    normal_x_z_neg = torch.full_like(coord_3d[..., :1, :, :], .5 ** .5) * coord_3d[..., :1, :, :].sgn()
+    normal_z_neg = torch.cat([normal_x_z_neg, normal_yz_z_neg], dim=-3)
+    mask_z_pos = coord_3d[..., -1:, :, :] >= 0.
+    normal = normal_z_pos * mask_z_pos + normal_z_neg * ~mask_z_pos
+    return normal
+
+
+def _unroll_canonical_sphericon(canonical_coord_2d: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """
 
     :param [..., 2, H, W], canonical_coord_2d, center (0., 0.)
     :return: [..., C, H, W], unrolled sphericon of range (-1., 1.)
     """
     coord_3d = torch.zeros_like(torch.cat([canonical_coord_2d, canonical_coord_2d[..., :1, :, :]], dim=-3))
-    normal = torch.zeros_like(coord_3d)
-    alpha = torch.tensor(torch.pi / (2. * 2. ** .5), device=canonical_coord_2d.device)
+    alpha = torch.tensor(torch.pi / (8. ** .5), device=canonical_coord_2d.device)
 
     v2 = (torch.stack([1.5 * alpha.sin(), .5 * alpha.cos()]) * 2. ** .5)[..., None, None]
     vec_v2 = canonical_coord_2d - v2
     theta_v2 = (alpha - .5 * torch.pi - torch.atan2(vec_v2[..., 1, :, :], vec_v2[..., 0, :, :])) * 2. ** .5
     dist_v2 = torch.linalg.vector_norm(vec_v2, ord=2, dim=-3) / 2. ** .5
     x2 = dist_v2 * theta_v2.cos()
-    nx2 = .5 * 2. ** .5 * theta_v2.cos()
     y2 = 1. - dist_v2
-    ny2 = torch.full_like(y2, .5 * 2. ** .5)
     z2 = dist_v2 * theta_v2.sin()
-    nz2 = .5 * 2. ** .5 * theta_v2.sin()
     m2 = (0. <= theta_v2) & (theta_v2 <= torch.pi) & (dist_v2 <= 1.)
     coord_3d += torch.stack([x2, y2, z2], dim=-3) * m2[..., None, :, :]
-    normal += torch.stack([nx2, ny2, nz2], dim=-3) * m2[..., None, :, :]
-    del vec_v2, theta_v2, dist_v2, x2, y2, z2, nx2, ny2, nz2
+    del vec_v2, theta_v2, dist_v2, x2, y2, z2
 
     v1 = (torch.stack([alpha.sin(), -alpha.cos()]) / 2. ** .5)[..., None, None]
     vec_v1 = canonical_coord_2d - v1
     theta_v1 = (alpha - .5 * torch.pi + torch.atan2(vec_v1[..., 1, :, :], vec_v1[..., 0, :, :])) * 2. ** .5
     dist_v1 = torch.linalg.vector_norm(vec_v1, ord=2, dim=-3) / 2. ** .5
     x1 = dist_v1 - 1.
-    nx1 = torch.full_like(x1, -.5 * 2. ** .5)
     y1 = dist_v1 * theta_v1.cos()
-    ny1 = .5 * 2. ** .5 * theta_v1.cos()
     z1 = -dist_v1 * theta_v1.sin()
-    nz1 = -.5 * 2. ** .5 * theta_v1.sin()
     m1 = (0. <= theta_v1) & (theta_v1 <= torch.pi) & (dist_v1 <= 1.) & ~m2
     coord_3d += torch.stack([x1, y1, z1], dim=-3) * m1[..., None, :, :]
-    normal += torch.stack([nx1, ny1, nz1], dim=-3) * m1[..., None, :, :]
-    del vec_v1, theta_v1, dist_v1, x1, y1, z1, nx1, ny1, nz1
+    del vec_v1, theta_v1, dist_v1, x1, y1, z1
 
     v3 = -v1
     vec_v3 = canonical_coord_2d - v3
     theta_v3 = (alpha - .5 * torch.pi - torch.atan2(vec_v3[..., 1, :, :], vec_v3[..., 0, :, :])) * 2. ** .5
     dist_v3 = torch.linalg.vector_norm(vec_v3, ord=2, dim=-3) / 2. ** .5
     x3 = -dist_v3 * theta_v3.cos()
-    nx3 = -.5 * 2. ** .5 * theta_v3.cos()
     y3 = dist_v3 - 1.
-    ny3 = torch.full_like(y3, -.5 * 2. ** .5)
     z3 = dist_v3 * theta_v3.sin()
-    nz3 = .5 * 2. ** .5 * theta_v3.sin()
     m3 = (0. <= theta_v3) & (theta_v3 <= torch.pi) & (dist_v3 <= 1.) & ~m2 & ~m1
     coord_3d += torch.stack([x3, y3, z3], dim=-3) * m3[..., None, :, :]
-    normal += torch.stack([nx3, ny3, nz3], dim=-3) * m3[..., None, :, :]
-    del vec_v3, theta_v3, dist_v3, x3, y3, z3, nx3, ny3, nz3, v1, v3
+    del vec_v3, theta_v3, dist_v3, x3, y3, z3, v1, v3
 
     v0 = -v2
     vec_v0 = canonical_coord_2d - v0
     theta_v0 = (alpha - .5 * torch.pi + torch.atan2(vec_v0[..., 1, :, :], vec_v0[..., 0, :, :])) * 2. ** .5
     dist_v0 = torch.linalg.vector_norm(vec_v0, ord=2, dim=-3) / 2. ** .5
     x0 = 1. - dist_v0
-    nx0 = torch.full_like(x0, .5 * 2. ** .5)
     y0 = -dist_v0 * theta_v0.cos()
-    ny0 = -.5 * 2. ** .5 * theta_v0.cos()
     z0 = -dist_v0 * theta_v0.sin()
-    nz0 = -.5 * 2. ** .5 * theta_v0.sin()
     m0 = (0. <= theta_v0) & (theta_v0 <= torch.pi) & (dist_v0 <= 1.) & ~m2 & ~m1 & ~m3
     coord_3d += torch.stack([x0, y0, z0], dim=-3) * m0[..., None, :, :]
-    normal += torch.stack([nx0, ny0, nz0], dim=-3) * m0[..., None, :, :]
-    del vec_v0, theta_v0, dist_v0, x0, y0, z0, nx0, ny0, nz0, v2, v0
+    del vec_v0, theta_v0, dist_v0, x0, y0, z0, v2, v0
 
     mask = (m2 | m1 | m3 | m0)[..., None, :, :]
+    del m2, m1, m3, m0
 
-    return coord_3d, normal, mask
+    return coord_3d, mask
 
 
 def unroll_sphericon(scale: float, theta: float = -.9, dpi: int = 72, model: MainModel = None):
@@ -159,7 +161,8 @@ def unroll_sphericon(scale: float, theta: float = -.9, dpi: int = 72, model: Mai
     theta = torch.tensor(-theta)
     transformation = torch.tensor([[theta.cos(), -theta.sin()], [theta.sin(), theta.cos()]]) / scale
     coord_2d = (transformation @ coord_2d.reshape(2, -1)).reshape(2, H, W)
-    coord_3d, normal, mask = _unroll_canonical_sphericon(coord_2d)
+    coord_3d, mask = _unroll_canonical_sphericon(coord_2d)
+    normal = sphericon_coord_3d_to_normal(coord_3d)
     _y, _x = mask[0].nonzero().T
     _x_min, _x_max, _y_min, _y_max = _x.min(), _x.max() + 1, _y.min(), _y.max() + 1
     coord_3d = coord_3d[..., _y_min:_y_max, _x_min:_x_max]
