@@ -102,6 +102,7 @@ model = dict(
     pnp_input_size=64,
     texture_mode='siren',  # [None, 'default', 'xyz', 'vertex', 'mlp', 'siren', 'cb', 'scb']
     freeze_texture_net_p=False,
+    freeze_resnet_backbone=False,
     pnp_mode='epro',  # [None, 'sanity', 'ransac', 'gdrn', 'epro']
     eval_augmentation=True,
     up_sampling=dict(

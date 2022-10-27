@@ -61,22 +61,40 @@ def print_sphericon_a3(model=None):
     img_2 = realworld.print_unroll.unroll_sphericon(scale=.05, theta=2.25, dpi=dpi, model='cb')
     margin = .01
     white_space = torch.ones_like(img_0)[..., :int(img_0.shape[-1] * margin) + 1]
-    img = torch.cat([img_1, white_space, img_2], dim=-1)
+    img = torch.cat([img_1, white_space, img_1], dim=-1)
     img = img.transpose(-2, -1).flip(dims=[-1])
     utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/s2.pdf', dpi=dpi, paper_size='a3')
 
 
 def main():
     # ckpt_path = utils.io.find_lightning_ckpt_path('outputs')
-    ckpt_path = 'outputs/lightning_logs/version_201/checkpoints/epoch=0116-val_metric=2.5696.ckpt'
+
+    # 104 xyz
+    # ckpt_path = 'outputs/lightning_logs/version_279/checkpoints/epoch=0127-val_metric=1.9202.ckpt'
+    # 104 siren
     # ckpt_path = 'outputs/lightning_logs/version_268/checkpoints/epoch=0043-val_metric=0.3965.ckpt'
+    # 104 cb
     # ckpt_path = 'outputs/lightning_logs/version_273/checkpoints/epoch=0122-val_metric=0.4129.ckpt'
+
+    # 105 xyz
+    # ckpt_path = 'outputs/lightning_logs/version_291/checkpoints/epoch=0119-val_metric=1.5092.ckpt'
+    # 105 siren
+    # ckpt_path = 'outputs/lightning_logs/version_301/checkpoints/epoch=0007-val_metric=0.4302.ckpt'
+    # 105 cb
+    # ckpt_path = 'outputs/lightning_logs/version_282/checkpoints/epoch=0154-val_metric=0.3779.ckpt'
+
+    # 101 xyz
+    ckpt_path = 'outputs/lightning_logs/version_300/checkpoints/epoch=0114-val_metric=2.8337.ckpt'
+    # 101 siren
+    # ckpt_path = 'outputs/lightning_logs/version_327/checkpoints/epoch=0164-val_metric=0.3148.ckpt'
+    # 101 cb
+    # ckpt_path = 'outputs/lightning_logs/version_328/checkpoints/epoch=0120-val_metric=0.2599.ckpt'
     # ckpt_path = None
 
     only_load_weights = True
     max_epochs = 200
     do_fit = True
-    do_val = False
+    do_val = not do_fit
 
     def setup(args=None) -> Config:
         cfg = Config.fromfile('config/top.py')
@@ -134,6 +152,21 @@ def main():
     # print_sphericon_a3(model)
 
     model = model.to(cfg.device, dtype=cfg.dtype)
+
+    # from pytorch3d.structures import Meshes
+    # from pytorch3d.renderer import TexturesVertex
+    # from pytorch3d.vis.plotly_vis import plot_scene
+    #
+    # mesh: Meshes = datamodule.dataset.objects[105].mesh
+    # verts = mesh.verts_packed()[..., None, None] * 10. + .5
+    # normals = mesh.verts_normals_packed()[..., None, None]
+    # mask = torch.ones(len(verts), 1, 1, 1, dtype=torch.bool, device=verts.device)
+    # model.eval()
+    # with torch.no_grad():
+    #     texture = model.forward_texture(coord_3d_normalized=verts, normal=normals, mask=mask)
+    # mesh.textures = TexturesVertex(texture[None, ..., 0, 0])
+    # plot_scene({'subplot1': {'m': mesh}}).show()
+
     if do_fit:
         trainer.fit(model, ckpt_path=None if only_load_weights else ckpt_path, datamodule=datamodule)
     if do_val:
@@ -142,7 +175,8 @@ def main():
     exit(1)
 
     from dataloader.pose_dataset import real_scene_regular_obj_dp
-    dp = real_scene_regular_obj_dp(path='/data/real_exp/i12P_26mm', obj_list={104: 'cylinderstrip'},)
+    dp = real_scene_regular_obj_dp(path='/data/real_exp/i12P_26mm', obj_list={105: 'sphericon'},
+                                   texture='siren', num_pose_augmentation=0)
     model.eval()
     with torch.no_grad():
         i = 0

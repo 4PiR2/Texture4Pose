@@ -37,6 +37,7 @@ class MainModel(pl.LightningModule):
         self.pnp_input_size: int = cfg.model.pnp_input_size
         self.texture_mode: str = cfg.model.texture_mode
         self.freeze_texture_net_p: bool = cfg.model.freeze_texture_net_p
+        self.freeze_resnet_backbone: bool = cfg.model.freeze_resnet_backbone
         self.pnp_mode: str = cfg.model.pnp_mode
         self.opt_cfg: Config = cfg.optimizer
         self.sch_cfg: Config = cfg.scheduler
@@ -106,13 +107,16 @@ class MainModel(pl.LightningModule):
         self.score = Score(objects_eval if objects_eval is not None else objects)
 
     def configure_optimizers(self):
-        params = [
-            {'params': self.resnet_backbone.parameters(), 'lr': self.opt_cfg.lr.resnet_backbone,
-             'name': 'resnet_backbone'},
+        params = []
+        if not self.freeze_resnet_backbone:
+            params.append(
+                {'params': self.resnet_backbone.parameters(), 'lr': self.opt_cfg.lr.resnet_backbone,
+                 'name': 'resnet_backbone'})
+        params.append(
             {'params': self.up_sampling_backbone.parameters(), 'lr': self.opt_cfg.lr.up_sampling_backbone,
-             'name': 'up_sampling_backbone'},
-            {'params': self.coord_3d_head.parameters(), 'lr': self.opt_cfg.lr.coord_3d_head, 'name': 'coord_3d_head'},
-        ]
+             'name': 'up_sampling_backbone'})
+        params.append(
+            {'params': self.coord_3d_head.parameters(), 'lr': self.opt_cfg.lr.coord_3d_head, 'name': 'coord_3d_head'})
 
         if self.texture_mode == 'mlp':
             params.append({'params': self.texture_net_p.parameters(), 'lr': self.opt_cfg.lr.texture_net_p,
@@ -203,8 +207,7 @@ class MainModel(pl.LightningModule):
                 sample.set(sf.img_roi, augmentations.color_augmentation.match_background_histogram(
                     sample.get(sf.img_roi), sample.get(sf.gt_mask_vis_roi), **self.match_background_histogram_cfg
                 ))
-                sample.set(sf.img_roi,
-                           self.transform(sample.get(sf.img_roi)))
+                sample.set(sf.img_roi, self.transform(sample.get(sf.img_roi)))
 
             resize = lambda tag: vF.resize(sample.get(tag), [self.pnp_input_size], vF.InterpolationMode.NEAREST)
             sample.set(sf.gt_mask_vis_roi, resize(sf.gt_mask_vis_roi))
@@ -214,8 +217,7 @@ class MainModel(pl.LightningModule):
             sample.set(sf.gt_normal_roi, resize(sf.gt_normal_roi) * sample.get(sf.gt_mask_vis_roi))
             sample.set(sf.coord_2d_roi, resize(sf.coord_2d_roi))
 
-            freeze_resnet_backbone: bool = False
-            if freeze_resnet_backbone:
+            if self.freeze_resnet_backbone:
                 self.resnet_backbone.eval()
                 with torch.no_grad():
                     features = self.resnet_backbone(sample.get(sf.img_roi))
