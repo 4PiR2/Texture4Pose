@@ -85,7 +85,7 @@ def random_scene_any_obj_dp(  # scene_src == 0: random (adaptive camera intrinsi
     dp = dp.normalize_normal()
     dp = dp.rand_occlude(occlusion_size_min=occlusion_size_min, occlusion_size_max=occlusion_size_max,
                          num_occlusion_per_obj=num_occlusion_per_obj, min_occlusion_vis_ratio=min_occlusion_vis_ratio,
-                         batch_occlusion=1, p=occlusion_probability)
+                         batch_occlusion=1, p=occlusion_probability, apply_img_roi=False)
     dp = dp.rand_lights(light_max_saturation=light_max_saturation, light_ambient_range=light_ambient_range,
                         light_diffuse_range=light_diffuse_range, light_specular_range=light_specular_range,
                         light_shininess_range=light_shininess_range)
@@ -195,8 +195,9 @@ def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intr
     dp = dp.normalize_normal()
     dp = dp.rand_occlude(occlusion_size_min=occlusion_size_min, occlusion_size_max=occlusion_size_max,
                          num_occlusion_per_obj=num_occlusion_per_obj, min_occlusion_vis_ratio=min_occlusion_vis_ratio,
-                         batch_occlusion=1, p=occlusion_probability_eval)
-    dp = dp.rand_occlude_apply_real()
+                         batch_occlusion=1, p=occlusion_probability_eval, apply_img_roi=True)
+    # dp = dp.rand_occlude_apply_real()
+    # dp = dp.rand_truncate(p=1., apply_img_roi=True)
     dp = dp.calibrate_bbox()
     dp = dp.compute_normal_sphere()
     dp = dp.compute_normal_cylinder()

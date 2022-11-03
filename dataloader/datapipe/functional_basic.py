@@ -279,8 +279,9 @@ class _(SampleMapperIDP):
 class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP, occlusion_size_min: float = .125, occlusion_size_max: float = .5,
                  num_occlusion_per_obj: int = 2, min_occlusion_vis_ratio: float = .5, batch_occlusion: int = None,
-                 p: float = 1.):
-        super().__init__(src_dp, [sf.gt_mask_vis_roi], [sf.gt_mask_vis_roi])
+                 p: float = 1., apply_img_roi: bool = False):
+        fields = [sf.gt_mask_vis_roi] + ([sf.img_roi] if apply_img_roi else [])
+        super().__init__(src_dp, fields, fields)
         # rectangular occlusion
         self._occlusion_size_min: float = occlusion_size_min
         self._occlusion_size_max: float = occlusion_size_max
@@ -289,16 +290,20 @@ class _(SampleMapperIDP):
         self._B: int = batch_occlusion
         self._p: float = p
 
-    def main(self, gt_mask_vis_roi: torch.Tensor):
+    def main(self, gt_mask_vis_roi: torch.Tensor, img_roi: torch.Tensor = None):
         if self._occlusion_size_max <= 0.:
             return gt_mask_vis_roi
         N, _, H, W = gt_mask_vis_roi.shape
         vis_count = gt_mask_vis_roi.bool().sum(dim=[-3, -2, -1])
         gt_mask_vis_roi_occ = torch.empty_like(gt_mask_vis_roi)
+        if img_roi is not None:
+            img_roi_occ = torch.empty_like(img_roi)
         B = self._B if self._B else N
         for i in range(0, N, B):
             while True:
                 gt_mask_vis_roi_occ[i:i + B] = gt_mask_vis_roi[i:i + B]
+                if img_roi is not None:
+                    img_roi_occ[i:i + B] = img_roi[i:i + B]
                 for _ in range(self._num_occlusion_per_obj):
                     if torch.rand(1) > self._p:
                         continue
@@ -309,10 +314,12 @@ class _(SampleMapperIDP):
                     for j in range(B):
                         x0, y0, w, h = x0y0wh[j]
                         gt_mask_vis_roi_occ[i + j, :, y0:y0 + h, x0:x0 + w] = 0
+                        if img_roi is not None:
+                            img_roi_occ[i + j, :, y0:y0 + h, x0:x0 + w] = 0.
                 vis_ratio = gt_mask_vis_roi_occ[i:i + B].bool().sum(dim=[-3, -2, -1]) / vis_count[i:i + B]
                 if (vis_ratio > self._min_occlusion_vis_ratio).all():
                     break
-        return gt_mask_vis_roi_occ
+        return (gt_mask_vis_roi_occ, img_roi_occ) if img_roi is not None else gt_mask_vis_roi_occ
 
 
 @functional_datapipe('rand_lights')
@@ -634,3 +641,32 @@ class _(SampleMapperIDP):
         m = obj_id == 105
         gt_normal_roi[m] = realworld.print_unroll.sphericon_coord_3d_to_normal(gt_coord_3d_roi[m])
         return gt_normal_roi
+
+
+@functional_datapipe('rand_truncate')
+class _(SampleMapperIDP):
+    def __init__(self, src_dp: SampleMapperIDP, p: float = 1., apply_img_roi: bool = False):
+        fields = [sf.gt_mask_vis_roi] + ([sf.img_roi] if apply_img_roi else [])
+        super().__init__(src_dp, fields, fields)
+        self._p: float = p
+
+    def main(self, gt_mask_vis_roi: torch.Tensor, img_roi: torch.Tensor = None):
+        def trunc(x: torch.Tensor, d: int):
+            if d == 0:
+                x[..., :, :W // 2] = 0
+            elif d == 1:
+                x[..., :, W // 2:] = 0
+            if d == 2:
+                x[..., :H // 2, :] = 0
+            elif d == 3:
+                x[..., H // 2:, :] = 0
+
+        N, _, H, W = gt_mask_vis_roi.shape
+        directions = torch.randint(4, (N,))
+        for i in range(N):
+            if torch.rand(1) > self._p:
+                continue
+            trunc(gt_mask_vis_roi[i], directions[i])
+            if img_roi is not None:
+                trunc(img_roi[i], directions[i])
+        return (gt_mask_vis_roi, img_roi) if img_roi is not None else gt_mask_vis_roi
