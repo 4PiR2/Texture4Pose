@@ -1,9 +1,12 @@
 import cv2
+from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 import numpy as np
 import pytorch3d.transforms
 import torch
 import torch.nn.functional as F
+from pytorch3d.structures import Meshes
+import pytorch3d.utils
 
 
 def normalize_cam_K(cam_K: torch.Tensor) -> torch.Tensor:
@@ -201,6 +204,149 @@ def show_pose(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, cam_t_m2c:
         ax.plot([v0[0], v1[0]], [v0[1], v1[1]], ls='--' if vote >= 2 else '-', c=ec, alpha=alpha)
     ax.scatter(verts_proj[:-1, 0], verts_proj[:-1, 1], c=vert_colors[:-1], zorder=10, alpha=1.)
     ax.scatter(verts_proj[-1, 0], verts_proj[-1, 1], c=vert_colors[-1], marker='+', zorder=10, alpha=1.)
+    if bbox is not None and adjust_axis:
+        ax.set_xlim(0, bbox_size)
+        ax.set_ylim(bbox_size, 0)
+        ax.set_aspect('equal')
+    return ax
+
+
+def show_pose_mesh_105(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, cam_t_m2c: torch.Tensor, obj_size: torch.Tensor = None,
+              bbox: torch.Tensor = None, adjust_axis: bool = True, alpha: float = 1.) \
+        -> Axes:
+    """
+
+    :param ax:
+    :param cam_K: [3, 3]
+    :param cam_R_m2c: [3, 3]
+    :param cam_t_m2c: [3]
+    :param obj_size: [3(XYZ)]
+    :param bbox: [4(XYWH)]
+    :param adjust_axis: bool
+    :param alpha: float
+    :return:
+    """
+    dtype = cam_R_m2c.dtype
+    device = cam_R_m2c.device
+    cull_backfaces = 0
+    from renderer.cube_mesh import cube, sphericon, cylinder_strip
+    # mesh = sphericon(2, 0, device=device)
+    mesh = cylinder_strip(2, device=device)
+    # mesh = pytorch3d.utils.ico_sphere(level=1).to(device)
+    mesh.scale_verts_(.05)
+    verts = mesh.verts_packed()  # [N, 3]
+    edges = mesh.edges_packed()
+    vert_colors = [f'#{hex(r)[-2:]}{hex(g)[-2:]}{hex(b)[-2:]}' for r, g, b in ((verts / .1 + .5) * 255. * 0.).round().int() + 512]
+    faces = mesh.faces_packed()
+    verts = verts @ cam_R_m2c.T + cam_t_m2c  # [N, 3]
+    votes_e = torch.zeros(len(edges), dtype=torch.uint8)
+    votes_v = torch.zeros(len(verts), dtype=torch.uint8)
+
+    def inc_vote(i0, i1):
+        for idx in range(len(edges)):
+            if (edges[idx, 0] == i0 and edges[idx, 1] == i1) or (edges[idx, 1] == i0 and edges[idx, 0] == i1):
+                votes_e[idx] += 1
+                break
+
+    for i0, i1, i2 in faces:
+        direction = torch.cross(verts[i1] - verts[i0], verts[i2] - verts[i1])
+        if torch.dot(direction, verts[i0]) < 0.:
+            inc_vote(i0, i1)
+            inc_vote(i1, i2)
+            inc_vote(i2, i0)
+    verts_proj = verts @ cam_K.T  # [N, 3]
+    verts_proj = verts_proj[:, :-1] / verts_proj[:, -1:]  # [N, 2]
+    if bbox is not None:
+        bbox_size = float(bbox[2:].max())
+        verts_proj -= bbox[:2] - bbox_size * .5
+    verts_proj = verts_proj.detach().cpu().numpy()
+    for (i0, i1), vote_e in zip(edges, votes_e):
+        v0, v1 = verts_proj[i0], verts_proj[i1]
+        c0 = [int(vert_colors[i0][1:][k * 2:k * 2 + 2], 16) for k in range(3)]
+        c1 = [int(vert_colors[i1][1:][k * 2:k * 2 + 2], 16) for k in range(3)]
+        ec = '#' + ''.join([hex((512 + c0[k] + c1[k]) // 2)[-2:] for k in range(3)])
+        if vote_e > 0 or not cull_backfaces:
+            ax.plot([v0[0], v1[0]], [v0[1], v1[1]], ls='-', c=ec, alpha=alpha, lw=4)
+            votes_v[i0] += 1
+            votes_v[i1] += 1
+    #     else:
+    #         ax.plot([v0[0], v1[0]], [v0[1], v1[1]], ls='--', c=ec, alpha=0.)
+    # verts_mask = votes_v > 0
+    # ax.scatter(verts_proj[verts_mask, 0], verts_proj[verts_mask, 1], c='k', zorder=10, alpha=1.)
+    # ax.scatter(verts_proj[-1, 0], verts_proj[-1, 1], c=vert_colors[-1], marker='+', zorder=10, alpha=1.)
+    if bbox is not None and adjust_axis:
+        ax.set_xlim(0, bbox_size)
+        ax.set_ylim(bbox_size, 0)
+        ax.set_aspect('equal')
+    return ax
+
+
+def show_pose_mesh(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, cam_t_m2c: torch.Tensor, obj_size: torch.Tensor = None,
+              bbox: torch.Tensor = None, adjust_axis: bool = True, alpha: float = 1.) \
+        -> Axes:
+    """
+
+    :param ax:
+    :param cam_K: [3, 3]
+    :param cam_R_m2c: [3, 3]
+    :param cam_t_m2c: [3]
+    :param obj_size: [3(XYZ)]
+    :param bbox: [4(XYWH)]
+    :param adjust_axis: bool
+    :param alpha: float
+    :return:
+    """
+    dtype = cam_R_m2c.dtype
+    device = cam_R_m2c.device
+    from renderer.cube_mesh import cylinder_strip
+    mesh = cylinder_strip(2, device=device)
+    mesh.scale_verts_(.05)
+    verts = mesh.verts_packed()  # [N, 3]
+    edges = mesh.edges_packed()
+    vert_colors = [f'#{hex(r)[-2:]}{hex(g)[-2:]}{hex(b)[-2:]}' for r, g, b in ((verts / .1 + .5) * 255. * 0.).round().int() + 512]
+    faces = mesh.faces_packed()
+    verts = verts @ cam_R_m2c.T + cam_t_m2c  # [N, 3]
+    votes_e = torch.zeros(len(edges), dtype=torch.uint8)
+    votes_v = torch.zeros(len(verts), dtype=torch.uint8)
+
+    def inc_vote(i0, i1):
+        for idx in range(len(edges)):
+            if (edges[idx, 0] == i0 and edges[idx, 1] == i1) or (edges[idx, 1] == i0 and edges[idx, 0] == i1):
+                votes_e[idx] += 1
+                break
+
+    verts_proj = verts @ cam_K.T  # [N, 3]
+    verts_proj = verts_proj[:, :-1] / verts_proj[:, -1:]  # [N, 2]
+    if bbox is not None:
+        bbox_size = float(bbox[2:].max())
+        verts_proj -= bbox[:2] - bbox_size * .5
+    verts_proj = verts_proj.detach().cpu().numpy()
+
+    for i0, i1, i2 in faces:
+        direction = torch.cross(verts[i1] - verts[i0], verts[i2] - verts[i1])
+        if torch.dot(direction, verts[i0]) < 0.:
+            inc_vote(i0, i1)
+            inc_vote(i1, i2)
+            inc_vote(i2, i0)
+            v0, v1, v2 = verts_proj[i0], verts_proj[i1], verts_proj[i2]
+            tri = plt.Polygon(np.stack([v0, v1, v2]), color='w', zorder=5)
+            ax.add_patch(tri)
+
+    for (i0, i1), vote_e in zip(edges, votes_e):
+        v0, v1 = verts_proj[i0], verts_proj[i1]
+        c0 = [int(vert_colors[i0][1:][k * 2:k * 2 + 2], 16) for k in range(3)]
+        c1 = [int(vert_colors[i1][1:][k * 2:k * 2 + 2], 16) for k in range(3)]
+        ec = '#' + ''.join([hex((512 + c0[k] + c1[k]) // 2)[-2:] for k in range(3)])
+        if vote_e > 0:
+            ax.plot([v0[0], v1[0]], [v0[1], v1[1]], ls='-', c=ec, alpha=alpha, lw=4, zorder=10)
+            votes_v[i0] += 1
+            votes_v[i1] += 1
+        else:
+            ax.plot([v0[0], v1[0]], [v0[1], v1[1]], ls='-', c=ec, alpha=alpha, lw=4, zorder=1)
+
+    # verts_mask = votes_v > 0
+    # ax.scatter(verts_proj[verts_mask, 0], verts_proj[verts_mask, 1], c='k', zorder=10, alpha=1.)
+    # ax.scatter(verts_proj[-1, 0], verts_proj[-1, 1], c=vert_colors[-1], marker='+', zorder=10, alpha=1.)
     if bbox is not None and adjust_axis:
         ax.set_xlim(0, bbox_size)
         ax.set_ylim(bbox_size, 0)

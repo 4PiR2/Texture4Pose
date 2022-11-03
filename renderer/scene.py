@@ -155,4 +155,53 @@ class Scene:
         """
         ambient, diffuse, specular = \
             _apply_lighting(pixel_coords, pixel_normals, self.lights, self.cameras, self.materials)
-        return ambient * pixel_normals.bool().any(dim=-1)[..., None] + diffuse, specular
+
+        from matplotlib import pyplot as plt
+        import numpy as np
+
+        # fig = plt.figure(figsize=(10, 10))
+        # ax = plt.Axes(fig, [0., 0., 1., 1.])
+        # fig.add_axes(ax)
+        # ax.spines['top'].set_visible(False)
+        # ax.spines['right'].set_visible(False)
+        # ax.spines['bottom'].set_visible(False)
+        # ax.spines['left'].set_visible(False)
+        # ax.set_axis_off()
+        # fig.patch.set_alpha(0.)
+        # ax.patch.set_alpha(0.)
+        # a_np = (pixel_coords.abs().sum(dim=-1, keepdim=True)[0, :, :, 0].bool() * 255).detach().cpu().numpy().astype('uint8')
+        # ax.imshow(np.concatenate([a_np] * 4, axis=-1))
+        # plt.savefig('plots/l_a.png')
+        # plt.show()
+
+        # fig = plt.figure(figsize=(10, 10))
+        # ax = plt.Axes(fig, [0., 0., 1., 1.])
+        # fig.add_axes(ax)
+        # ax.spines['top'].set_visible(False)
+        # ax.spines['right'].set_visible(False)
+        # ax.spines['bottom'].set_visible(False)
+        # ax.spines['left'].set_visible(False)
+        # ax.set_axis_off()
+        # fig.patch.set_alpha(0.)
+        # ax.patch.set_alpha(0.)
+        # d_np = (NHWKC_to_NCHW(diffuse)[0].permute(1, 2, 0) * 255.).round().detach().cpu().numpy().astype('uint8')
+        # ax.imshow(np.concatenate([d_np, a_np], axis=-1))
+        # plt.savefig('plots/l_d.png')
+        # plt.show()
+        
+        # fig = plt.figure(figsize=(10, 10))
+        # ax = plt.Axes(fig, [0., 0., 1., 1.])
+        # fig.add_axes(ax)
+        # ax.spines['top'].set_visible(False)
+        # ax.spines['right'].set_visible(False)
+        # ax.spines['bottom'].set_visible(False)
+        # ax.spines['left'].set_visible(False)
+        # ax.set_axis_off()
+        # fig.patch.set_alpha(0.)
+        # ax.patch.set_alpha(0.)
+        # s_np = (NHWKC_to_NCHW(specular)[0].permute(1, 2, 0) * 255.).round().detach().cpu().numpy().astype('uint8')
+        # ax.imshow(np.concatenate([s_np, a_np], axis=-1))
+        # plt.savefig('plots/l_s.png')
+        # plt.show()
+
+        return ambient * pixel_normals.bool().any(dim=-1)[..., None] * .5 + diffuse * .3, specular * .2

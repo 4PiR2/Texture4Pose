@@ -1,6 +1,8 @@
 import os
 from typing import Optional
 
+from matplotlib import pyplot as plt
+import numpy as np
 import pytorch3d.transforms
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT, STEP_OUTPUT
@@ -170,6 +172,23 @@ class MainModel(pl.LightningModule):
                 output_feature_map = torch.ones(N, H, W, 3, dtype=input_feature.dtype, device=input_feature.device)
                 output_feature_map[mask[:, 0]] = self.texture_net_p(input_feature)[..., 0, 0]
                 texel = output_feature_map.permute(0, 3, 1, 2)
+
+                fig = plt.figure(figsize=(10, 10))
+                ax = plt.Axes(fig, [0., 0., 1., 1.])
+                fig.add_axes(ax)
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['bottom'].set_visible(False)
+                ax.spines['left'].set_visible(False)
+                ax.set_axis_off()
+                fig.patch.set_alpha(0.)
+                ax.patch.set_alpha(0.)
+                t_np = (texel[0].permute(1, 2, 0) * 255.).round().detach().cpu().numpy().astype('uint8')
+                mask_np = (sample.gt_mask_vis_roi[0].permute(1, 2, 0).int() * 255).detach().cpu().numpy().astype('uint8')
+                ax.imshow(np.concatenate([t_np, mask_np], axis=-1))
+                # plt.savefig('plots/texel.png')
+                # plt.show()
+
             if texture_mode == 'xyz':
                 texel = coord_3d_normalized
             if texture_mode in ['cb', 'scb']:
@@ -193,8 +212,74 @@ class MainModel(pl.LightningModule):
         return texel
 
     def forward(self, sample: Sample):
+        # sample.visualize()
+
         if not (hasattr(self, 'gdrn_pnp_pretrain') and self.gdrn_pnp_pretrain):
             sample.get_gt_coord_3d_roi_normalized()
+
+            fig = plt.figure(figsize=(10, 10))
+            ax = plt.Axes(fig, [0., 0., 1., 1.])
+            fig.add_axes(ax)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['bottom'].set_visible(False)
+            ax.spines['left'].set_visible(False)
+            ax.set_axis_off()
+            fig.patch.set_alpha(0.)
+            ax.patch.set_alpha(0.)
+            from utils.transform_3d import show_pose_mesh
+            show_pose_mesh(ax, sample.cam_K[0], sample.gt_cam_R_m2c[0], sample.gt_cam_t_m2c[0], None, sample.bbox[0])
+            plt.savefig('plots/mesh/104_2bw.svg')
+            plt.show()
+
+            fig = plt.figure(figsize=(10, 10))
+            ax = plt.Axes(fig, [0., 0., 1., 1.])
+            fig.add_axes(ax)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['bottom'].set_visible(False)
+            ax.spines['left'].set_visible(False)
+            ax.set_axis_off()
+            fig.patch.set_alpha(0.)
+            ax.patch.set_alpha(0.)
+            coord_3d_np = (sample.gt_coord_3d_roi_normalized[0].permute(1, 2, 0) * 255.).round().detach().cpu().numpy().astype('uint8')
+            mask_np = (sample.gt_mask_vis_roi[0].permute(1, 2, 0).int() * 255).detach().cpu().numpy().astype('uint8')
+            ax.imshow(np.concatenate([coord_3d_np, mask_np], axis=-1))
+            # plt.savefig('plots/3d.png')
+            # plt.show()
+
+            fig = plt.figure(figsize=(10, 10))
+            ax = plt.Axes(fig, [0., 0., 1., 1.])
+            fig.add_axes(ax)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['bottom'].set_visible(False)
+            ax.spines['left'].set_visible(False)
+            ax.set_axis_off()
+            fig.patch.set_alpha(0.)
+            ax.patch.set_alpha(0.)
+            coord_3d_np = ((sample.gt_normal_roi[0].permute(1, 2, 0) * .5 + .5) * 255.).round().detach().cpu().numpy().astype('uint8')
+            mask_np = (sample.gt_mask_vis_roi[0].permute(1, 2, 0).int() * 255).detach().cpu().numpy().astype('uint8')
+            ax.imshow(np.concatenate([coord_3d_np, mask_np], axis=-1))
+            # plt.savefig('plots/n.png')
+            # plt.show()
+
+            fig = plt.figure(figsize=(10, 10))
+            ax = plt.Axes(fig, [0., 0., 1., 1.])
+            fig.add_axes(ax)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['bottom'].set_visible(False)
+            ax.spines['left'].set_visible(False)
+            ax.set_axis_off()
+            fig.patch.set_alpha(0.)
+            ax.patch.set_alpha(0.)
+            from utils.image_2d import normalize_channel
+            coord_2d_np = ((normalize_channel(sample.coord_2d_roi)[0].permute(1, 2, 0)) * 255.).round().detach().cpu().numpy().astype('uint8')
+            mask_np = (sample.gt_mask_vis_roi[0].permute(1, 2, 0).int() * 255).detach().cpu().numpy().astype('uint8')
+            ax.imshow(np.concatenate([coord_2d_np, np.zeros_like(mask_np), np.full_like(mask_np, 255)], axis=-1))
+            # plt.savefig('plots/2d.png')
+            # plt.show()
 
             if self.texture_net_p is not None and self.freeze_texture_net_p:
                 self.texture_net_p.eval()
@@ -203,11 +288,45 @@ class MainModel(pl.LightningModule):
             else:
                 self.forward_texture(sample)
 
-            if self.training or self.eval_augmentation:
-                sample.set(sf.img_roi, augmentations.color_augmentation.match_background_histogram(
-                    sample.get(sf.img_roi), sample.get(sf.gt_mask_vis_roi), **self.match_background_histogram_cfg
-                ))
-                sample.set(sf.img_roi, self.transform(sample.get(sf.img_roi)))
+            fig = plt.figure(figsize=(10, 10))
+            ax = plt.Axes(fig, [0., 0., 1., 1.])
+            fig.add_axes(ax)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['bottom'].set_visible(False)
+            ax.spines['left'].set_visible(False)
+            ax.set_axis_off()
+            fig.patch.set_alpha(0.)
+            ax.patch.set_alpha(0.)
+            img_np = (sample.img_roi[0].permute(1, 2, 0) * 255.).round().detach().cpu().numpy().astype('uint8')
+            mask_np = (sample.gt_mask_vis_roi[0].permute(1, 2, 0).int() * 255).detach().cpu().numpy().astype('uint8')
+            ax.imshow(np.concatenate([img_np, mask_np], axis=-1))
+            # plt.savefig('plots/blend.png')
+            # plt.show()
+
+            # if self.training or self.eval_augmentation:
+            #     sample.set(sf.img_roi, augmentations.color_augmentation.match_background_histogram(
+            #         sample.get(sf.img_roi), sample.get(sf.gt_mask_vis_roi), **self.match_background_histogram_cfg
+            #     ))
+            #     sample.set(sf.img_roi, self.transform(sample.get(sf.img_roi)))
+
+            sample.img_roi = vF.adjust_hue(sample.img_roi, .3)
+
+            fig = plt.figure(figsize=(10, 10))
+            ax = plt.Axes(fig, [0., 0., 1., 1.])
+            fig.add_axes(ax)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['bottom'].set_visible(False)
+            ax.spines['left'].set_visible(False)
+            ax.set_axis_off()
+            fig.patch.set_alpha(0.)
+            ax.patch.set_alpha(0.)
+            img_np = (sample.img_roi[0].permute(1, 2, 0) * 255.).round().detach().cpu().numpy().astype('uint8')
+            mask_np = (sample.gt_mask_vis_roi[0].permute(1, 2, 0).int() * 255).detach().cpu().numpy().astype('uint8')
+            ax.imshow(np.concatenate([img_np, np.full_like(mask_np, 255)], axis=-1))
+            # plt.savefig('plots/aug.png')
+            # plt.show()
 
             resize = lambda tag: vF.resize(sample.get(tag), [self.pnp_input_size], vF.InterpolationMode.NEAREST)
             sample.set(sf.gt_mask_vis_roi, resize(sf.gt_mask_vis_roi))
@@ -222,10 +341,26 @@ class MainModel(pl.LightningModule):
                 with torch.no_grad():
                     features = self.resnet_backbone(sample.get(sf.img_roi))
             else:
-                features = self.resnet_backbone(sample.get(sf.img_roi))
+                features = self.resnet_backbone(sample.get(sf.gt_texel_roi))
             features = self.up_sampling_backbone(features)
             sample.set(sf.pred_coord_3d_roi_normalized, self.coord_3d_head(features))
             sample.get_pred_coord_3d_roi()
+
+            fig = plt.figure(figsize=(10, 10))
+            ax = plt.Axes(fig, [0., 0., 1., 1.])
+            fig.add_axes(ax)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['bottom'].set_visible(False)
+            ax.spines['left'].set_visible(False)
+            ax.set_axis_off()
+            fig.patch.set_alpha(0.)
+            ax.patch.set_alpha(0.)
+            x3d_np = (sample.pred_coord_3d_roi_normalized[0].permute(1, 2, 0) * 255.).round().clamp(0., 255.).detach().cpu().numpy().astype('uint8')
+            mask_np = (sample.gt_mask_vis_roi[0].permute(1, 2, 0).int() * 255).detach().cpu().numpy().astype('uint8')
+            ax.imshow(np.concatenate([x3d_np, np.full_like(mask_np, 255)], axis=-1))
+            # plt.savefig('plots/x3d.png')
+            # plt.show()
 
         if self.pnp_mode == 'epro':
             w2d_raw, log_weight_scale = self.secondary_head(features)
@@ -234,6 +369,23 @@ class MainModel(pl.LightningModule):
                 pred_weight_2d = (w2d_raw.detach().reshape(N, 2, -1).log_softmax(dim=-1).reshape(N, 2, H, W)
                                   + log_weight_scale.detach()[..., None, None]).exp()
                 sample.set(sf.pred_weight_2d, pred_weight_2d / pred_weight_2d.max())
+
+            fig = plt.figure(figsize=(10, 10))
+            ax = plt.Axes(fig, [0., 0., 1., 1.])
+            fig.add_axes(ax)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['bottom'].set_visible(False)
+            ax.spines['left'].set_visible(False)
+            ax.set_axis_off()
+            fig.patch.set_alpha(0.)
+            ax.patch.set_alpha(0.)
+            w2d_np = (sample.pred_weight_2d[0].permute(1, 2, 0) * 255.).round().detach().cpu().numpy().astype('uint8')
+            mask_np = (sample.gt_mask_vis_roi[0].permute(1, 2, 0).int() * 255).detach().cpu().numpy().astype('uint8')
+            ax.imshow(np.concatenate([w2d_np, np.zeros_like(mask_np), np.full_like(mask_np, 255)], axis=-1))
+            # plt.savefig('plots/w2d.png')
+            # plt.show()
+
             x3d = sample.get(sf.pred_coord_3d_roi).permute(0, 2, 3, 1).reshape(N, -1, 3)
             x2d = sample.get(sf.coord_2d_roi).permute(0, 2, 3, 1).reshape(N, -1, 2)
             if not self.epro_use_world_measurement:

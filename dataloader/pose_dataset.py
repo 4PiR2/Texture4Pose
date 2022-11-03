@@ -83,6 +83,9 @@ def random_scene_any_obj_dp(  # scene_src == 0: random (adaptive camera intrinsi
     dp = dp.rand_bg(bg_img_path=bg_img_path)
     dp = dp.crop_roi_dummy(delete_original=True)
     dp = dp.normalize_normal()
+    dp = dp.compute_normal_sphere()
+    dp = dp.compute_normal_cylinder()
+    dp = dp.compute_normal_sphericon()
     dp = dp.rand_occlude(occlusion_size_min=occlusion_size_min, occlusion_size_max=occlusion_size_max,
                          num_occlusion_per_obj=num_occlusion_per_obj, min_occlusion_vis_ratio=min_occlusion_vis_ratio,
                          batch_occlusion=1, p=occlusion_probability)
@@ -95,9 +98,6 @@ def random_scene_any_obj_dp(  # scene_src == 0: random (adaptive camera intrinsi
     dp = dp.set_static_camera(cam_K=torch.eye(3), orig=True)
     dp = dp.calibrate_bbox()
     dp = dp.render_img()
-    dp = dp.compute_normal_sphere()
-    dp = dp.compute_normal_cylinder()
-    dp = dp.compute_normal_sphericon()
     return dp
 
 

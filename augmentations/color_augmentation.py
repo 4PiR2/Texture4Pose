@@ -1,6 +1,7 @@
 import torch
 import torchvision.transforms as T
 import torchvision.transforms.functional_tensor as F_t
+from matplotlib import pyplot as plt
 
 import utils.color
 
@@ -206,16 +207,66 @@ class ColorJitter(T.ColorJitter):
         return img
 
 
-# if __name__ == '__main__':
-#     import utils.io
-#     from utils.image_2d import visualize
-#
-#     im0 = utils.io.read_img_file('/data/coco/train2017/000000000009.jpg')
-#     # im0 = utils.io.read_img_file('/data/lm/test/000001/rgb/000200.png')
-#     im1 = utils.io.read_img_file('/data/lm/train/000001/rgb/000200.png')
-#     mask = utils.io.read_img_file('/data/lm/train/000001/mask_visib/000200_000000.png')[:, :1].bool()
-#     im = im0 * ~mask + im1 * mask
-#     # x = match_background_mean(im, mask, 1., 0.)
-#     x = match_background_histogram(im.cuda(), mask.cuda(), 1., 1., 1.)
-#     visualize(im0)
-#     visualize(x)
+if __name__ == '__main__':
+    import utils.io
+    from utils.image_2d import visualize
+
+    # im0 = utils.io.read_img_file('plots/bg.jpg')
+    im0 = utils.io.read_img_file('/root/Pictures/coco/000000000382.jpg')
+    im0 = F_t.resize(im0, [2000])[..., :2000]
+    H, W = im0.shape[-2:]
+    im0 = im0[..., :H // 2 * 2, :W // 2 * 2]
+
+    def to_roi(x: torch.Tensor) -> torch.Tensor:
+        w, h = 1000, 1000
+        # x = F_t.resize(x, [w, h], 'nearest')
+        return F_t.pad(x, [(W - w) // 2 - 0 , (H - h) // 2, (W - w) // 2 + 0, (H - h) // 2])
+
+    texel = utils.io.read_img_file('plots/texel.png')
+    l_d = utils.io.read_img_file('plots/l_d.png')[:, :1].expand(-1, 3, -1, -1)
+    l_s = utils.io.read_img_file('plots/l_s.png')[:, :1].expand(-1, 3, -1, -1)
+    im1 = (l_d * .3 + .5) * texel + l_s * .2
+    im1[:, 1] *= .9
+    # visualize(im1)
+    mask = ~utils.io.read_img_file('plots/l_s.png')[:, -1:].bool()
+    im1 = to_roi(im1)
+    mask = to_roi(mask)
+
+    mask[..., 750:1250, 1000:] = 0
+
+    im = im0 * ~mask + im1 * mask
+    x = match_background_histogram(im.cuda(), mask.cuda(), 1., 1., 1.)
+    # visualize(im0)
+    visualize(im)
+    visualize(x)
+    _ = 0
+
+    fig = plt.figure(figsize=(20, 20))
+    ax = plt.Axes(fig, [0., 0., 1., 1.])
+    fig.add_axes(ax)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    ax.set_axis_off()
+    fig.patch.set_alpha(0.)
+    ax.patch.set_alpha(0.)
+    im_np = (im[0].permute(1, 2, 0) * 255.).round().detach().cpu().numpy().astype('uint8')
+    ax.imshow(im_np)
+    plt.savefig('plots/aug/ocim.png')
+    plt.show()
+
+    fig = plt.figure(figsize=(20, 20))
+    ax = plt.Axes(fig, [0., 0., 1., 1.])
+    fig.add_axes(ax)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    ax.set_axis_off()
+    fig.patch.set_alpha(0.)
+    ax.patch.set_alpha(0.)
+    x_np = (x[0].permute(1, 2, 0) * 255.).round().detach().cpu().numpy().astype('uint8')
+    ax.imshow(x_np)
+    plt.savefig('plots/aug/ochm.png')
+    plt.show()

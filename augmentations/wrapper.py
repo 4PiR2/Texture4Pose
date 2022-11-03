@@ -1,6 +1,7 @@
 from typing import Callable, Union
 
 import torch
+from matplotlib import pyplot as plt
 from torch import nn
 import torchvision.transforms as T
 import torchvision.transforms.functional as vF
@@ -118,15 +119,32 @@ class MotionBlur(_BaseI):
                          angle, kernel_size, p=p)
 
 
-# if __name__ == '__main__':
-#     import utils.io
-#     from utils.image_2d import visualize
-#
-#     im = utils.io.read_img_file('/data/coco/train2017/000000000009.jpg')
-#     # aug = CoarseDropout(num_holes=10, width=8, p=.5)
-#     # aug = Sharpen(sharpness_factor=(1., 3.), p=1.)
-#     aug = MotionBlur((9., 9.), p=.5)
-#     y = aug(im)
-#     visualize(im)
-#     visualize(y)
-#     a = 0
+if __name__ == '__main__':
+    import utils.io
+    from utils.image_2d import visualize
+
+    im = utils.io.read_img_file('plots/aug/im.png')
+    im = vF.resize(im, [256])
+    # aug = CoarseDropout(num_holes=10, width=8, p=1.)
+    # aug = Debayer(permute_channel=True, p=1.)
+    # aug = MotionBlur((9., 9.), p=1.)
+    # aug = GaussianBlur(sigma=(3., 3.), p=1.)
+    # aug = Sharpen(sharpness_factor=(3., 3.), p=1.)
+    # aug = ISONoise(color_shift=.05, intensity=.1, p=1.)
+    # aug = GaussNoise(sigma=.1, p=1.)
+    aug = ColorJitter(.5, .5, .5, .5)
+    y = aug(im)
+    fig = plt.figure(figsize=(2.56, 2.56))
+    ax = plt.Axes(fig, [0., 0., 1., 1.])
+    fig.add_axes(ax)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    ax.set_axis_off()
+    fig.patch.set_alpha(0.)
+    ax.patch.set_alpha(0.)
+    im_np = (y[0].permute(1, 2, 0) * 255.).round().detach().cpu().numpy().astype('uint8')
+    ax.imshow(im_np)
+    plt.savefig(f'plots/aug/{str(aug).split("(")[0]}.png')
+    plt.show()

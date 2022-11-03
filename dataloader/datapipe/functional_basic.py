@@ -331,15 +331,13 @@ class _(SampleMapperIDP):
         o_scene = Scene(cam_K, gt_cam_R_m2c, gt_cam_t_m2c)
         N = len(gt_cam_R_m2c)
         B = 1 if self.scene_mode else N
-        light_color = utils.color.random_color_v_eq_1(B, self._light_max_saturation)
+        light_color = torch.tensor([1., 1., 0.]).expand(B, -1)
 
         def get_light(intensity_range) -> torch.Tensor:
             light_intensity = torch.rand(B, 1) * (intensity_range[1] - intensity_range[0]) + intensity_range[0]
             return light_intensity * light_color
 
-        direction = torch.randn(B, 3)
-        if self.scene_mode:
-            direction = (direction.to(gt_cam_R_m2c.device) @ gt_cam_R_m2c)[:, 0]
+        direction = torch.tensor([-1., -1., -1.]).expand(B, -1)
 
         shininess = torch.randint(low=self._light_shininess_range[0], high=self._light_shininess_range[1] + 1, size=[N])
         ambient = get_light(self._light_ambient_range)
@@ -511,22 +509,7 @@ class _(SampleMapperIDP):
         self._cuboid: bool = cuboid
 
     def main(self, N: int) -> torch.Tensor:
-        t_depth_min, t_depth_max = self._random_t_depth_range
-        t_center_min, t_center_max = self._random_t_center_range
-        if self._cuboid:
-            tmin = torch.tensor([t_center_min, t_center_min, t_depth_min], dtype=self.dtype, device=self.device)
-            tmax = torch.tensor([t_center_max, t_center_max, t_depth_max], dtype=self.dtype, device=self.device)
-            gt_cam_t_m2c = torch.lerp(tmin, tmax, torch.rand((N, 3), dtype=self.dtype, device=self.device))
-        else:
-            # frustum
-            tz = torch.rand(N, 1, dtype=self.dtype, device=self.device)  # [N, 1(Z)]
-            tz = (tz * t_depth_max ** 3 + (1. - tz) * t_depth_min ** 3) ** (1. / 3.)  # uniform
-            txy = torch.lerp(torch.tensor(t_center_min, dtype=self.dtype, device=self.device),
-                             torch.tensor(t_center_max, dtype=self.dtype, device=self.device),
-                             torch.rand(N, 2, dtype=self.dtype, device=self.device))  # [N, 2(XY)]
-            gt_cam_t_m2c = torch.cat([txy * tz, tz], dim=-1)
-        return gt_cam_t_m2c
-
+        return torch.tensor([0., 0., 1.]).expand(N, -1).to(device=self.device)  # [N, 3]
 
 @functional_datapipe('gen_bbox_proj')
 class _(SampleMapperIDP):

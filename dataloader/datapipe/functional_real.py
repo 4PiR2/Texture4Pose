@@ -4,6 +4,7 @@ from typing import Any
 import pytorch3d.transforms
 import torch
 import torch.nn.functional as F
+from pytorch3d.renderer import look_at_view_transform
 from torch.utils.data import functional_datapipe
 import torchvision.transforms.functional as vF
 
@@ -23,15 +24,12 @@ class _(SampleMapperIDP):
         self._cos_thresh = torch.tensor(cylinder_strip_thresh_theta).cos()
 
     def main(self, obj_id: torch.Tensor, gt_cam_t_m2c: torch.Tensor):
-        # for cylinderstrip, empty projection in z-axis direction
-        gt_cam_R_m2c = []
-        for oid, t in zip(obj_id, F.normalize(gt_cam_t_m2c, p=2, dim=-1)):
-            while True:
-                rot = pytorch3d.transforms.random_rotations(1, dtype=self.dtype, device=self.device)[0]
-                if oid != 104 or torch.dot(t, rot[:, 2]).abs() <= self._cos_thresh:
-                    gt_cam_R_m2c.append(rot)
-                    break
-        return torch.stack(gt_cam_R_m2c, dim=0)
+        rot = torch.tensor([[-1. / 2. ** .5, 1. / 2. ** .5, 0.],
+                            [-1. / 6. ** .5, -1. / 6. ** .5, 2. ** .5 / 3. ** .5],
+                            [1. / 3. ** .5, 1. / 3. ** .5, 1. / 3. ** .5]])
+        # rot = pytorch3d.transforms.euler_angles_to_matrix(torch.tensor([0., -90. * torch.pi / 180., 0.]), 'ZYX')
+        # rot = torch.eye(3)
+        return rot.expand(len(obj_id), -1, -1).to(device=self.device)  # [N, 3, 3]
 
 
 @functional_datapipe('load_real_scene')
