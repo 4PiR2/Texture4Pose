@@ -185,7 +185,7 @@ def unroll_sphericon(scale: float, theta: float = -.9, dpi: int = 72, model: Mai
     mask = mask.expand(3, -1, -1)
     img[~mask] = 1.
 
-    border = 1
+    border = 0
     if border > 0:
         img[..., :-border] *= mask[..., :-border] | ~mask[..., border:]
         img[..., border:] *= mask[..., border:] | ~mask[..., :-border]

@@ -65,9 +65,9 @@ def visualize_texture(versions: list = [209, 216, 217]):
     i = 0
     for p in tqdm.tqdm(ckpt_path_list):
         model.texture_net_p = torch.load(p).cpu()
-        # img = realworld.print_unroll.unroll_sphericon(scale=.05, theta=0., dpi=72, model=model)[0]
-        img = realworld.print_unroll.unroll_cylinder_strip(scale=.05, margin=0., border=0, dpi=72, model=model)
-        img = img.transpose(-2, -1).flip(dims=[-2])
+        img = realworld.print_unroll.unroll_sphericon(scale=.05, theta=0., dpi=300, model=model)
+        # img = realworld.print_unroll.unroll_cylinder_strip(scale=.05, margin=0., border=0, dpi=300, model=model)
+        # img = img.transpose(-2, -1).flip(dims=[-2])
         if i == 0:
             *_, H, W = img.shape
             out = cv2.VideoWriter('/home/user/Desktop/tmp/output_video.avi', cv2.VideoWriter_fourcc(*'DIVX'), 5, (W, H))
@@ -91,4 +91,6 @@ if __name__ == '__main__':
     #     out.write(img)
     # out.release()
 
-    visualize_texture()
+    # last versions 104:116->127, 105:112->123
+
+    visualize_texture([248, 255])
