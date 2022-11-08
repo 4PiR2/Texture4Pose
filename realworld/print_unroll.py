@@ -132,11 +132,12 @@ def _unroll_canonical_sphericon(canonical_coord_2d: torch.Tensor) -> tuple[torch
     return coord_3d, mask
 
 
-def unroll_sphericon(scale: float, theta: float = -.9, dpi: int = 72, model: MainModel = None):
+def unroll_sphericon(scale: float, theta: float = -.9, border: int = 0, dpi: int = 72, model: MainModel = None):
     """
 
     :param scale: float
     :param theta: float, rotation
+    :param border: int, black border, px
     :param dpi: int
     :return:
     """
@@ -185,7 +186,6 @@ def unroll_sphericon(scale: float, theta: float = -.9, dpi: int = 72, model: Mai
     mask = mask.expand(3, -1, -1)
     img[~mask] = 1.
 
-    border = 1
     if border > 0:
         img[..., :-border] *= mask[..., :-border] | ~mask[..., border:]
         img[..., border:] *= mask[..., border:] | ~mask[..., :-border]

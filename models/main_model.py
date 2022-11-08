@@ -190,6 +190,30 @@ class MainModel(pl.LightningModule):
                 if hasattr(sample, sf.gt_light_texel_roi) and hasattr(sample, sf.gt_light_specular_roi):
                     sample.set(sf.img_roi, (sample.get(sf.gt_light_texel_roi) * sample.get(sf.gt_texel_roi) +
                                             sample.get(sf.gt_light_specular_roi)).clamp(0., 1.))
+
+            do_trunc: bool = False
+
+            if do_trunc:
+
+                def trunc(x: torch.Tensor, d: int):
+                    if d == 0:
+                        x[..., :, :W // 2] = 0
+                    elif d == 1:
+                        x[..., :, W // 2:] = 0
+                    if d == 2:
+                        x[..., :H // 2, :] = 0
+                    elif d == 3:
+                        x[..., H // 2:, :] = 0
+
+                N, _, H, W = sample.gt_mask_vis_roi.shape
+                directions = torch.randint(4, (N,))
+                for i in range(N):
+                    if torch.rand(1) > 1.:
+                        continue
+                    trunc(sample.gt_mask_vis_roi[i], directions[i])
+                    if sample.img_roi is not None:
+                        trunc(sample.img_roi[i], directions[i])
+
         return texel
 
     def forward(self, sample: Sample):

@@ -556,12 +556,12 @@ class _(SampleMapperIDP):
 @functional_datapipe('set_roi_camera')
 class _(SampleMapperIDP):
     def __init__(self, src_dp):
-        super().__init__(src_dp, [sf.bbox], [sf.cam_K])
+        super().__init__(src_dp, [sf.bbox], [sf.cam_K], required_attributes=['img_render_size'])
 
     def main(self, bbox: torch.Tensor) -> torch.Tensor:
         cam_K = torch.zeros(len(bbox), 3, 3, dtype=bbox.dtype, device=bbox.device)
         cam_K[..., 2, 2] = 1.
-        cam_K[..., 0, 0] = cam_K[..., 1, 1] = bbox[..., 2:].max(dim=-1)[0] / 256.
+        cam_K[..., 0, 0] = cam_K[..., 1, 1] = bbox[..., 2:].max(dim=-1)[0] / self.img_render_size
         cam_K[..., :2, 2] = bbox[..., :2] - bbox[..., 2:] * .5
         return torch.linalg.inv(cam_K)
 

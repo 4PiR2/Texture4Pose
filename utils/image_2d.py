@@ -331,3 +331,23 @@ def show_tensor_hist(x: torch.Tensor, title=None, bins=None) -> None:
     plt.hist(x.detach().cpu().numpy().flatten(), bins=bins)
     plt.title(str(title))
     plt.show()
+
+
+def save_to_img(im: torch.Tensor, file_name: str):
+    # im: [C, H, W] \in [0, 1]
+
+    C, H, W = im.shape
+    fig = plt.figure(figsize=(W * 1e-2, H * 1e-2))
+    ax = plt.Axes(fig, [0., 0., 1., 1.])
+    fig.add_axes(ax)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    ax.set_axis_off()
+    fig.patch.set_alpha(0.)
+    ax.patch.set_alpha(0.)
+    im_np = (im.permute(1, 2, 0) * 255.).round().detach().cpu().numpy().astype('uint8')
+    ax.imshow(im_np)
+    plt.savefig(file_name)
+    plt.show()

@@ -1,5 +1,5 @@
 import cv2
-import pyzbar.pyzbar
+# import pyzbar.pyzbar
 import torch
 import torch.nn.functional as F
 
@@ -18,7 +18,7 @@ def decode_barcode(img: torch.Tensor, use_zbar: bool = True):
     decoded = []
     for im in img:
         if use_zbar:
-            ret = pyzbar.pyzbar.decode(im)
+            # ret = pyzbar.pyzbar.decode(im)
             decoded.append(ret[0].data.decode('UTF-8') if len(ret) else None)
         else:
             ret, decoded_info, decoded_type, corners = bardet.detectAndDecode(im)

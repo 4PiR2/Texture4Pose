@@ -31,6 +31,11 @@ class _(SampleMapperIDP):
                 if oid != 104 or torch.dot(t, rot[:, 2]).abs() <= self._cos_thresh:
                     gt_cam_R_m2c.append(rot)
                     break
+
+        # for view display, and recommend use light_direction=[-1, -1, -1]
+        # rot = torch.tensor([[-1. / 2. ** .5, 1. / 2. ** .5, 0.],
+        #                     [-1. / 6. ** .5, -1. / 6. ** .5, 2. ** .5 / 3. ** .5],
+        #                     [1. / 3. ** .5, 1. / 3. ** .5, 1. / 3. ** .5]])
         return torch.stack(gt_cam_R_m2c, dim=0)
 
 

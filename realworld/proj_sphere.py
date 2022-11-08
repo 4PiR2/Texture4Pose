@@ -1,7 +1,6 @@
 import torch
 
 import config.const as cc
-import utils.image_2d
 
 
 def equirectangular(w: int, h: int = None, lat_0: float = 0., lon_0: float = 0., dtype=cc.dtype) -> torch.Tensor:
@@ -23,5 +22,8 @@ def orthographic():
     # https://en.wikipedia.org/wiki/Orthographic_map_projection
     pass
 
-utils.image_2d.visualize(equirectangular(500, 250) * .5 + .5)
-a = 0
+
+# if __name__ == '__main__':
+#     from utils.image_2d import visualize
+#     visualize(equirectangular(500, 250) * .5 + .5)
+#     a = 0
