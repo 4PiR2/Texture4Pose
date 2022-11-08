@@ -23,5 +23,5 @@ def orthographic():
     # https://en.wikipedia.org/wiki/Orthographic_map_projection
     pass
 
-utils.image_2d.visualize(equirectangular(500, 250) * .5 + .5)
-a = 0
+# utils.image_2d.visualize(equirectangular(500, 250) * .5 + .5)
+# a = 0

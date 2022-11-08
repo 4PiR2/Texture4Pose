@@ -72,21 +72,22 @@ def main():
     # 104 xyz
     # ckpt_path = 'outputs/lightning_logs/version_279/checkpoints/epoch=0127-val_metric=1.9202.ckpt'
     # 104 siren
-    # ckpt_path = 'outputs/lightning_logs/version_268/checkpoints/epoch=0043-val_metric=0.3965.ckpt'
+    # ckpt_path = '/data/104_texture_envolution/version_217/checkpoints/epoch=0116-val_metric=0.9897.ckpt'
     # 104 cb
     # ckpt_path = 'outputs/lightning_logs/version_273/checkpoints/epoch=0122-val_metric=0.4129.ckpt'
 
     # 105 xyz
     # ckpt_path = 'outputs/lightning_logs/version_291/checkpoints/epoch=0119-val_metric=1.5092.ckpt'
     # 105 siren
-    # ckpt_path = 'outputs/lightning_logs/version_301/checkpoints/epoch=0007-val_metric=0.4302.ckpt'
+    # ckpt_path = '/data/105_texture_envolution/version_255/checkpoints/epoch=0112-val_metric=0.9236.ckpt'
     # 105 cb
     # ckpt_path = 'outputs/lightning_logs/version_282/checkpoints/epoch=0154-val_metric=0.3779.ckpt'
 
     # 101 xyz
-    ckpt_path = 'outputs/lightning_logs/version_300/checkpoints/epoch=0114-val_metric=2.8337.ckpt'
+    # ckpt_path = 'outputs/lightning_logs/version_300/checkpoints/epoch=0114-val_metric=2.8337.ckpt'
     # 101 siren
-    # ckpt_path = 'outputs/lightning_logs/version_327/checkpoints/epoch=0164-val_metric=0.3148.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_327/checkpoints/epoch=0164-val_metric=0.3148.ckpt'
+    ckpt_path = 'outputs/lightning_logs/version_325/checkpoints/epoch=0118-val_metric=0.6888.ckpt'
     # 101 cb
     # ckpt_path = 'outputs/lightning_logs/version_328/checkpoints/epoch=0120-val_metric=0.2599.ckpt'
     # ckpt_path = None
