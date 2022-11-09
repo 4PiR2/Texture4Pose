@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataloader.pose_dataset import DatasetWrapper, random_scene_any_obj_dp, rendered_scene_bop_obj_dp, \
-    bop_scene_bop_obj_dp, real_scene_regular_obj_dp
+    bop_scene_bop_obj_dp, real_scene_regular_obj_dp, detector_random_scene_any_obj_dp
 from dataloader.sample import Sample
 from utils.config import Config
 
@@ -21,6 +21,13 @@ class LitDataModule(pl.LightningDataModule):
             )
             self.train_epoch_len: int = self.cfg.dataloader.train_epoch_len
             self.val_epoch_len: int = self.cfg.dataloader.val_epoch_len
+        elif cfg.dataset.scene_src == 4:
+            self.dataset: torch.utils.data.IterableDataset = detector_random_scene_any_obj_dp(
+                dtype=self.cfg.dtype, device=self.cfg.device,
+                **self.cfg.dataset
+            )
+            self.train_epoch_len: int = 1000000000
+            self.val_epoch_len: int = 1000000000
         else:
             if cfg.dataset.scene_src == 1:
                 dp = rendered_scene_bop_obj_dp

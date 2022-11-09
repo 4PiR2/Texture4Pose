@@ -5,6 +5,7 @@ import torch.utils.data
 import config.const as cc
 import dataloader.datapipe.functional_bop
 import dataloader.datapipe.functional_real
+import dataloader.datapipe.functional_det
 from dataloader.datapipe.helper import SampleSource
 from dataloader.sample import Sample
 
@@ -202,4 +203,45 @@ def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intr
     dp = dp.compute_normal_sphere()
     dp = dp.compute_normal_cylinder()
     dp = dp.compute_normal_sphericon()
+    return dp
+
+
+def detector_random_scene_any_obj_dp(  # scene_src == ?
+    path=None, obj_list=None, dtype=cc.dtype, device=cc.device, bg_img_path=None, img_render_size=512,
+    random_t_depth_range=(.5, 1.2), random_t_center_range=(-.7, .7), rand_t_inside_cuboid=False, max_dzi_ratio=.25,
+    bbox_zoom_out_ratio=1.5, light_max_saturation=1., light_ambient_range=(.5, 1.), light_diffuse_range=(0., .3),
+    light_specular_range=(0., .2), light_shininess_range=(40, 80), num_obj=None, repeated_sample_obj=False,
+    occlusion_size_min=.125, occlusion_size_max=.5, num_occlusion_per_obj=1, min_occlusion_vis_ratio=.5,
+    occlusion_probability=.1, cylinder_strip_thresh_theta=15. * torch.pi / 180., **kwargs,
+):
+    dp = SampleSource(dtype=dtype, device=device, scene_mode=False, img_render_size=img_render_size)
+    dp = dataloader.datapipe.functional_bop.init_objects(dp, obj_list=obj_list, path=path)
+    dp = dp.set_mesh_info()
+    dp = dp.rand_select_objs(num_obj=num_obj, repeated_sample_obj=repeated_sample_obj)
+    dp = dp.set_static_camera(cam_K=cc.lm_cam_K, orig=False)
+    dp = dp.rand_gt_translation_inside_camera(random_t_depth_range=random_t_depth_range, cuboid=rand_t_inside_cuboid)
+    dp = dp.rand_gt_rotation_real(cylinder_strip_thresh_theta=cylinder_strip_thresh_theta)
+    dp = dp.gen_bbox_proj()
+    # dp = dp.dzi_bbox(max_dzi_ratio=max_dzi_ratio, bbox_zoom_out_ratio=bbox_zoom_out_ratio)
+    # dp = dp.set_roi_camera()
+    dp = dp.render_scene()
+    dp = dp.gen_mask()
+    dp = dp.rand_bg(bg_img_path=bg_img_path)
+    dp = dp.crop_roi_dummy(delete_original=True)
+    dp = dp.normalize_normal()
+    dp = dp.compute_normal_sphere()
+    dp = dp.compute_normal_cylinder()
+    dp = dp.compute_normal_sphericon()
+    # dp = dp.rand_occlude(occlusion_size_min=occlusion_size_min, occlusion_size_max=occlusion_size_max,
+    #                      num_occlusion_per_obj=num_occlusion_per_obj, min_occlusion_vis_ratio=min_occlusion_vis_ratio,
+    #                      batch_occlusion=1, p=occlusion_probability, apply_img_roi=False)
+    dp = dp.rand_lights(light_max_saturation=light_max_saturation, light_ambient_range=light_ambient_range,
+                        light_diffuse_range=light_diffuse_range, light_specular_range=light_specular_range,
+                        light_shininess_range=light_shininess_range)
+    dp = dp.apply_lighting(batch_lighting=1)
+    dp = dp.apply_bg()
+    # dp = dp.gen_coord_2d_bbox()
+    # dp = dp.set_static_camera(cam_K=torch.eye(3), orig=True)
+    dp = dp.calibrate_bbox_x1x2y1y2_abs()
+    dp = dp.render_img()
     return dp

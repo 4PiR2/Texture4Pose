@@ -1,26 +1,27 @@
 _base_ = './default.py'
 
 dataset = dict(
-    scene_src=3 * 0,  # 0: random (for training), 3: real exp (for testing)
-    obj_list={101: 'sphere', },
-    # obj_list={104: 'cylinderstrip', },
+    # scene_src=3 * 0,  # 0: random (for training), 3: real exp (for testing)
+    scene_src=4,
+    # obj_list={101: 'sphere', },
+    obj_list={104: 'cylinderstrip', },
     # obj_list={105: 'sphericon', },
     # num_obj=16,
-    num_obj=32,
+    num_obj=1,
     num_pose_augmentation=8,
     occlusion_probability_eval=0.,
     max_dzi_ratio_eval=.25,
 )
 
 dataloader = dict(
-    batch_size=1,
+    batch_size=16,
     train_epoch_len=500 * 1,
     val_epoch_len=(200 + dataset['num_obj'] - 1) // dataset['num_obj'],
 )
 
 model = dict(
-    texture_mode='xyz',
-    # texture_mode='siren',
+    # texture_mode='xyz',
+    texture_mode='siren',
     # texture_mode='cb',
     # texture_mode='scb',
     # freeze_texture_net_p=False,
@@ -31,11 +32,11 @@ model = dict(
         siren_first_omega_0=1.,
         cb_num_cycles=2,
     ),
-    coord_3d_loss_weights=[.1],
+    coord_3d_loss_weights=[1.],
     coord_3d_loss_weight_step=1,
     pnp=dict(
-        # epro_loss_weights=[.02, 1.],
-        epro_loss_weights=[1.],
+        epro_loss_weights=[.02, 1.],
+        # epro_loss_weights=[1.],
     )
 )
 
@@ -55,6 +56,6 @@ optimizer = dict(
 
 augmentation = dict(
     color_jitter=dict(
-        hue=0.,
+        # hue=0.,
     ),
 )
