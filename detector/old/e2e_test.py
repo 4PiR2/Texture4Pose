@@ -1,12 +1,8 @@
-import os
-
 from matplotlib import pyplot as plt
-import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-import detectron2
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.data import MetadataCatalog, DatasetCatalog
@@ -23,9 +19,6 @@ from dataloader.sample import Sample, SampleFields as sf
 from models.main_model import MainModel
 from utils.config import Config
 from utils.io import imread
-
-from detector.plain_train_net import do_train
-
 
 setup_logger()
 

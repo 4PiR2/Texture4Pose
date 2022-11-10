@@ -206,7 +206,7 @@ def real_scene_regular_obj_dp(  # scene_src == 3: real exp (adaptive camera intr
     return dp
 
 
-def detector_random_scene_any_obj_dp(  # scene_src == ?
+def detector_random_scene_any_obj_dp(  # scene_src == 4, gen full images
     path=None, obj_list=None, dtype=cc.dtype, device=cc.device, bg_img_path=None, img_render_size=512,
     random_t_depth_range=(.5, 1.2), random_t_center_range=(-.7, .7), rand_t_inside_cuboid=False, max_dzi_ratio=.25,
     bbox_zoom_out_ratio=1.5, light_max_saturation=1., light_ambient_range=(.5, 1.), light_diffuse_range=(0., .3),
@@ -218,7 +218,7 @@ def detector_random_scene_any_obj_dp(  # scene_src == ?
     dp = dataloader.datapipe.functional_bop.init_objects(dp, obj_list=obj_list, path=path)
     dp = dp.set_mesh_info()
     dp = dp.rand_select_objs(num_obj=num_obj, repeated_sample_obj=repeated_sample_obj)
-    dp = dp.set_static_camera(cam_K=cc.lm_cam_K, orig=False)
+    dp = dp.set_static_camera(cam_K=cc.fov70_cam_K, orig=False)
     dp = dp.rand_gt_translation_inside_camera(random_t_depth_range=random_t_depth_range, cuboid=rand_t_inside_cuboid)
     dp = dp.rand_gt_rotation_real(cylinder_strip_thresh_theta=cylinder_strip_thresh_theta)
     dp = dp.gen_bbox_proj()

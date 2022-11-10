@@ -11,6 +11,7 @@ lm_cam_K = torch.tensor([[[572.4114, 0., 325.2611], [0., 573.57043, 242.04899], 
 i12P_cam_K = torch.tensor([[[3076.2150484237645, 0., 2046.65792208993],
                             [0., 3076.2150484237645, 1492.683079664184],
                             [0., 0., 1.]]], dtype=dtype)
+fov70_cam_K = torch.tensor([[[256. / .7, 0., 256.], [0., 256. / .7, 256.], [0., 0., 1.]]], dtype=dtype)
 real_cam_K = i12P_cam_K
 
 lm_objects = {1: 'ape', 2: 'benchvise', 3: 'bowl', 4: 'camera', 5: 'can', 6: 'cat', 7: 'cup', 8: 'driller', 9: 'duck',

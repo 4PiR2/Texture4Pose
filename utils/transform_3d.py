@@ -225,7 +225,7 @@ def show_pose_mesh_105(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, c
     """
     dtype = cam_R_m2c.dtype
     device = cam_R_m2c.device
-    cull_backfaces = 0
+    cull_backfaces = 1
     from renderer.cube_mesh import cube, sphericon, cylinder_strip
     # mesh = sphericon(2, 0, device=device)
     mesh = cylinder_strip(2, device=device)
@@ -233,7 +233,7 @@ def show_pose_mesh_105(ax: Axes, cam_K: torch.Tensor, cam_R_m2c: torch.Tensor, c
     mesh.scale_verts_(.05)
     verts = mesh.verts_packed()  # [N, 3]
     edges = mesh.edges_packed()
-    vert_colors = [f'#{hex(r)[-2:]}{hex(g)[-2:]}{hex(b)[-2:]}' for r, g, b in ((verts / .1 + .5) * 255. * 0.).round().int() + 512]
+    vert_colors = [f'#{hex(r)[-2:]}{hex(g)[-2:]}{hex(b)[-2:]}' for r, g, b in ((verts / .1 + .5) * 255.).round().int() + 512]
     faces = mesh.faces_packed()
     verts = verts @ cam_R_m2c.T + cam_t_m2c  # [N, 3]
     votes_e = torch.zeros(len(edges), dtype=torch.uint8)

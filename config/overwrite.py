@@ -4,17 +4,18 @@ dataset = dict(
     # scene_src=3 * 0,  # 0: random (for training), 3: real exp (for testing)
     scene_src=4,
     # obj_list={101: 'sphere', },
-    obj_list={104: 'cylinderstrip', },
-    # obj_list={105: 'sphericon', },
+    # obj_list={104: 'cylinderstrip', },
+    obj_list={105: 'sphericon', },
     # num_obj=16,
-    num_obj=1,
+    num_obj=16,
     num_pose_augmentation=8,
     occlusion_probability_eval=0.,
     max_dzi_ratio_eval=.25,
+    random_t_depth_range=(.1, 1.2),
 )
 
 dataloader = dict(
-    batch_size=16,
+    batch_size=2,
     train_epoch_len=500 * 1,
     val_epoch_len=(200 + dataset['num_obj'] - 1) // dataset['num_obj'],
 )
