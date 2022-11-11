@@ -73,31 +73,6 @@ def print_sphericon_a3(model=None):
 
 def main(obj: int, texture: str, do_fit: bool = False, do_val_synt: bool = False, do_val_real: bool = False,
          do_print: bool = False, data_path: str = None, bg_img_path: str = None):
-    # 104 xyz
-    # ckpt_path = 'outputs/lightning_logs/version_279/checkpoints/epoch=0127-val_metric=1.9202.ckpt'
-    # 104 siren
-    # ckpt_path = 'outputs/lightning_logs/version_341/checkpoints/epoch=0142-val_metric=0.3394.ckpt'
-    # fix init
-    # ckpt_path = 'outputs/lightning_logs/version_350/checkpoints/epoch=0188-val_metric=0.4796.ckpt'
-    # no aug
-    # ckpt_path = 'outputs/lightning_logs/version_352/checkpoints/epoch=0118-val_metric=0.2238.ckpt'
-    # 104 cb
-    # ckpt_path = 'outputs/lightning_logs/version_342/checkpoints/epoch=0131-val_metric=0.3293.ckpt'
-
-    # 105 xyz
-    # ckpt_path = 'outputs/lightning_logs/version_291/checkpoints/epoch=0119-val_metric=1.5092.ckpt'
-    # 105 siren
-    # ckpt_path = 'outputs/lightning_logs/version_333/checkpoints/epoch=0149-val_metric=0.3378.ckpt'
-    # 105 cb
-    # ckpt_path = 'outputs/lightning_logs/version_336/checkpoints/epoch=0157-val_metric=0.3158.ckpt'
-
-    # 101 xyz
-    # ckpt_path = 'outputs/lightning_logs/version_300/checkpoints/epoch=0114-val_metric=2.8337.ckpt'
-    # ckpt_path = 'outputs/lightning_logs/version_329/checkpoints/epoch=0011-val_metric=3.0429.ckpt'
-    # 101 siren
-    # ckpt_path = 'outputs/lightning_logs/version_327/checkpoints/epoch=0164-val_metric=0.3148.ckpt'
-    # 101 cb
-    # ckpt_path = 'outputs/lightning_logs/version_328/checkpoints/epoch=0120-val_metric=0.2599.ckpt'
 
     only_load_weights = True
     max_epochs = 200
@@ -122,6 +97,7 @@ def main(obj: int, texture: str, do_fit: bool = False, do_val_synt: bool = False
         cfg.model.eval_augmentation = False
 
     cfg.dataset.path = data_path
+    cfg.dataset.dataset.bg_img_path = bg_img_path
 
     ckpt_path = os.path.join('weights', f'{obj}{texture}.ckpt')
 
@@ -142,5 +118,5 @@ def main(obj: int, texture: str, do_fit: bool = False, do_val_synt: bool = False
 
 
 if __name__ == '__main__':
-    main(101, 'xyz', do_fit=True, do_val_synt=False, do_val_real=False, data_path='/data/real_exp/i12P_26mm',
+    main(104, 'sa', do_fit=False, do_val_synt=False, do_val_real=True, data_path='/data/real_exp/i12P_26mm',
          bg_img_path='/data/coco/train2017')

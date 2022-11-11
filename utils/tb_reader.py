@@ -7,7 +7,7 @@ import os
 import pprint
 import traceback
 
-import click
+# import click
 import pandas as pd
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 

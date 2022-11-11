@@ -303,7 +303,7 @@ class MainModel(pl.LightningModule):
         elif self.pnp_mode == 'sanity':
             sample.compute_pnp(sanity_check_mode=True, store=True, ransac=True)
 
-        sample.visualize()
+        # sample.visualize()
         return sample
 
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:

@@ -1,4 +1,4 @@
-from typing import Any, Callable, Optional, Union
+from typing import Callable, Optional, Union
 
 from pytorch3d.renderer import PerspectiveCameras, RasterizationSettings, MeshRasterizer, MeshRenderer, Materials, \
     TensorProperties
