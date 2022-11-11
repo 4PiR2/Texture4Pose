@@ -4,29 +4,22 @@ from pytorch_lightning.callbacks import TQDMProgressBar, LearningRateMonitor
 
 from dataloader.data_module import LitDataModule
 from models.main_model import MainModel
-from utils.config import Config
+import utils.get_model
 
 
-def omega_scan(texture_mode: str = 'siren'):
-    def setup(args=None) -> Config:
-        cfg = Config.fromfile('config/top.py')
-        if args is not None:
-            cfg.merge_from_dict(args)
-        return cfg
-
-    cfg = setup()
-
-    datamodule = LitDataModule(cfg)
-
+def omega_scan(texture_mode: str = 'sa'):
+    cfg = utils.get_model.get_cfg()
     cfg.model.texture_mode = texture_mode
     cfg.model.pnp_mode = None
 
-    if texture_mode == 'siren':
+    if texture_mode == 'sa':
         candidates = [2. ** i for i in [6, 5, 4, 3, 2, 1, 0, -1, -2, -3, -4, -5, -6]]
     elif texture_mode == 'cb':
         candidates = [2 ** i for i in range(8)]
     else:
         raise NotImplementedError
+
+    datamodule = LitDataModule(cfg)
     for value in candidates:
         trainer = Trainer(
             accelerator='auto',
@@ -48,4 +41,4 @@ def omega_scan(texture_mode: str = 'siren'):
 
 
 if __name__ == '__main__':
-    omega_scan(texture_mode='cb')
+    omega_scan(texture_mode='sa')

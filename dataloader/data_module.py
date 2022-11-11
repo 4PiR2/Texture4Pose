@@ -13,7 +13,7 @@ class LitDataModule(pl.LightningDataModule):
         super().__init__()
         self.cfg: Config = cfg
         self.batch_size: int = self.cfg.dataloader.batch_size
-        if cfg.dataset.scene_src == 0:
+        if cfg.dataset.scene_src <= 1:
             self.dataset: torch.utils.data.IterableDataset = random_scene_any_obj_dp(
                 dtype=self.cfg.dtype, device=self.cfg.device,
                 crop_out_size=self.cfg.model.img_input_size,
@@ -21,7 +21,7 @@ class LitDataModule(pl.LightningDataModule):
             )
             self.train_epoch_len: int = self.cfg.dataloader.train_epoch_len
             self.val_epoch_len: int = self.cfg.dataloader.val_epoch_len
-        elif cfg.dataset.scene_src == 4:
+        elif cfg.dataset.scene_src == 5:
             self.dataset: torch.utils.data.IterableDataset = detector_random_scene_any_obj_dp(
                 dtype=self.cfg.dtype, device=self.cfg.device,
                 **self.cfg.dataset
@@ -29,11 +29,11 @@ class LitDataModule(pl.LightningDataModule):
             self.train_epoch_len: int = 1000000000
             self.val_epoch_len: int = 1000000000
         else:
-            if cfg.dataset.scene_src == 1:
+            if cfg.dataset.scene_src == 2:
                 dp = rendered_scene_bop_obj_dp
-            elif cfg.dataset.scene_src == 2:
-                dp = bop_scene_bop_obj_dp
             elif cfg.dataset.scene_src == 3:
+                dp = bop_scene_bop_obj_dp
+            elif cfg.dataset.scene_src == 4:
                 dp = real_scene_regular_obj_dp
             else:
                 raise NotImplementedError

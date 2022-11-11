@@ -122,11 +122,8 @@ class MotionBlur(_BaseI):
 #     import utils.io
 #     from utils.image_2d import visualize
 #
-#     im = utils.io.read_img_file('/data/coco/train2017/000000000009.jpg')
-#     # aug = CoarseDropout(num_holes=10, width=8, p=.5)
-#     # aug = Sharpen(sharpness_factor=(1., 3.), p=1.)
+#     im = utils.io.read_img_file('img.jpg')
 #     aug = MotionBlur((9., 9.), p=.5)
 #     y = aug(im)
 #     visualize(im)
 #     visualize(y)
-#     a = 0

@@ -1,4 +1,3 @@
-import glob
 import os
 import re
 
@@ -83,21 +82,9 @@ def visualize_texture(versions: list):
         save_image(img, os.path.join('/home/user/Desktop/tmp', f'{i:03}.png'))
         i += 1
     out.release()
-    a = 0
 
 
 if __name__ == '__main__':
-    # fl = [i for i in glob.glob('/home/user/Desktop/tmp/*.png')]
-    # fl.sort()
-    # # frameSize = (896, 312)
-    # frameSize = (891, 283)
-    # out = cv2.VideoWriter('/home/user/Desktop/tmp/output_video.avi', cv2.VideoWriter_fourcc(*'DIVX'), 4, frameSize)
-    # for filename in fl:
-    #     print(filename)
-    #     img = cv2.imread(filename)
-    #     out.write(img)
-    # out.release()
-
     versions_101 = [310, 325]
     versions_104 = [209, 216, 217]
     versions_105 = []

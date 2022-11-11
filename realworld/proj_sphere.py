@@ -3,7 +3,7 @@ import torch
 import config.const as cc
 
 
-def equirectangular(w: int, h: int = None, lat_0: float = 0., lon_0: float = 0., dtype=cc.dtype) -> torch.Tensor:
+def equirectangular(w: int = 500, h: int = None, lat_0: float = 0., lon_0: float = 0., dtype=cc.dtype) -> torch.Tensor:
     # https://en.wikipedia.org/wiki/Equirectangular_projection
     if h is None:
         h = w // 2
@@ -21,9 +21,3 @@ def equirectangular(w: int, h: int = None, lat_0: float = 0., lon_0: float = 0.,
 def orthographic():
     # https://en.wikipedia.org/wiki/Orthographic_map_projection
     pass
-
-
-# if __name__ == '__main__':
-#     from utils.image_2d import visualize
-#     visualize(equirectangular(500, 250) * .5 + .5)
-#     a = 0

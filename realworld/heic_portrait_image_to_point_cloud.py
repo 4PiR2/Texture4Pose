@@ -105,5 +105,3 @@ point_cloud = Pointclouds(points=torch.tensor(coord_3d.reshape([1, -1, 3])),
                           features=torch.tensor(rgb_image.reshape([1, -1, 3]) / 255.))
 
 plot_scene({'Pointcloud': {'person': point_cloud}}).show()
-
-_ = 0

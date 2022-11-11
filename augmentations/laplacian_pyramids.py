@@ -53,15 +53,3 @@ def laplacian_blend(img_0: torch.Tensor, img_1: torch.Tensor, mask: torch.Tensor
     for l0, l1, lm in zip(laplacian_layers_0, laplacian_layers_1, gaussian_layers_m):
         layers.append(l0 * (1. - lm) + l1 * lm)
     return _reconstruct_from_laplacian_pyramids(layers, sigma).clamp(min=0., max=1.)
-
-
-# if __name__ == '__main__':
-#     import utils.io
-#     from utils.image_2d import visualize
-#
-#     im0 = utils.io.read_img_file('/data/coco/train2017/000000000009.jpg')[..., :256, :512]
-#     im1 = utils.io.read_img_file('/data/coco/train2017/000000000025.jpg')[..., :256, :512]
-#     mask = torch.zeros_like(im0)
-#     mask[..., :200] = 1.
-#     x = laplacian_blend(im0, im1, mask, 7, 1.)
-#     visualize(x)

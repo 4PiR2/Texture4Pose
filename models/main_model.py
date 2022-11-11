@@ -46,7 +46,7 @@ class MainModel(pl.LightningModule):
         self.texture_use_normal_input: bool = cfg.model.texture.texture_use_normal_input
         self.coord_3d_loss_weights: list[float] = cfg.model.coord_3d_loss_weights
         self.coord_3d_loss_weight_step: int = cfg.model.coord_3d_loss_weight_step
-        if self.texture_mode in ['siren', 'scb']:
+        if self.texture_mode in ['sa', 'scb']:
             self.siren_first_omega_0: float = cfg.model.texture.siren_first_omega_0
             self.siren_hidden_omega_0: float = cfg.model.texture.siren_hidden_omega_0
         if self.texture_mode in ['cb', 'scb']:
@@ -80,7 +80,7 @@ class MainModel(pl.LightningModule):
             if self.texture_mode == 'mlp':
                 self.texture_net_p = TextureNetP(in_channels=3, out_channels=3, n_layers=3, hidden_size=128,
                     positional_encoding=[2. ** i for i in range(8)], use_cosine_positional_encoding=True)
-            elif self.texture_mode in ['siren', 'scb']:
+            elif self.texture_mode in ['sa', 'scb']:
                 self.texture_net_p = SirenConv(in_features=3 + self.texture_use_normal_input * 3, out_features=3,
                                                hidden_features=128, hidden_layers=2, outermost_linear=False,
                                                first_omega_0=self.siren_first_omega_0,
@@ -121,7 +121,7 @@ class MainModel(pl.LightningModule):
         if self.texture_mode == 'mlp':
             params.append({'params': self.texture_net_p.parameters(), 'lr': self.opt_cfg.lr.texture_net_p,
                            'name': 'texture_p'})
-        if self.texture_mode in ['siren', 'scb'] and not self.freeze_texture_net_p:
+        if self.texture_mode in ['sa', 'scb'] and not self.freeze_texture_net_p:
             params.append({'params': self.texture_net_p.first_layer.parameters(),
                            # 'lr': self.opt_cfg.lr.texture_net_p * (self.siren_hidden_omega_0 / self.siren_first_omega_0),
                            'lr': self.opt_cfg.lr.texture_net_p,
@@ -303,7 +303,7 @@ class MainModel(pl.LightningModule):
         elif self.pnp_mode == 'sanity':
             sample.compute_pnp(sanity_check_mode=True, store=True, ransac=True)
 
-        # sample.visualize()
+        sample.visualize()
         return sample
 
     def training_step(self, sample: Sample, batch_idx: int) -> STEP_OUTPUT:

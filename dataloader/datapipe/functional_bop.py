@@ -37,7 +37,7 @@ class _(SampleMapperIDP):
         self.objects: dict[int, ObjMesh] = {**self.objects, **objects}
         self.objects_eval: dict[int, ObjMesh] = {**self.objects_eval, **objects}
 
-    def main(self):
+    def main(self) -> torch.Tensor:
         obj_id = torch.tensor(list(self.objects), dtype=torch.uint8, device=self.device)
         return obj_id
 
@@ -106,7 +106,7 @@ class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
         super().__init__(src_dp, [], [sf.o_item], required_attributes=['len'])
 
-    def main(self):
+    def main(self) -> int:
         return int(torch.randint(self.len, [1]))
 
 
@@ -129,7 +129,7 @@ class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
         super().__init__(src_dp, [sf.N, sf.o_item], [sf.cam_K], required_attributes=['scene_camera'])
 
-    def main(self, N: int, o_item: int):
+    def main(self, N: int, o_item: int) -> torch.Tensor:
         cam_K = torch.tensor(self.scene_camera[o_item]['cam_K'], device=self.device)
         cam_K = utils.transform_3d.normalize_cam_K(cam_K.reshape(3, 3)).expand(N, -1, -1)
         return cam_K
@@ -141,7 +141,7 @@ class _(SampleMapperIDP):
         super().__init__(src_dp, [sf.N, sf.o_item], [sf.gt_bg],
                          required_attributes=['dtype', 'device', 'data_path', 'scene_id'])
 
-    def main(self, N: int, o_item: int):
+    def main(self, N: int, o_item: int) -> torch.Tensor:
         img_path = os.path.join(self.data_path[o_item], 'rgb/{:0>6d}.png'.format(self.scene_id[o_item]))
         gt_bg = utils.io.read_img_file(img_path, dtype=self.dtype, device=self.device).expand(N, -1, -1, -1)
         return gt_bg
@@ -159,7 +159,7 @@ class _(SampleMapperIDP):
         super().__init__(src_dp, [sf.N, sf.o_item], [sf.gt_coord_3d],
                          required_attributes=['dtype', 'device', 'data_path', 'scene_id', 'scene_camera'])
 
-    def main(self, N: int, o_item: int):
+    def main(self, N: int, o_item: int) -> torch.Tensor:
         depth_path = os.path.join(self.data_path[o_item], 'depth/{:0>6d}.png'.format(self.scene_id[o_item]))
         gt_depth = utils.io.read_depth_img_file(depth_path, dtype=self.dtype, device=self.device)  # [1, 1, H, W]
         gt_depth *= self.scene_camera[o_item]['depth_scale'] * BOPMesh.scale
@@ -243,7 +243,7 @@ class _(SampleMapperIDP):
                          [sf.gt_coord_3d_roi])
 
     def main(self, gt_coord_3d_roi: torch.Tensor, coord_2d_roi: torch.Tensor, gt_cam_R_m2c: torch.Tensor,
-             gt_cam_t_m2c: torch.Tensor):
+             gt_cam_t_m2c: torch.Tensor) -> torch.Tensor:
         N, _, H, W = coord_2d_roi.shape
         depth_mask = gt_coord_3d_roi.bool()
         depth_img = torch.cat([coord_2d_roi * gt_coord_3d_roi, gt_coord_3d_roi], dim=1)  # [N, 3(XYZ), H, W]

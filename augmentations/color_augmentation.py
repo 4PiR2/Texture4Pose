@@ -204,18 +204,3 @@ class ColorJitter(T.ColorJitter):
                 img = utils.color.hsv2rgb(img)
 
         return img
-
-
-# if __name__ == '__main__':
-#     import utils.io
-#     from utils.image_2d import visualize
-#
-#     im0 = utils.io.read_img_file('/data/coco/train2017/000000000009.jpg')
-#     # im0 = utils.io.read_img_file('/data/lm/test/000001/rgb/000200.png')
-#     im1 = utils.io.read_img_file('/data/lm/train/000001/rgb/000200.png')
-#     mask = utils.io.read_img_file('/data/lm/train/000001/mask_visib/000200_000000.png')[:, :1].bool()
-#     im = im0 * ~mask + im1 * mask
-#     # x = match_background_mean(im, mask, 1., 0.)
-#     x = match_background_histogram(im.cuda(), mask.cuda(), 1., 1., 1.)
-#     visualize(im0)
-#     visualize(x)

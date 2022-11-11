@@ -44,7 +44,7 @@ class _(SampleMapperIDP):
         self.objects: dict[int, ObjMesh] = {**self.objects, **objects}
         self.objects_eval: dict[int, ObjMesh] = {**self.objects_eval, **objects_eval}
 
-    def main(self):
+    def main(self) -> torch.Tensor:
         obj_id = torch.tensor(list(self.objects), dtype=torch.uint8, device=self.device)
         return obj_id
 
@@ -70,7 +70,7 @@ class _(SampleMapperIDP):
         self._cam_K: torch.Tensor = utils.transform_3d.normalize_cam_K(cam_K.to(self.device, dtype=self.dtype))
         # [3, 3]
 
-    def main(self, N: int):
+    def main(self, N: int) -> torch.Tensor:
         return self._cam_K.expand(N, -1, -1)  # [N, 3, 3]
 
 
@@ -81,7 +81,7 @@ class _(SampleFiltererIDP):
         self._num_obj: int = num_obj if num_obj else len(self.objects)
         self._repeated_sample_obj: bool = repeated_sample_obj
 
-    def main(self, N: int):
+    def main(self, N: int) -> torch.Tensor:
         selected, _ = torch.multinomial(torch.ones(N), self._num_obj, replacement=self._repeated_sample_obj).sort()
         return selected
 
@@ -142,7 +142,7 @@ class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
         super().__init__(src_dp, [sf.N], [sf.gt_cam_R_m2c], required_attributes=['dtype', 'device'])
 
-    def main(self, N: int):
+    def main(self, N: int) -> torch.Tensor:
         return pytorch3d.transforms.random_rotations(N, dtype=self.dtype, device=self.device)  # [N, 3, 3]
 
 
@@ -182,7 +182,7 @@ class _(SampleMapperIDP):
         super().__init__(src_dp, [sf.gt_mask_vis, sf.gt_mask_obj], [sf.gt_vis_ratio],  # [sf.gt_mask_obj],
                          required_attributes=['dtype', 'scene_mode'])
 
-    def main(self, gt_mask_vis: torch.Tensor, gt_mask_obj: torch.Tensor):
+    def main(self, gt_mask_vis: torch.Tensor, gt_mask_obj: torch.Tensor) -> torch.Tensor:
         if self.scene_mode:
             gt_vis_ratio = (gt_mask_vis.bool().sum(dim=(1, 2, 3)) / gt_mask_obj.bool().sum(dim=(1, 2, 3)))\
                 .to(dtype=self.dtype)  # [N]
@@ -199,7 +199,7 @@ class _(SampleFiltererIDP):
         super().__init__(src_dp, [sf.gt_vis_ratio], required_attributes=['scene_mode'])
         self._vis_ratio_filter_threshold = vis_ratio_filter_threshold
 
-    def main(self, gt_vis_ratio: torch.Tensor):
+    def main(self, gt_vis_ratio: torch.Tensor) -> torch.Tensor:
         N = len(gt_vis_ratio)
         device = gt_vis_ratio.device
         if self.scene_mode:
@@ -225,7 +225,7 @@ class _(SampleMapperIDP):
     def __init__(self, src_dp: SampleMapperIDP):
         super().__init__(src_dp, [sf.gt_mask_vis], [sf.gt_bbox_vis], required_attributes=['dtype'])
 
-    def main(self, gt_mask_vis: torch.Tensor):
+    def main(self, gt_mask_vis: torch.Tensor) -> torch.Tensor:
         gt_bbox_vis = utils.image_2d.get_bbox2d_from_mask(gt_mask_vis[:, 0]).to(dtype=self.dtype)  # [N, 4(XYWH)]
         return gt_bbox_vis
 
@@ -237,7 +237,7 @@ class _(SampleMapperIDP):
         self._max_dzi_ratio: float = max_dzi_ratio
         self._bbox_zoom_out_ratio: float = bbox_zoom_out_ratio
 
-    def main(self, gt_bbox_vis: torch.Tensor):
+    def main(self, gt_bbox_vis: torch.Tensor) -> torch.Tensor:
         dzi_ratio = (torch.rand(len(gt_bbox_vis), 4, dtype=gt_bbox_vis.dtype, device=gt_bbox_vis.device) * 2. - 1.) \
                     * self._max_dzi_ratio
         dzi_ratio[:, 3] = dzi_ratio[:, 2]
@@ -277,21 +277,20 @@ class _(SampleMapperIDP):
 
 @functional_datapipe('rand_occlude')
 class _(SampleMapperIDP):
-    def __init__(self, src_dp: SampleMapperIDP, occlusion_size_min: float = .125, occlusion_size_max: float = .5,
+    def __init__(self, src_dp: SampleMapperIDP, occlusion_size_range: tuple[float, float] = (.125, .5),
                  num_occlusion_per_obj: int = 2, min_occlusion_vis_ratio: float = .5, batch_occlusion: int = None,
-                 p: float = 1., apply_img_roi: bool = False):
+                 apply_img_roi: bool = False, p: float = 1.):
         fields = [sf.gt_mask_vis_roi] + ([sf.img_roi] if apply_img_roi else [])
         super().__init__(src_dp, fields, fields)
         # rectangular occlusion
-        self._occlusion_size_min: float = occlusion_size_min
-        self._occlusion_size_max: float = occlusion_size_max
+        self._occlusion_size_range: tuple[float, float] = occlusion_size_range
         self._num_occlusion_per_obj: int = num_occlusion_per_obj
         self._min_occlusion_vis_ratio: float = min_occlusion_vis_ratio
         self._B: int = batch_occlusion
         self._p: float = p
 
     def main(self, gt_mask_vis_roi: torch.Tensor, img_roi: torch.Tensor = None):
-        if self._occlusion_size_max <= 0.:
+        if self._occlusion_size_range[-1] <= 0.:
             return gt_mask_vis_roi
         N, _, H, W = gt_mask_vis_roi.shape
         vis_count = gt_mask_vis_roi.bool().sum(dim=[-3, -2, -1])
@@ -307,8 +306,8 @@ class _(SampleMapperIDP):
                 for _ in range(self._num_occlusion_per_obj):
                     if torch.rand(1) > self._p:
                         continue
-                    wh = torch.rand(B, 2) * (self._occlusion_size_max - self._occlusion_size_min) \
-                         + self._occlusion_size_min
+                    wh = torch.rand(B, 2) * (self._occlusion_size_range[-1] - self._occlusion_size_range[0]) \
+                         + self._occlusion_size_range[0]
                     x0y0 = torch.rand(B, 2) * (1. - wh)
                     x0y0wh = (torch.cat([x0y0, wh], dim=-1) * torch.tensor([W, H] * 2)).round().int()
                     for j in range(B):
@@ -324,8 +323,12 @@ class _(SampleMapperIDP):
 
 @functional_datapipe('rand_lights')
 class _(SampleMapperIDP):
-    def __init__(self, src_dp: SampleMapperIDP, light_max_saturation=1., light_ambient_range=(.5, 1.),
-                 light_diffuse_range=(0., .3), light_specular_range=(0., .2), light_shininess_range=(40, 80), ):
+    def __init__(self, src_dp: SampleMapperIDP, light_max_saturation: float = 1.,
+                 light_ambient_range: tuple[float, float] = (.5, 1.),
+                 light_diffuse_range: tuple[float, float] = (0., .3),
+                 light_specular_range: tuple[float, float] = (0., .2),
+                 light_shininess_range: tuple[float, float] = (40, 80),
+                 ):
         super().__init__(src_dp, [sf.cam_K, sf.gt_cam_R_m2c, sf.gt_cam_t_m2c], [sf.o_scene],
                          required_attributes=['scene_mode'])
         self._light_max_saturation: float = light_max_saturation  # \in [0., 1.]
@@ -341,14 +344,15 @@ class _(SampleMapperIDP):
         light_color = utils.color.random_color_v_eq_1(B, self._light_max_saturation)
 
         def get_light(intensity_range) -> torch.Tensor:
-            light_intensity = torch.rand(B, 1) * (intensity_range[1] - intensity_range[0]) + intensity_range[0]
+            light_intensity = torch.rand(B, 1) * (intensity_range[-1] - intensity_range[0]) + intensity_range[0]
             return light_intensity * light_color
 
         direction = torch.randn(B, 3)
         if self.scene_mode:
             direction = (direction.to(gt_cam_R_m2c.device) @ gt_cam_R_m2c)[:, 0]
 
-        shininess = torch.randint(low=self._light_shininess_range[0], high=self._light_shininess_range[1] + 1, size=[N])
+        shininess = torch.randint(
+            low=self._light_shininess_range[0], high=self._light_shininess_range[-1] + 1, size=[N])
         ambient = get_light(self._light_ambient_range)
         diffuse = get_light(self._light_diffuse_range)
         specular = get_light(self._light_specular_range)
@@ -435,7 +439,7 @@ class _(SampleMapperIDP):
                          fields if delete_original else [])
         self._out_size: Union[list[int], int] = out_size
 
-    def main(self, bbox: torch.Tensor, gt_bg: torch.Tensor):
+    def main(self, bbox: torch.Tensor, gt_bg: torch.Tensor) -> torch.Tensor:
         crop_size = utils.image_2d.get_dzi_crop_size(bbox)
         crop = lambda img, mode: utils.image_2d.crop_roi(img, bbox, crop_size, self._out_size, mode)
         return crop(gt_bg, 'bilinear')
@@ -645,7 +649,7 @@ class _(SampleMapperIDP):
 
 @functional_datapipe('rand_truncate')
 class _(SampleMapperIDP):
-    def __init__(self, src_dp: SampleMapperIDP, p: float = 1., apply_img_roi: bool = False):
+    def __init__(self, src_dp: SampleMapperIDP, apply_img_roi: bool = False, p: float = 1.):
         fields = [sf.gt_mask_vis_roi] + ([sf.img_roi] if apply_img_roi else [])
         super().__init__(src_dp, fields, fields)
         self._p: float = p
