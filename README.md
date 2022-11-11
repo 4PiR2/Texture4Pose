@@ -1,4 +1,8 @@
-# Texture4Pose -- Master's Thesis
+# **Master's Thesis**
+
+# Texture Optimization for 6 DoF Pose Estimation
+
+## Abstract
 
 6 DoF pose estimation from monocular RGB images is one of the fundamental tasks in computer vision. However, its accuracy is often limited due to the lack of textures on the objects. In this thesis, we present a novel method to optimize the textures of the objects for pose estimation tasks. Our method is based on deep learning, and we use an end-to-end pipeline to optimize the object’s texture and pose estimator simultaneously. The pipeline consists of a texture generation network based on the texture field representation, a differentiable renderer, and a pose estimation network. The pipeline is trained on purely synthetic data and is evaluated on both synthetic and real data. Our experiments show that using a deep neural network to automatically perform local optimization is feasible to generate a texture with good pose estimation accuracy without much human effort. And the network-generated texture outperforms our hand-designed baseline textures.
 
