@@ -8,14 +8,15 @@ from tqdm import tqdm
 
 import config.const as cc
 import utils.io
-import utils.image_2d
 import utils.transform_3d
 
 
 if __name__ == '__main__':
-    with open('outputs/poses.pkl', 'rb') as f:
+    oid = 105
+    root_dir = os.path.join('/data/real_exp/i12P_video', f'{oid:>06}', 'sa', 'holding')
+    with open(os.path.join(root_dir, 'poses.pkl'), 'rb') as f:
         poses = pickle.load(f)
-    img_path_list = utils.io.list_img_from_dir('/data/real_exp/i12P_26mm/000104/siren', ext='heic')
+    img_path_list = utils.io.list_img_from_dir(os.path.join(root_dir, 'orig'), ext='png')
     outputs_list = []
     for img_path, pose in tqdm(zip(img_path_list, poses)):
         im = utils.io.imread(img_path, opencv_bgr=False)
@@ -35,6 +36,11 @@ if __name__ == '__main__':
         if pose is not None:
             pred_cam_t_m2c = pose[:, :3]
             pred_cam_R_m2c = pytorch3d.transforms.quaternion_to_matrix(pose[:, 3:])
-            utils.transform_3d.show_pose_mesh_105(ax, cc.i12P_cam_K.to(pose.device)[0], pred_cam_R_m2c[0], pred_cam_t_m2c[0])
-        plt.savefig(os.path.join('/home/user/Desktop', 'tmp2', f'{img_path.split("/")[-1].split(".")[0]}.jpg'))
+            utils.transform_3d.show_pose_mesh(
+                ax, cc.video_cam_K.to(pose.device)[0], pred_cam_R_m2c[0], pred_cam_t_m2c[0],
+                obj_id=oid, no_diag_edges=oid == 104)
+        ax.set_xlim(-.5, W - .5)
+        ax.set_ylim(H - .5, -.5)
+        plt.savefig(os.path.join(root_dir, 'pose', f'{img_path.split("/")[-1].split(".")[0]}.png'))
         # plt.show()
+        plt.close()

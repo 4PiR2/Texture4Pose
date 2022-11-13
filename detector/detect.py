@@ -50,7 +50,7 @@ def make_cfg():
     cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128  # The "RoIHead batch size". 128 is faster, and good enough for this toy dataset (default: 512)
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # only has one class (ballon). (see https://detectron2.readthedocs.io/tutorials/datasets.html#update-the-config-for-new-datasets)
     # NOTE: this config means the number of classes, but a few popular unofficial tutorials incorrect uses num_classes+1 here.
-    cfg.OUTPUT_DIR = os.path.join('outputs', 'detectron2_logs', f'version_{2}')
+    cfg.OUTPUT_DIR = os.path.join('outputs', 'detectron2_logs', f'version_{1}')
     return cfg
 
 
@@ -85,7 +85,9 @@ def eval_synt(cfg, predictor):
 
 
 def eval_real(predictor):
-    img_path_list = utils.io.list_img_from_dir('/data/real_exp/i12P_26mm/000105/siren', ext='heic')
+    oid = 104
+    root_dir = os.path.join('/data/real_exp/i12P_video', f'{oid:>06}', 'cb', 'rolling')
+    img_path_list = utils.io.list_img_from_dir(os.path.join(root_dir, 'orig'), ext='png')
     outputs_list = []
     for img_path in tqdm(img_path_list):
         im = utils.io.imread(img_path, opencv_bgr=False)
@@ -93,17 +95,21 @@ def eval_real(predictor):
         outputs_list.append(outputs)
 
         v = Visualizer(im, metadata=None, scale=1.0)
-        out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
+        # out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
+        for box, score in list(zip(outputs["instances"].pred_boxes.to('cpu'), outputs["instances"]._fields['scores']))[::-1]:
+            v.draw_box(box, edge_color='r')
+            v.draw_text(f'{round(float(score) * 100.)}%', tuple(box[:2].numpy()), color='w', horizontal_alignment='left')
+        out = v.get_output()
         plt.imsave(
-            os.path.join('/home/user/Desktop/tmp', f'{img_path.split("/")[-1].split(".")[0]}.jpg'),
+            os.path.join(root_dir, 'detect', f'{img_path.split("/")[-1].split(".")[0]}.png'),
             out.get_image(),
             vmin=0., vmax=1.,
         )
-        plt.imshow(out.get_image())
+        # plt.imshow(out.get_image())
+        # plt.show()
+        plt.close()
 
-        plt.show()
-
-    with open('outputs/detections.pkl', 'wb') as f:
+    with open(os.path.join(root_dir, 'detections.pkl'), 'wb') as f:
         pickle.dump(outputs_list, f)
 
 
@@ -118,15 +124,15 @@ def main():
     cfg = make_cfg()
     os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 
-    do_train(cfg)
+    # do_train(cfg)
 
     cfg.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR, "model_final.pth")  # path to the model we just trained
     # cfg.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR, f"model_{6999:>07}.pth")  # path to the model we just trained
-    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.7  # set a custom testing threshold
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.01  # set a custom testing threshold
     predictor = DefaultPredictor(cfg)
 
-    eval_synt(cfg, predictor)
-    # eval_real(predictor)
+    # eval_synt(cfg, predictor)
+    eval_real(predictor)
 
 
 if __name__ == '__main__':

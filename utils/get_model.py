@@ -17,7 +17,7 @@ def get_cfg(config_path: str = 'config/top.py', args=None) -> Config:
 
 def get_model(cfg: Config = None, ckpt_path: str = None, strict: bool = False):
     if cfg is None:
-        cfg = get_cfg('../config/top.py')
+        cfg = get_cfg('config/top.py')
 
     datamodule = LitDataModule(cfg)
     if ckpt_path is not None:

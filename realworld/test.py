@@ -16,17 +16,6 @@ def show_ndarray(img):
 
 
 if __name__ == '__main__':
-    # from utils.image_2d import visualize
-    # img = realworld.print_unroll.unroll_sphericon(.05, dpi=300)
-    # visualize(img)
-
-    from renderer.cube_mesh import sphericon
-    from pytorch3d.renderer import TexturesVertex
-    import pytorch3d.vis.plotly_vis
-    mesh = sphericon(5)
-    mesh.textures = TexturesVertex(mesh.verts_packed()[None] * .49 + .5)
-    pytorch3d.vis.plotly_vis.plot_scene({'subplot1': {'sphericon_mesh': mesh}}).show()
-
     chboard: realworld.charuco_board.ChArUcoBoard = realworld.charuco_board.ChArUcoBoard(7, 10, .04)
     print('Starting camera calibration ...')
     camera_matrix = chboard.calibrate_camera(utils.io.list_img_from_dir('/data/real_exp/i12P_26mm/calib', ext='heic'))[0]

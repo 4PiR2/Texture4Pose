@@ -1,73 +1,34 @@
+import os.path
 import pickle
 
 import torch
 from tqdm import tqdm
 
 import config.const as cc
+import utils.get_model
 import utils.io
 import utils.image_2d
 import utils.transform_3d
 
 
-def get_t4p_model():
-    from utils.config import Config
-    from dataloader.data_module import LitDataModule
-    from models.main_model import MainModel
-
-    ckpt_path = '/data/lightning_logs_archive/104/104_siren_long/version_341/checkpoints/epoch=0142-val_metric=0.3394.ckpt'
-
-    def setup_t4p(args=None) -> Config:
-        cfg = Config.fromfile('config/top.py')
-        if args is not None:
-            cfg.merge_from_dict(args)
-        return cfg
-
-    cfg_t4p = setup_t4p()
-    datamodule = LitDataModule(cfg_t4p)
-
-    if ckpt_path is not None:
-        t4p_model = MainModel.load_from_checkpoint(
-            ckpt_path, strict=True, cfg=cfg_t4p,
-            objects=datamodule.dataset.objects, objects_eval=datamodule.dataset.objects_eval
-        )
-    else:
-        t4p_model = MainModel(cfg_t4p, datamodule.dataset.objects, datamodule.dataset.objects_eval)
-
-    t4p_model = t4p_model.to(cc.device)
-    t4p_model.eval()
-    return t4p_model
-
-
-def est_pose():
-    # fig = plt.figure(figsize=(4032 * 1e-2, 3024 * 1e-2))
-    # ax = plt.Axes(fig, [0., 0., 1., 1.])
-    # fig.add_axes(ax)
-    # ax.spines['top'].set_visible(False)
-    # ax.spines['right'].set_visible(False)
-    # ax.spines['bottom'].set_visible(False)
-    # ax.spines['left'].set_visible(False)
-    # ax.set_axis_off()
-    # fig.patch.set_alpha(0.)
-    # ax.patch.set_alpha(0.)
-    # ax.imshow(im)
-    # utils.transform_3d.show_pose_mesh_105(ax, cc.i12P_cam_K.to(x3d.device)[0], pred_cam_R_m2c[0], pred_cam_t_m2c[0])
-    # plt.savefig('/home/user/Desktop/1.svg')
-    # plt.show()
-    pass
-
-
 if __name__ == '__main__':
-    t4p_model = get_t4p_model()
+    oid = 105
+
+    ckpt_path = os.path.join('weights', f'{oid}sa.ckpt')
+    t4p_model, _ = utils.get_model.get_model(ckpt_path=ckpt_path)
     t4p_model.eval()
-    with open('outputs/detections.pkl', 'rb') as f:
+
+    root_dir = os.path.join('/data/real_exp/i12P_video', f'{oid:>06}', 'sa', 'rolling')
+
+    with open(os.path.join(root_dir, 'detections.pkl'), 'rb') as f:
         detections = pickle.load(f)
-    img_path_list = utils.io.list_img_from_dir('/data/real_exp/i12P_26mm/000104/siren', ext='heic')
+    img_path_list = utils.io.list_img_from_dir(os.path.join(root_dir, 'orig'), ext='png')
     outputs_list = []
     for img_path, detection in tqdm(zip(img_path_list, detections)):
         fields = detection['instances']._fields
         scores = fields['scores']
         pred_classes = fields['pred_classes']
-        if len(scores) < 1:
+        if len(scores) < 1 or scores[0] < .01:
             outputs_list.append(None)
             continue
         x1, y1, x2, y2 = fields['pred_boxes'].tensor[0]
@@ -90,11 +51,11 @@ if __name__ == '__main__':
             x2d = torch.stack(torch.meshgrid(torch.linspace(x - s * .5 * 1.5, x + s * .5 * 1.5, 64),
                                              torch.linspace(y - s * .5 * 1.5, y + s * .5 * 1.5, 64), indexing='xy'))
             x2d = x2d.to(x3d.device)[None].permute(0, 2, 3, 1).reshape(N, -1, 2)
-            cam_K = cc.i12P_cam_K.to(x3d.device)
+            cam_K = cc.video_cam_K.to(x3d.device)
 
             pose_opt = t4p_model.pnp_net.forward_test(x3d, x2d, w2d, log_weight_scale, cam_K, fast_mode=False)
             outputs_list.append(pose_opt)
 
-    with open('outputs/poses.pkl', 'wb') as f:
+    with open(os.path.join(root_dir, 'poses.pkl'), 'wb') as f:
         pickle.dump(outputs_list, f)
     a = 0

@@ -105,7 +105,7 @@ def parse_device(device: Union[torch.device, str] = None) -> Union[torch.device,
 
 def list_img_from_dir(data_dir: str, ext: str = 'heic'):
     images = np.array([os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.lower().endswith(f'.{ext}')])
-    order = np.argsort([int(p.split('.')[-2].split('_')[-1]) for p in images])
+    order = np.argsort([int(p.split('/')[-1].split('_')[-1].split('.')[-2]) for p in images])
     return images[order]
 
 
