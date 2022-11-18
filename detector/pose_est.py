@@ -32,6 +32,7 @@ if __name__ == '__main__':
             outputs_list.append(None)
             continue
         x1, y1, x2, y2 = fields['pred_boxes'].tensor[0]
+        # x1, y1, x2, y2 = torch.tensor([2844., 1144., 3500., 1700.], device=x1.device)
         x = (x1 + x2) * .5
         y = (y1 + y2) * .5
         s = max(x2 - x1, y2 - y1)

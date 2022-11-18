@@ -13,10 +13,16 @@ def print_board():
     realworld.charuco_board.ChArUcoBoard(7, 10, .04).to_paper_pdf('/home/user/Desktop/1.pdf', paper_size='a3')
 
 
-# def print_cylinder_strip():
-#     dpi = 300
-#     img = realworld.print_unroll.unroll_cylinder_strip(scale=.04, dpi=dpi, model=None)
-#     utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/c.pdf', dpi=dpi)
+def print_cylinder_strip(model):
+    dpi = 300
+    img_100 = realworld.print_unroll.unroll_cylinder_strip(scale=.0395, dpi=dpi, model=model)
+    img_101 = realworld.print_unroll.unroll_cylinder_strip(scale=.04, dpi=dpi, model=model)
+    img_100bg = torch.ones_like(img_101)
+    img_100bg[..., :img_100.shape[-2], :img_100.shape[-1]] = img_100
+    margin = .05
+    white_space = torch.ones_like(img_101)[..., :int(img_101.shape[-1] * margin) + 1]
+    img = torch.cat([img_100bg, white_space, img_101], dim=-1)
+    utils.print_paper.print_tensor_to_paper_pdf(img, '/home/user/Desktop/c1.pdf', dpi=dpi)
 
 
 def print_cylinder_strip_a3(model=None):
@@ -50,10 +56,10 @@ def spectrum_analysis():
     plt.show()
 
 
-# def print_sphericon():
-#     dpi = 300
-#     img_100 = realworld.print_unroll.unroll_sphericon(scale=.05, dpi=dpi)
-#     utils.print_paper.print_tensor_to_paper_pdf(img_100, '/home/user/Desktop/s.pdf', dpi=dpi)
+def print_sphericon():
+    dpi = 300
+    img_100 = realworld.print_unroll.unroll_sphericon(scale=.05, dpi=dpi)
+    utils.print_paper.print_tensor_to_paper_pdf(img_100, '/home/user/Desktop/s.pdf', dpi=dpi)
 
 
 def print_sphericon_a3(model=None):
@@ -97,7 +103,7 @@ def main(obj: int, texture: str, do_fit: bool = False, do_val_synt: bool = False
         cfg.model.eval_augmentation = False
 
     cfg.dataset.path = data_path
-    cfg.dataset.dataset.bg_img_path = bg_img_path
+    cfg.dataset.bg_img_path = bg_img_path
 
     ckpt_path = os.path.join('weights', f'{obj}{texture}.ckpt')
 
@@ -105,9 +111,9 @@ def main(obj: int, texture: str, do_fit: bool = False, do_val_synt: bool = False
 
     if do_print:
         if obj == 104:
-            print_cylinder_strip_a3(model)
+            print_cylinder_strip(model.to('cpu'))
         if obj == 105:
-            print_sphericon_a3(model)
+            print_sphericon_a3(model.to('cpu'))
 
     if do_fit or do_val_synt or do_val_real:
         trainer = utils.get_model.get_trainer(max_epochs)
@@ -118,5 +124,5 @@ def main(obj: int, texture: str, do_fit: bool = False, do_val_synt: bool = False
 
 
 if __name__ == '__main__':
-    main(104, 'sa', do_fit=False, do_val_synt=False, do_val_real=True, data_path='/data/real_exp/i12P_26mm',
-         bg_img_path='/data/coco/train2017')
+    main(104, 'sa', do_fit=False, do_val_synt=False, do_val_real=False, do_print=False,
+         data_path='/data/real_exp/i12P_26mm', bg_img_path='/data/coco/train2017')
