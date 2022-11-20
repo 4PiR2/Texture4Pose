@@ -79,7 +79,7 @@ def main():
     # 105 xyz
     # ckpt_path = 'outputs/lightning_logs/version_291/checkpoints/epoch=0119-val_metric=1.5092.ckpt'
     # 105 siren
-    ckpt_path = '../data/epoch=0007-val_metric=0.4302.ckpt'
+    ckpt_path = 'weights/105sa.ckpt'
     # 105 cb
     # ckpt_path = 'outputs/lightning_logs/version_282/checkpoints/epoch=0154-val_metric=0.3779.ckpt'
 

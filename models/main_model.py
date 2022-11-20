@@ -186,7 +186,7 @@ class MainModel(pl.LightningModule):
                 t_np = (texel[0].permute(1, 2, 0) * 255.).round().detach().cpu().numpy().astype('uint8')
                 mask_np = (sample.gt_mask_vis_roi[0].permute(1, 2, 0).int() * 255).detach().cpu().numpy().astype('uint8')
                 ax.imshow(np.concatenate([t_np, mask_np], axis=-1))
-                # plt.savefig('plots/texel.png')
+                # plt.savefig('plots/ch01_texel.png')
                 # plt.show()
 
             if texture_mode == 'xyz':

@@ -29,6 +29,7 @@ class _(SampleMapperIDP):
                             [1. / 3. ** .5, 1. / 3. ** .5, 1. / 3. ** .5]])
         # rot = pytorch3d.transforms.euler_angles_to_matrix(torch.tensor([0., -90. * torch.pi / 180., 0.]), 'ZYX')
         # rot = torch.eye(3)
+        rot = pytorch3d.transforms.random_rotations(1, dtype=self.dtype, device=self.device)
         return rot.expand(len(obj_id), -1, -1).to(device=self.device)  # [N, 3, 3]
 
 

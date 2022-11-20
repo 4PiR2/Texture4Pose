@@ -2,9 +2,9 @@ _base_ = './default.py'
 
 dataset = dict(
     scene_src=3 * 0,  # 0: random (for training), 3: real exp (for testing)
-    obj_list={101: 'sphere', },
+    # obj_list={101: 'sphere', },
     # obj_list={104: 'cylinderstrip', },
-    # obj_list={105: 'sphericon', },
+    obj_list={105: 'sphericon', },
     # num_obj=16,
     num_obj=1,
     num_pose_augmentation=8,
