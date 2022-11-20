@@ -177,7 +177,7 @@ def load_pkl(oid: int, is_siren: bool = True):
 
 
 # oid = 105
-# is_siren = False
+# is_siren = True
 # data = load_pkl(oid, is_siren)
 
 data_101 = load_pkl(101, False)
@@ -205,8 +205,12 @@ im, cbar = heatmap(
 )
 texts = annotate_heatmap(im, valfmt=lambda x, _: f'{x:.2f}'.lstrip('0'))
 
+fig.patch.set_alpha(0.)
+ax.patch.set_alpha(0.)
 fig.tight_layout()
 # plt.savefig(f'plots/freq_study/{oid}_{"siren" if is_siren else "cb"}.pdf', bbox_inches='tight', pad_inches=.1)
-plt.savefig(f'plots/freq_study/cb.pdf', bbox_inches='tight', pad_inches=.1)
+# plt.savefig(f'plots/freq_study/{oid}_{"siren" if is_siren else "cb"}.svg', bbox_inches='tight', pad_inches=.1)
+plt.savefig(f'plots/freq_study/cb.pdf', bbox_inches='tight', pad_inches=.1, transparent=True)
+plt.savefig(f'plots/freq_study/cb.svg', bbox_inches='tight', pad_inches=.1, transparent=True)
 plt.show()
 a = 0
