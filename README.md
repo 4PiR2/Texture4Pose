@@ -1,24 +1,18 @@
-# **Master's Thesis**
-
 # Texture Optimization for 6 DoF Pose Estimation
+
+**Master's Thesis for Master of Science ETH in Computer Science**
+
+\[[ETHZ Research Collection](https://www.research-collection.ethz.ch/handle/20.500.11850/583168)\] \[[Thesis PDF](https://n.ethz.ch/~jialchen/mt/Masters_Thesis_Jiale_Chen_20-961-504_V2.pdf)\] \[[Presentation Slides](https://n.ethz.ch/~jialchen/mt/final.pptx)\] \[[Demo Video](https://n.ethz.ch/~jialchen/mt/demo.mp4)\] \[[BibTeX](https://n.ethz.ch/~jialchen/mt/BibTeX.bib)\] 
 
 ## Abstract
 
-6 DoF pose estimation from monocular RGB images is one of the fundamental tasks in computer vision. However, its accuracy is often limited due to the lack of textures on the objects. In this thesis, we present a novel method to optimize the textures of the objects for pose estimation tasks. Our method is based on deep learning, and we use an end-to-end pipeline to optimize the object’s texture and pose estimator simultaneously. The pipeline consists of a texture generation network based on the texture field representation, a differentiable renderer, and a pose estimation network. The pipeline is trained on purely synthetic data and is evaluated on both synthetic and real data. Our experiments show that using a deep neural network to automatically perform local optimization is feasible to generate a texture with good pose estimation accuracy without much human effort. And the network-generated texture outperforms our hand-designed baseline textures.
-
-## Thesis PDF
-
-TBD
-
-## Presentation Slides
-
-TBD
+6 DoF pose estimation from monocular RGB images is one of the fundamental tasks in computer vision. However, its accuracy is often limited due to the lack of textures on the objects. In this thesis, we present a novel method to optimize the textures of the objects for pose estimation tasks. Our method is based on deep learning, and we use an end-to-end pipeline to optimize the object’s texture and the pose estimator simultaneously. The pipeline consists of a texture generation network based on the texture field representation, a differentiable renderer, and a pose estimation network. The pipeline is trained on purely synthetic data and is evaluated on both synthetic and real data. Our experiments show that using a deep neural network to automatically perform local optimizations is feasible to generate a texture with good pose estimation accuracy without much human effort. And the network-generated texture outperforms our hand-designed baseline textures.
 
 ## Usage
 
 For train / test: run script `main.py`
 
-Pretrained weights: download and put them into `weights` directory
+Pretrained weights: download from [Google Drive](https://drive.google.com/drive/folders/12aKdvg0vTcLwzpK8xU0MspaUFarmQuKe?usp=share_link) and put them into `weights` directory
 
 For fine-grained configurations: make changes in `config` directory
 
